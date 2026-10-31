@@ -536,3 +536,64 @@ test('camera: goals per view', () => {
   assert.ok(st.fx > 10 && st.fx < 30);
   assert.ok(a.fov > 0);
 });
+
+// ---------- Phase 1.5: truck character
+import { FEEL, getFeel } from '../src/vehicles/truck-feel.js';
+import { createSuspension, stepSuspension } from '../src/vehicles/suspension.js';
+
+test('feel: every truck has its own voice, suspension and handling', () => {
+  for (const t of TRUCKS) {
+    assert.ok(FEEL[t.id], `${t.id} has feel`);
+    const { voice, sus, handling } = FEEL[t.id];
+    assert.ok(voice.f0 > 15 && voice.f0 < 80 && voice.range > 0 && voice.gain > 0 && voice.gain < 0.6, `${t.id} voice ranges`);
+    assert.ok(['sawtooth', 'square', 'triangle'].includes(voice.wave));
+    assert.ok(sus.k > 20 && sus.c > 1 && sus.roll > 0, `${t.id} suspension`);
+    assert.ok(handling.steer > 0.5 && handling.grip > 0.5 && handling.boost > 0.5);
+  }
+  const sig = TRUCKS.map((t) => JSON.stringify(FEEL[t.id].voice));
+  assert.equal(new Set(sig).size, TRUCKS.length, 'no two trucks share an engine voice');
+  assert.equal(new Set(TRUCKS.map((t) => FEEL[t.id].voice.f0)).size, TRUCKS.length, 'idle pitches differ');
+  assert.equal(getFeel('nope'), FEEL.crusher, 'unknown id falls back');
+  assert.ok(FEEL.titan.voice.f0 < FEEL['dune-devil'].voice.f0, 'big truck is deeper than the buggy');
+  assert.ok(FEEL.titan.sus.k < FEEL['dune-devil'].sus.k, 'heavy truck has softer springs');
+});
+
+test('feel: handling multipliers change the physics', () => {
+  const base = tuningFor(STATS);
+  const nimble = tuningFor(STATS, FEEL['dune-devil'].handling);
+  const lumber = tuningFor(STATS, FEEL.titan.handling);
+  assert.ok(nimble.steerRate > base.steerRate && lumber.steerRate < base.steerRate);
+  assert.ok(FEEL.magma.handling.boost > FEEL.titan.handling.boost);
+  assert.ok(tuningFor(STATS, FEEL.magma.handling).boostMul > tuningFor(STATS, FEEL.titan.handling).boostMul);
+});
+
+test('suspension: landing makes the body bounce then settle', () => {
+  const s = createSuspension();
+  const sus = FEEL.crusher.sus;
+  stepSuspension(s, { impact: 14 }, sus, 1 / 60);
+  let min = 0; let max = 0;
+  for (let i = 0; i < 200; i++) { stepSuspension(s, {}, sus, 1 / 60); min = Math.min(min, s.heave); max = Math.max(max, s.heave); }
+  assert.ok(min < -0.04 && max > 0.0, `wobbles (${min.toFixed(3)}..${max.toFixed(3)})`);
+  for (let i = 0; i < 300; i++) stepSuspension(s, {}, sus, 1 / 60);
+  assert.ok(Math.abs(s.heave) < 0.005 && Math.abs(s.pitch) < 0.005, 'settles');
+});
+
+test('suspension: accelerating squats the nose up, braking dives it, turning rolls outward', () => {
+  const run = (input, sus = FEEL.crusher.sus) => { const s = createSuspension(); for (let i = 0; i < 120; i++) stepSuspension(s, input, sus, 1 / 60); return s; };
+  assert.ok(run({ accelF: 25 }).pitch < -0.03, 'nose up when accelerating');
+  assert.ok(run({ accelF: -30 }).pitch > 0.03, 'nose down when braking');
+  assert.ok(run({ lat: 20 }).roll > 0.05, 'left turn: left side rises');
+  assert.ok(run({ lat: -20 }).roll < -0.05, 'right turn: right side rises');
+  assert.ok(Math.abs(run({ lat: 20 }, FEEL['yellow-thunder'].sus).roll) > Math.abs(run({ lat: 20 }, FEEL.titan.sus).roll), 'tall bus leans more than the titan');
+  const big = run({ lat: 999, accelF: 999 });
+  assert.ok(Math.abs(big.roll) <= 0.5 && Math.abs(big.pitch) <= 0.4, 'clamped');
+});
+
+test('physics: launch speed is capped so crests do not throw the truck skyward', () => {
+  const v = createVehicle(0, 0, 0, FLAT);
+  const hill = { heightAt: (x, z) => (z > 10 ? Math.max(0, 6 - (z - 10) * 3) : 0), obstacles: [], radius: 1000 };
+  v.vz = 25; v.z = 9;
+  let peak = 0;
+  for (let i = 0; i < 120; i++) { stepVehicle(v, { gas: 1 }, hill, tuningFor(STATS), DT); peak = Math.max(peak, v.y); }
+  assert.ok(peak < 6.5, `peak ${peak}`);
+});

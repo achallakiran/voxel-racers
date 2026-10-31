@@ -4,23 +4,23 @@
 //
 // Heading convention: forward = (sin h, cos h). Steering input > 0 turns right (heading decreases).
 
-export const GRAVITY = 26;
+export const GRAVITY = 30;
 export const BOOST_COST = 0.34;
 export const BOOST_TIME = 1.4;
 export const NITRO_REGEN = 0.09;
 const TRUCK_RADIUS = 1.3;
 
 // stats are 1..10 (see truck-stats.js)
-export function tuningFor(stats) {
+export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }) {
   return {
     maxSpeed: 12 + stats.speed * 1.6,
     accel: 10 + stats.speed * 1.1 - stats.weight * 0.35,
     brake: 34,
     reverseMax: 7,
     rollDrag: 0.9,
-    steerRate: 2.2,
-    grip: 2.2 + stats.grip * 0.85,
-    boostMul: 1.9,
+    steerRate: 2.2 * handling.steer,
+    grip: (2.2 + stats.grip * 0.85) * handling.grip,
+    boostMul: 1 + 0.9 * handling.boost,
     boostMax: 1.35,
   };
 }
@@ -162,8 +162,9 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   }
   if (v.grounded) {
     const free = v.y + v.vy * dt - 0.5 * GRAVITY * dt * dt;
-    if (free > g1 + 0.03) {
+    if (free > g1 + 0.08) {
       v.grounded = false;
+      v.vy = Math.min(v.vy, 9);                // cap launch speed so crests never throw you skyward
       v.vy -= GRAVITY * dt;
       v.y += v.vy * dt;
     } else {

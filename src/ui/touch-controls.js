@@ -2,8 +2,8 @@
 // Everything uses pointer events with capture, so each finger stays on its own control.
 import { stickVector } from '../core/input.js';
 
-export function createTouchControls({ zone, base, knob, gas, brake }) {
-  const state = { x: 0, y: 0, gas: false, brake: false, active: false };
+export function createTouchControls({ zone, base, knob, gas, brake, nitro }) {
+  const state = { x: 0, y: 0, gas: false, brake: false, nitro: false, nitroTaps: 0, active: false };
   let pid = null;
   let cx = 0;
   let cy = 0;
@@ -77,6 +77,7 @@ export function createTouchControls({ zone, base, knob, gas, brake }) {
       id = e.pointerId;
       try { btn.setPointerCapture(id); } catch { /* ignore */ }
       state[key] = true;
+      if (key === 'nitro') state.nitroTaps++;   // latched, so a very quick tap is never missed
       btn.classList.add('down');
     });
     btn.addEventListener('pointerup', release);
@@ -86,10 +87,11 @@ export function createTouchControls({ zone, base, knob, gas, brake }) {
   }
   const rg = hold(gas, 'gas');
   const rb = hold(brake, 'brake');
+  const rn = nitro ? hold(nitro, 'nitro') : () => {};
 
   return {
     state,
     layout: restPosition,
-    reset() { rg(); rb(); reset(); },
+    reset() { rg(); rb(); rn(); reset(); },
   };
 }

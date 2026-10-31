@@ -337,3 +337,10 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #drive.lefty #joy-zone { left: auto; right: 0; }
 #drive.lefty #pedals { right: auto; left: calc(var(--safe-l) + 18px); }
 #btn-drive svg { fill: none; stroke: var(--ink); stroke-width: 2.2; }
+
+#pedals .stack { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.icon-btn.pedal.nitro { width: clamp(58px, 15vmin, 84px); height: clamp(58px, 15vmin, 84px); background: rgba(255, 214, 10, 0.3); border-color: #fff1a8; }
+.icon-btn.pedal.nitro svg { fill: #ffd60a; stroke: #7a5a00; stroke-width: 1.2; }
+.icon-btn.pedal.nitro.low { opacity: 0.45; }
+.icon-btn.pedal.nitro.ready { animation: nitro-pulse 1.1s ease-in-out infinite; }
+@keyframes nitro-pulse { 50% { box-shadow: 0 0 0 8px rgba(255, 214, 10, 0.25); } }

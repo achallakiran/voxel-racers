@@ -45,15 +45,21 @@ Rotate prompt, tap-to-start, ADA Studios intro, title screen, 8 animated trucks 
 Title backdrop: voxel stadium at sunset (tire wall, crowd stands, floodlights, ramp, crushed cars, mesas, sun, drifting clouds/dust). Garage: its own brick workshop with roller door, shelves, workbench, lamps and a hazard-striped turntable.
 Tests: world layout, flow state machine, animation maths, particle pool, emission rules, model integrity (no overlapping voxels, parts present).
 
-**Phase 1 — Truck + physics sandbox** (DONE, awaiting feedback: Play -> Garage -> steering-wheel icon -> sandbox bowl with kickers, tabletop, whoops, hills, boulders; arcade physics; joystick + B1 gas + B2 brake, flick up = nitro; 4-camera icon; keyboard/gamepad)
-Voxel truck model (~30x18x36 voxels, big wheels, cage, stacks, light bar). Flat test arena with ramps. Arcade physics with wheel springs. Joystick + 2 buttons (touch, keyboard, gamepad). Camera icon with 4 views.
-Tests: physics step determinism, input mapping, camera cycling.
+**Phase 1 — Truck + physics sandbox** (DONE)
+Sandbox bowl, arcade physics, joystick + B1 gas + B2 brake, 4-camera icon, keyboard/gamepad.
 
-**Phase 2 — Dust Canyon track**
+**Phase 1.5 — Feel pass** (from your first test)
+Visible nitro button (tap, above gas). Per-truck engine voice, handling and suspension. Soft monster-truck body suspension (squat, dive, roll, landing bounce). Calmer jumps (launch speed cap, lower kicker). Camera icon stays for experimenting.
+
+**Game modes** (decided: both, as separate modes; race first is not required, arena is the quicker win)
+- **Arena** (Phase 2): bounded stadium, smash crushable car piles, collect stars, stunt score for air time/flips, timed rounds, rewards.
+- **Race** (Phases 3-4): bounded track with a real road (asphalt + dirt sections), grass/mud/rock off-road, barriers, checkpoints, 3 laps, rivals.
+
+**Phase 3 — Dust Canyon race track (mixed road)**
 Spline track with banking, hills, jumps, a loop, rocks and cacti, bounded by cliffs and tire walls. Surface-stick rule for the loop. Lap and checkpoint logic, mini-map.
 Tests: spline sampling, lap counting, no-skip checkpoints, loop stick speed.
 
-**Phase 3 — Rivals + race flow**
+**Phase 4 — Rivals + race flow**
 5 rivals with distinct personalities and colours, racing line with variance, light rubber-banding, pickups (nitro, cash). Countdown, positions (1st/2nd tags), results.
 Tests: AI follows line, position sorting, race state machine.
 

@@ -223,10 +223,10 @@ def main():
         h0 = page.evaluate('window.__voxelRacers.vehicle.heading')
         page.keyboard.down('ArrowUp')
         zb = page.locator('#joy-zone').bounding_box()
-        sx, sy = zb['x'] + 120, zb['y'] + zb['height'] - 90
-        page.mouse.move(sx, sy)
+        sx, sy0 = zb['x'] + 120, zb['y'] + zb['height'] - 90
+        page.mouse.move(sx, sy0)
         page.mouse.down()
-        page.mouse.move(sx + 60, sy, steps=4)
+        page.mouse.move(sx + 60, sy0, steps=4)
         page.wait_for_function(f'window.__voxelRacers.vehicle.heading < {h0} - 0.25', timeout=15000)
         check(True, 'joystick right steers the truck right')
         check(page.evaluate("document.getElementById('joy-base').classList.contains('active')"), 'joystick base shows while touched')
@@ -241,14 +241,17 @@ def main():
         check(True, 'brake button (B2) stops and reverses')
         page.mouse.up()
 
-        # nitro: flick the stick up
+        # nitro: its own visible button (tap)
+        check(visible(page, '#btn-nitro'), 'nitro button is visible')
         n0 = page.evaluate('window.__voxelRacers.vehicle.nitro')
-        page.mouse.move(sx, sy)
+        nb = page.locator('#btn-nitro').bounding_box()
+        page.mouse.move(nb['x'] + nb['width'] / 2, nb['y'] + nb['height'] / 2)
         page.mouse.down()
-        page.mouse.move(sx, sy - 70, steps=2)
-        page.wait_for_function(f'window.__voxelRacers.vehicle.nitro < {n0} - 0.2 || window.__voxelRacers.vehicle.boostT > 0', timeout=8000)
-        check(True, 'flicking the stick up fires nitro')
         page.mouse.up()
+        page.wait_for_function(f'window.__voxelRacers.vehicle.nitro < {n0} - 0.2 || window.__voxelRacers.vehicle.boostT > 0', timeout=8000)
+        check(True, 'tapping the nitro button fires a boost')
+        sy = page.evaluate('window.__voxelRacers.susp')
+        check(all(k in sy for k in ('heave', 'pitch', 'roll')), 'body suspension is live')
         page.wait_for_timeout(500)
         shot(page, '05-drive-boost')
 

@@ -15,6 +15,8 @@ import { createWorld } from './world/scenes.js';
 import { createVehicle, stepVehicle, tuningFor, BOOST_COST } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
+import { getFeel } from './vehicles/truck-feel.js';
+import { createSuspension, stepSuspension } from './vehicles/suspension.js';
 import { nextCamera, validCamera, cameraGoal, newCameraState } from './core/camera-modes.js';
 import { createTouchControls } from './ui/touch-controls.js';
 import { emissionRate, takeSpawns, makeParticle, QUALITY_SCALE } from './fx/emit.js';
@@ -252,12 +254,17 @@ function start() {
 
   // ---- driving (Phase 1)
   const touch = createTouchControls({
-    zone: $('joy-zone'), base: $('joy-base'), knob: $('joy-knob'), gas: $('btn-gas'), brake: $('btn-brake'),
+    zone: $('joy-zone'), base: $('joy-base'), knob: $('joy-knob'), gas: $('btn-gas'), brake: $('btn-brake'), nitro: $('btn-nitro'),
   });
   const flick = createFlick();
   const keys = new Set();
   let keyBoost = false;
   let prevPadBoost = false;
+  let prevTouchNitro = 0;
+  let feel = getFeel('crusher');
+  const susp = createSuspension();
+  let prevVy = 0;
+  let prevF = 0;
   let vehicle = null;
   let tune = null;
   let camMode = validCamera(save.camera);
@@ -281,7 +288,10 @@ function start() {
 
   function enterDrive() {
     const truck = TRUCKS[truckIdx];
-    tune = tuningFor(truck.stats);
+    feel = getFeel(truck.id);
+    tune = tuningFor(truck.stats, feel.handling);
+    Object.assign(susp, createSuspension());
+    prevVy = 0; prevF = 0;
     const s = SANDBOX.start;
     vehicle = createVehicle(s.x, s.z, s.heading, ARENA_TERRAIN);
     $('drive').classList.toggle('lefty', !!save.leftHanded);
@@ -291,7 +301,7 @@ function start() {
     truckMesh.rotation.order = 'YXZ';
     shake = 0; dustCarry = 0; flameCarry = 0;
     requestAnimationFrame(() => touch.layout());
-    audio.engineStart();
+    audio.engineStart(feel.voice);
   }
 
   function exitDrive() {
@@ -304,6 +314,7 @@ function start() {
     sun.target.position.set(0, 0, 0);
     for (const w of truckMesh.userData.wheels) w.group.rotation.y = 0;
     truckMesh.rotation.set(0, spin, 0);
+    truckMesh.userData.body.rotation.set(0, 0, 0);
     camera.fov = 40;
     frameCamera();
   }
@@ -329,10 +340,12 @@ function start() {
   function readInput() {
     const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
     const pad = gamepadInput(pads[0]);
-    const flicked = flick.update(Math.max(touch.state.y, pad.stickY), clock);
+    const flicked = flick.update(pad.stickY, clock);
+    const tapNitro = touch.state.nitroTaps !== prevTouchNitro;
+    prevTouchNitro = touch.state.nitroTaps;
     const padBoost = pad.boostBtn && !prevPadBoost;
     prevPadBoost = pad.boostBtn;
-    const boost = flicked || keyBoost || padBoost;
+    const boost = flicked || tapNitro || keyBoost || padBoost;
     keyBoost = false;
     return mergeInputs([
       { steer: steerCurve(touch.state.x), gas: touch.state.gas ? 1 : 0, brake: touch.state.brake ? 1 : 0 },
@@ -359,12 +372,13 @@ function start() {
   function driveFrame(dt, steps) {
     const input = readInput();
     let first = true;
+    const landings = [];
     for (let i = 0; i < steps; i++) {
       const events = stepVehicle(vehicle, first ? input : { ...input, boost: false }, ARENA_TERRAIN, tune, 1 / 60);
       first = false;
       for (const e of events) {
         if (e === 'boost') { shake = Math.max(shake, 0.35); audio.boost(); }
-        else if (e.type === 'land') { shake = Math.max(shake, Math.min(1, e.power / 18)); spawnDust(5, 3, 1.2); audio.thump(e.power); }
+        else if (e.type === 'land') { landings.push(e); shake = Math.max(shake, Math.min(1, e.power / 18)); spawnDust(5, 3, 1.2); audio.thump(e.power); }
         else if (e.type === 'hit' || e.type === 'wall') { shake = Math.max(shake, Math.min(0.8, e.power / 20)); audio.thump(e.power * 0.6); }
       }
     }
@@ -377,7 +391,7 @@ function start() {
     prevRev = rev;
     rev += (target - rev) * (1 - Math.exp(-dt * 6));
     decel = dt > 0 ? Math.max(0, (prevRev - rev) / dt) : 0;
-    audio.engineSet(rev);
+    audio.engineSet(rev, input.gas);
 
     // pose
     truckMesh.position.set(v.x, v.y, v.z);
@@ -386,6 +400,17 @@ function start() {
       if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
     }
     animateTruck(truckMesh, dt, rev, clock, v.f / 0.6);
+
+    // soft monster-truck suspension: the body wallows on its wheels
+    let impact = 0;
+    for (const e of landings) impact = Math.max(impact, e.power);
+    const accelF = dt > 0 ? (v.f - prevF) / dt : 0;
+    const vyDelta = v.grounded && dt > 0 ? (v.vy - prevVy) : 0;
+    stepSuspension(susp, { accelF, lat: v.f * v.yawRate, vyDelta: Math.abs(vyDelta) > 6 ? 0 : vyDelta, impact }, feel.sus, dt);
+    prevF = v.f; prevVy = v.vy;
+    const body = truckMesh.userData.body;
+    body.position.y += susp.heave;
+    body.rotation.set(susp.pitch, 0, susp.roll);
 
     // dust behind the wheels, flames while boosting
     const scale = QUALITY_SCALE[save.particles] ?? 1;
@@ -427,6 +452,8 @@ function start() {
     // HUD
     $('nitro-fill').style.width = `${Math.round(v.nitro * 100)}%`;
     $('nitro').classList.toggle('low', v.nitro < BOOST_COST);
+    $('btn-nitro').classList.toggle('low', v.nitro < BOOST_COST);
+    $('btn-nitro').classList.toggle('ready', v.nitro >= BOOST_COST && v.boostT <= 0);
   }
 
   showTruck(truckIdx);
@@ -509,6 +536,8 @@ function start() {
     get rev() { return rev; },
     get vehicle() { return vehicle; },
     get camMode() { return camMode; },
+    get susp() { return susp; },
+    get voice() { return feel.voice; },
     get fov() { return camera.fov; },
     getTruck,
   };
