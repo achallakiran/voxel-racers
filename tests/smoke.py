@@ -113,7 +113,7 @@ def main():
         # logo fades away
         page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .emblem')).opacity) < 0.05", timeout=5000)
         check(True, 'logo fades out')
-        # then ADA STUDIOS PRESENTS appears and types out without clipping
+        # then ADA STUDIOS PRESENTS appears and shows in full
         page.wait_for_function(
             "['.line1', '.line2'].every(s => { const e = document.querySelector('#intro ' + s); return e.clientWidth > 0 && e.clientWidth >= e.scrollWidth - 1; })",
             timeout=6000)

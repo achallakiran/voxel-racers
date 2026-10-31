@@ -80,18 +80,14 @@ img { -webkit-user-drag: none; pointer-events: none; }
 }
 #intro .studio span {
   display: block;
-  overflow: hidden;
   white-space: nowrap;
-  width: 0;
 }
 #intro .line1 { font-size: clamp(22px, 8vmin, 64px); letter-spacing: 0.18em; }
 #intro .line2 { font-size: clamp(14px, 4.4vmin, 34px); letter-spacing: 0.5em; color: #ffd60a; text-shadow: 0 0.4vmin 0 #8a5a00; }
 
-/* timeline (seconds): logo 0-3.0, studio line 3.2-6.4, title after 6.6 */
+/* timeline (seconds): logo 0-3.0, studio line 3.2-6.2, title after 6.6 */
 #intro.on.play .emblem { animation: logo-show 3s ease-in-out 0.2s forwards; }
-#intro.on.play .studio { animation: studio-show 3.2s ease-in-out 3.2s forwards; }
-#intro.on.play .line1 { animation: type1 0.9s steps(11) 3.5s forwards; }
-#intro.on.play .line2 { animation: type2 0.7s steps(8) 4.5s forwards; }
+#intro.on.play .studio { animation: studio-show 3s ease-in-out 3.2s forwards; }
 @keyframes logo-show {
   0% { opacity: 0; transform: scale(0.82); }
   25% { opacity: 1; transform: scale(1); }
@@ -99,13 +95,11 @@ img { -webkit-user-drag: none; pointer-events: none; }
   100% { opacity: 0; transform: scale(1.08); }
 }
 @keyframes studio-show {
-  0% { opacity: 0; }
-  12% { opacity: 1; }
-  82% { opacity: 1; }
-  100% { opacity: 0; }
+  0% { opacity: 0; transform: scale(0.82); }
+  25% { opacity: 1; transform: scale(1); }
+  75% { opacity: 1; transform: scale(1.03); }
+  100% { opacity: 0; transform: scale(1.08); }
 }
-@keyframes type1 { from { width: 0; } to { width: 9.2em; } }
-@keyframes type2 { from { width: 0; } to { width: 9.4em; } }
 
 /* ---------- title ---------- */
 #title .logo {
