@@ -12,6 +12,11 @@ import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
 import { createWorld } from './world/scenes.js';
+import { createVehicle, stepVehicle, tuningFor, BOOST_COST } from './physics/arcade.js';
+import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
+import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
+import { nextCamera, validCamera, cameraGoal, newCameraState } from './core/camera-modes.js';
+import { createTouchControls } from './ui/touch-controls.js';
 import { emissionRate, takeSpawns, makeParticle, QUALITY_SCALE } from './fx/emit.js';
 
 const $ = (id) => document.getElementById(id);
@@ -74,7 +79,7 @@ function start() {
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, near: 1, far: 30 });
-  scene.add(sun);
+  scene.add(sun, sun.target);
   const spot = new THREE.SpotLight('#fff1d0', 2.6, 0, 0.7, 0.6, 0);
   spot.position.set(0, 6, 1.5);
   spot.target.position.set(0, 0, 0);
@@ -85,7 +90,7 @@ function start() {
   const camBase = { x: 0, y: 0, z: 0, ly: 0 };
 
   // particles (smoke / flame)
-  const pool = new ParticlePool(700);
+  const pool = new ParticlePool(1400);
   const particles = new ParticleRenderer(scene, pool);
   const rand = () => Math.random();
 
@@ -108,9 +113,11 @@ function start() {
   const worldDir = new THREE.Vector3();
 
   // ---- flow / screens
-  const flow = createFlow((state) => {
+  const flow = createFlow((state, prev) => {
     for (const id of SCREENS) $(id).classList.toggle('on', id === state);
-    world.setMode(state === 'garage' ? 'garage' : 'outdoor');
+    world.setMode(state);
+    if (state === 'drive') enterDrive();
+    else if (prev === 'drive') exitDrive();
     if (state === 'intro') {
       const intro = $('intro');
       intro.classList.remove('play');
@@ -194,7 +201,7 @@ function start() {
   $('btn-next').addEventListener('click', () => { audio.click(); showTruck(truckIdx + 1); });
   $('btn-paint').addEventListener('click', cyclePaint);
 
-  canvas.addEventListener('pointerdown', (e) => { dragging = true; held = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerdown', (e) => { if (flow.state === 'drive') return; dragging = true; held = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
     spin += (e.clientX - lastX) * 0.01;
@@ -242,6 +249,186 @@ function start() {
     }
   }
 
+
+  // ---- driving (Phase 1)
+  const touch = createTouchControls({
+    zone: $('joy-zone'), base: $('joy-base'), knob: $('joy-knob'), gas: $('btn-gas'), brake: $('btn-brake'),
+  });
+  const flick = createFlick();
+  const keys = new Set();
+  let keyBoost = false;
+  let prevPadBoost = false;
+  let vehicle = null;
+  let tune = null;
+  let camMode = validCamera(save.camera);
+  let camState = null;
+  const camPos = new THREE.Vector3();
+  const camLook = new THREE.Vector3();
+  let camFov = 40;
+  let shake = 0;
+  let dustCarry = 0;
+  let flameCarry = 0;
+  const tmp = new THREE.Vector3();
+
+  function snapCamera() {
+    const t = { x: vehicle.x, y: vehicle.y, z: vehicle.z, heading: vehicle.heading, speed: 0 };
+    camState = newCameraState(t);
+    const g = cameraGoal(camMode, t, camState);
+    camPos.set(g.pos.x, g.pos.y, g.pos.z);
+    camLook.set(g.look.x, g.look.y, g.look.z);
+    camFov = g.fov;
+  }
+
+  function enterDrive() {
+    const truck = TRUCKS[truckIdx];
+    tune = tuningFor(truck.stats);
+    const s = SANDBOX.start;
+    vehicle = createVehicle(s.x, s.z, s.heading, ARENA_TERRAIN);
+    $('drive').classList.toggle('lefty', !!save.leftHanded);
+    Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, far: 60 });
+    sun.shadow.camera.updateProjectionMatrix();
+    snapCamera();
+    truckMesh.rotation.order = 'YXZ';
+    shake = 0; dustCarry = 0; flameCarry = 0;
+    requestAnimationFrame(() => touch.layout());
+    audio.engineStart();
+  }
+
+  function exitDrive() {
+    touch.reset();
+    keys.clear();
+    audio.engineStop();
+    vehicle = null;
+    Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.target.position.set(0, 0, 0);
+    for (const w of truckMesh.userData.wheels) w.group.rotation.y = 0;
+    truckMesh.rotation.set(0, spin, 0);
+    camera.fov = 40;
+    frameCamera();
+  }
+
+  $('btn-drive').addEventListener('click', () => { audio.unlock(); audio.click(); flow.send('drive'); });
+  $('btn-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
+  $('btn-cam').addEventListener('click', () => {
+    camMode = nextCamera(camMode);
+    save.camera = camMode;
+    storage.save(save);
+    if (vehicle) camState = newCameraState(vehicle);
+    audio.click();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (flow.state !== 'drive') return;
+    if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+    if (!e.repeat && isBoostKey(e.code)) keyBoost = true;
+    keys.add(e.code);
+  });
+  window.addEventListener('keyup', (e) => keys.delete(e.code));
+  window.addEventListener('blur', () => { keys.clear(); touch.reset(); });
+
+  function readInput() {
+    const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
+    const pad = gamepadInput(pads[0]);
+    const flicked = flick.update(Math.max(touch.state.y, pad.stickY), clock);
+    const padBoost = pad.boostBtn && !prevPadBoost;
+    prevPadBoost = pad.boostBtn;
+    const boost = flicked || keyBoost || padBoost;
+    keyBoost = false;
+    return mergeInputs([
+      { steer: steerCurve(touch.state.x), gas: touch.state.gas ? 1 : 0, brake: touch.state.brake ? 1 : 0 },
+      keyboardInput(keys),
+      { steer: pad.steer, gas: pad.gas, brake: pad.brake },
+      { boost },
+    ], save.autoGas);
+  }
+
+  function spawnDust(n, spread, up) {
+    const scale = QUALITY_SCALE[save.particles] ?? 1;
+    const count = Math.round(n * scale);
+    for (const w of truckMesh.userData.wheels) {
+      w.group.getWorldPosition(tmp);
+      for (let i = 0; i < count; i++) {
+        const dir = { x: (rand() - 0.5) * spread - vehicle.vx * 0.1, y: up, z: (rand() - 0.5) * spread - vehicle.vz * 0.1 };
+        const p = makeParticle('smoke', 'dust', { x: tmp.x, y: vehicle.y + 0.12, z: tmp.z }, dir, 0.5, rand(), rand(), rand());
+        p.rise = 0.25; p.size *= 1.6; p.life *= 0.7;
+        pool.spawn(p);
+      }
+    }
+  }
+
+  function driveFrame(dt, steps) {
+    const input = readInput();
+    let first = true;
+    for (let i = 0; i < steps; i++) {
+      const events = stepVehicle(vehicle, first ? input : { ...input, boost: false }, ARENA_TERRAIN, tune, 1 / 60);
+      first = false;
+      for (const e of events) {
+        if (e === 'boost') { shake = Math.max(shake, 0.35); audio.boost(); }
+        else if (e.type === 'land') { shake = Math.max(shake, Math.min(1, e.power / 18)); spawnDust(5, 3, 1.2); audio.thump(e.power); }
+        else if (e.type === 'hit' || e.type === 'wall') { shake = Math.max(shake, Math.min(0.8, e.power / 20)); audio.thump(e.power * 0.6); }
+      }
+    }
+    const v = vehicle;
+    const speedNorm = Math.min(1, Math.abs(v.f) / tune.maxSpeed);
+    const boosting = v.boostT > 0;
+
+    // engine revs follow throttle and speed
+    const target = boosting ? 1 : Math.min(1, 0.22 + speedNorm * 0.55 + (input.gas ? 0.25 : 0));
+    prevRev = rev;
+    rev += (target - rev) * (1 - Math.exp(-dt * 6));
+    decel = dt > 0 ? Math.max(0, (prevRev - rev) / dt) : 0;
+    audio.engineSet(rev);
+
+    // pose
+    truckMesh.position.set(v.x, v.y, v.z);
+    truckMesh.rotation.set(-v.pitch, v.heading, v.roll);
+    for (const w of truckMesh.userData.wheels) {
+      if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
+    }
+    animateTruck(truckMesh, dt, rev, clock, v.f / 0.6);
+
+    // dust behind the wheels, flames while boosting
+    const scale = QUALITY_SCALE[save.particles] ?? 1;
+    if (v.grounded) {
+      const rate = (Math.abs(v.f) > 2 ? 16 * speedNorm + 10 * Math.min(1, Math.abs(v.l) / 4) : 0);
+      const tk = takeSpawns(dustCarry, rate, dt, 1);
+      dustCarry = tk.carry;
+      if (tk.n > 0) spawnDust(Math.max(1, Math.round(tk.n / 2)), 1.2, 0.5);
+    }
+    if (boosting) {
+      const tk = takeSpawns(flameCarry, 90, dt, scale);
+      flameCarry = tk.carry;
+      truckMesh.updateMatrixWorld(true);
+      for (let i = 0; i < tk.n; i++) {
+        tmp.set((rand() - 0.5) * 0.5, 0.55, -truckMesh.userData.length / 2);
+        truckMesh.localToWorld(tmp);
+        const dir = { x: -Math.sin(v.heading), y: 0.1, z: -Math.cos(v.heading) };
+        pool.spawn(makeParticle('flame', 'fire', tmp, dir, 1, rand(), rand(), rand()));
+      }
+    }
+    emitExhaust(dt);
+
+    // camera
+    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f }, camState);
+    const kp = camMode === 'iso-fixed' ? 7 : (camMode === 'chase' ? 6 : 5);
+    camPos.lerp(tmp.set(g.pos.x, g.pos.y, g.pos.z), 1 - Math.exp(-kp * dt));
+    camLook.lerp(tmp.set(g.look.x, g.look.y, g.look.z), 1 - Math.exp(-(kp + 2) * dt));
+    camFov += (g.fov - camFov) * (1 - Math.exp(-4 * dt));
+    shake *= Math.exp(-6 * dt);
+    camera.position.copy(camPos);
+    if (shake > 0.01) camera.position.add(tmp.set((rand() - 0.5) * shake * 0.6, (rand() - 0.5) * shake * 0.6, (rand() - 0.5) * shake * 0.6));
+    camera.lookAt(camLook);
+    if (Math.abs(camera.fov - camFov) > 0.01) { camera.fov = camFov; camera.updateProjectionMatrix(); }
+
+    // light + shadow follow the truck
+    sun.target.position.set(v.x, 0, v.z);
+    sun.position.set(v.x + 8, 12, v.z + 5);
+
+    // HUD
+    $('nitro-fill').style.width = `${Math.round(v.nitro * 100)}%`;
+    $('nitro').classList.toggle('low', v.nitro < BOOST_COST);
+  }
+
   showTruck(truckIdx);
 
   const stepper = new FixedStepper(1 / 60);
@@ -252,35 +439,42 @@ function start() {
     clock += dt;
 
     const { steps } = stepper.advance(dt);
-    for (let i = 0; i < steps; i++) {
-      if (!dragging) spin += 0.35 / 60;
+    if (flow.state === 'drive' && vehicle) {
+      driveFrame(dt, steps);
+      world.update(dt, clock, spin);
+      pool.update(dt);
+      particles.update();
+    } else {
+      for (let i = 0; i < steps; i++) {
+        if (!dragging) spin += 0.35 / 60;
+      }
+
+      // engine revs: idle, periodic show-off burst, or held by the player
+      const cycle = clock % 6.5;
+      const target = held ? 1 : (cycle > 4.2 && cycle < 5.4 ? 1 : 0.28 + 0.12 * Math.sin(clock * 1.7));
+      prevRev = rev;
+      rev += (target - rev) * (1 - Math.exp(-dt * 5));
+      decel = dt > 0 ? Math.max(0, (prevRev - rev) / dt) : 0;
+
+      // title shifts the truck right to make room for the logo (landscape only)
+      const wantX = flow.state === 'title' && camera.aspect > 1.2 ? 1.25 : 0;
+      truckX += (wantX - truckX) * (1 - Math.exp(-dt * 4));
+      const wantY = flow.state === 'garage' ? 0.1 : 0;
+      truckY += (wantY - truckY) * (1 - Math.exp(-dt * 6));
+      truckMesh.position.set(truckX, truckY, 0);
+      truckMesh.rotation.y = spin;
+
+      // gentle camera sway on the title, steady in the garage
+      const sway = flow.state === 'garage' ? 0 : Math.sin(clock * 0.35) * 0.9;
+      camera.position.x += (sway - camera.position.x) * (1 - Math.exp(-dt * 3));
+      camera.lookAt(0, camBase.ly, 0);
+      world.update(dt, clock, spin);
+
+      animateTruck(truckMesh, dt, rev, clock);
+      emitExhaust(dt);
+      pool.update(dt);
+      particles.update();
     }
-
-    // engine revs: idle, periodic show-off burst, or held by the player
-    const cycle = clock % 6.5;
-    const target = held ? 1 : (cycle > 4.2 && cycle < 5.4 ? 1 : 0.28 + 0.12 * Math.sin(clock * 1.7));
-    prevRev = rev;
-    rev += (target - rev) * (1 - Math.exp(-dt * 5));
-    decel = dt > 0 ? Math.max(0, (prevRev - rev) / dt) : 0;
-
-    // title shifts the truck right to make room for the logo (landscape only)
-    const wantX = flow.state === 'title' && camera.aspect > 1.2 ? 1.25 : 0;
-    truckX += (wantX - truckX) * (1 - Math.exp(-dt * 4));
-    const wantY = flow.state === 'garage' ? 0.1 : 0;
-    truckY += (wantY - truckY) * (1 - Math.exp(-dt * 6));
-    truckMesh.position.set(truckX, truckY, 0);
-    truckMesh.rotation.y = spin;
-
-    // gentle camera sway on the title, steady in the garage
-    const sway = flow.state === 'garage' ? 0 : Math.sin(clock * 0.35) * 0.9;
-    camera.position.x += (sway - camera.position.x) * (1 - Math.exp(-dt * 3));
-    camera.lookAt(0, camBase.ly, 0);
-    world.update(dt, clock, spin);
-
-    animateTruck(truckMesh, dt, rev, clock);
-    emitExhaust(dt);
-    pool.update(dt);
-    particles.update();
 
     // the intro is fully opaque: skip drawing the 3D scene behind it
     if (flow.state !== 'boot' && flow.state !== 'intro') { renderer.render(scene, camera); drawn++; }
@@ -313,6 +507,9 @@ function start() {
     get wheels() { return truckMesh.userData.wheels.length; },
     get particlesAlive() { return pool.alive; },
     get rev() { return rev; },
+    get vehicle() { return vehicle; },
+    get camMode() { return camMode; },
+    get fov() { return camera.fov; },
     getTruck,
   };
 }

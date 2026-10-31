@@ -119,9 +119,9 @@ export function createTruckMesh(truck, paintOverride) {
 }
 
 // Advance part animations. rev is 0..1 engine revs; time is seconds (for idle shake).
-export function animateTruck(root, dt, rev, time) {
+export function animateTruck(root, dt, rev, time, wheelRate) {
   const u = root.userData;
-  for (const w of u.wheels) w.spin.rotation.x += dt * (1 + rev * 9);
+  for (const w of u.wheels) w.spin.rotation.x += dt * (wheelRate ?? (1 + rev * 9));
   for (const r of u.rig) {
     r.phase = advancePhase(r.phase, dt, r.anim.speed, rev);
     const v = animValue(r.anim, r.phase);

@@ -38,6 +38,9 @@
     <div id="truck-name"></div>
     <div id="truck-blurb"></div>
     <div id="truck-stats"></div>
+    <button id="btn-drive" class="icon-btn huge" aria-label="drive">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.2"/><path d="M3.2 10.5c5.5 1.4 11.9 1.4 17.6 0M12 14.2V21M9.8 13.2 6 19M14.2 13.2 18 19"/></svg>
+    </button>
     <div id="controls">
       <button id="btn-prev" class="icon-btn" aria-label="previous truck">
         <svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg>
@@ -47,6 +50,29 @@
       </button>
       <button id="btn-next" class="icon-btn" aria-label="next truck">
         <svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Drive: icons only. Left = floating joystick, right = gas + brake, top = exit / camera / nitro -->
+  <div id="drive" class="screen passthrough">
+    <button id="btn-exit" class="icon-btn small" aria-label="back to garage">
+      <svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg>
+    </button>
+    <div id="nitro" aria-label="nitro">
+      <svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
+      <div class="bar"><i id="nitro-fill"></i></div>
+    </div>
+    <button id="btn-cam" class="icon-btn small" aria-label="camera view">
+      <svg viewBox="0 0 24 24"><rect x="3" y="7" width="13" height="10" rx="2"/><path d="m16 11 5-3v8l-5-3"/></svg>
+    </button>
+    <div id="joy-zone"><div id="joy-base"><div id="joy-knob"></div></div></div>
+    <div id="pedals">
+      <button id="btn-brake" class="icon-btn pedal" aria-label="brake">
+        <svg viewBox="0 0 24 24"><path d="M6 8 12 14l6-6M6 14l6 6 6-6"/></svg>
+      </button>
+      <button id="btn-gas" class="icon-btn pedal gas" aria-label="gas">
+        <svg viewBox="0 0 24 24"><path d="M6 10 12 4l6 6M6 18l6-6 6 6"/></svg>
       </button>
     </div>
   </div>

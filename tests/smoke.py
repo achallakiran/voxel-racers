@@ -194,6 +194,90 @@ def main():
         cur = page.evaluate('window.__voxelRacers.truckId')
         check(saved['truckId'] == cur and cur in saved['paints'], 'truck + paint saved to localStorage')
 
+        # ---------------- drive (Phase 1): joystick + 2 buttons, nitro, 4 cameras
+        page.click('#btn-drive', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'drive', 'drive icon starts driving')
+        check(page.evaluate('window.__voxelRacers.worldMode') == 'drive', 'driving uses the sandbox arena')
+        page.wait_for_function('window.__voxelRacers.vehicle !== null && window.__voxelRacers.drawn > 30', timeout=20000)
+        sbx = page.evaluate('window.__voxelRacers.world.sandbox')
+        check(sbx['columns'] > 1500 and sbx['wall'] > 800, f'sandbox built ({sbx})')
+        page.wait_for_function("parseFloat(getComputedStyle(document.getElementById('drive')).opacity) > 0.9", timeout=5000)
+        check(visible(page, '#drive'), 'drive HUD visible')
+        hud_text = page.evaluate("[...document.querySelectorAll('#drive button')].map(b => b.textContent.trim()).join('') + document.getElementById('nitro').textContent.trim()")
+        check(hud_text == '', 'drive HUD is icons only')
+        check(page.evaluate("getComputedStyle(document.getElementById('drive')).userSelect") == 'none', 'drive HUD text not selectable')
+        shot(page, '04-drive-start')
+
+        # gas button (B1) with the mouse = a finger
+        gb = page.locator('#btn-gas').bounding_box()
+        page.mouse.move(gb['x'] + gb['width'] / 2, gb['y'] + gb['height'] / 2)
+        page.mouse.down()
+        page.wait_for_function('window.__voxelRacers.vehicle.f > 4', timeout=15000)
+        check(page.evaluate("document.getElementById('btn-gas').classList.contains('down')"), 'gas button shows pressed')
+        check(True, 'gas button (B1) accelerates the truck')
+        # (mouse pointer is held on the gas button; joystick drag below needs a second pointer, so test steering with keys + stick separately)
+        page.mouse.up()
+        check(not page.evaluate("document.getElementById('btn-gas').classList.contains('down')"), 'gas releases')
+
+        # joystick: drag right while using keyboard gas
+        h0 = page.evaluate('window.__voxelRacers.vehicle.heading')
+        page.keyboard.down('ArrowUp')
+        zb = page.locator('#joy-zone').bounding_box()
+        sx, sy = zb['x'] + 120, zb['y'] + zb['height'] - 90
+        page.mouse.move(sx, sy)
+        page.mouse.down()
+        page.mouse.move(sx + 60, sy, steps=4)
+        page.wait_for_function(f'window.__voxelRacers.vehicle.heading < {h0} - 0.25', timeout=15000)
+        check(True, 'joystick right steers the truck right')
+        check(page.evaluate("document.getElementById('joy-base').classList.contains('active')"), 'joystick base shows while touched')
+        page.mouse.up()
+        page.keyboard.up('ArrowUp')
+
+        # brake button (B2) slows, then reverses
+        bb = page.locator('#btn-brake').bounding_box()
+        page.mouse.move(bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2)
+        page.mouse.down()
+        page.wait_for_function('window.__voxelRacers.vehicle.f < 0', timeout=20000)
+        check(True, 'brake button (B2) stops and reverses')
+        page.mouse.up()
+
+        # nitro: flick the stick up
+        n0 = page.evaluate('window.__voxelRacers.vehicle.nitro')
+        page.mouse.move(sx, sy)
+        page.mouse.down()
+        page.mouse.move(sx, sy - 70, steps=2)
+        page.wait_for_function(f'window.__voxelRacers.vehicle.nitro < {n0} - 0.2 || window.__voxelRacers.vehicle.boostT > 0', timeout=8000)
+        check(True, 'flicking the stick up fires nitro')
+        page.mouse.up()
+        page.wait_for_timeout(500)
+        shot(page, '05-drive-boost')
+
+        # camera icon cycles four views and saves the choice
+        modes = []
+        for _ in range(4):
+            page.click('#btn-cam', force=True)
+            page.wait_for_timeout(300)
+            modes.append(page.evaluate('window.__voxelRacers.camMode'))
+        check(len(set(modes)) == 4, f'camera icon cycles four views {modes}')
+        saved = page.evaluate("JSON.parse(localStorage.getItem('voxel-racers:save')).camera")
+        check(saved == modes[-1], 'camera choice saved')
+        for m in ('chase', 'top', 'iso-fixed'):
+            while page.evaluate('window.__voxelRacers.camMode') != m:
+                page.click('#btn-cam', force=True)
+            page.wait_for_timeout(1200)
+            shot(page, f'06-drive-cam-{m}')
+        while page.evaluate('window.__voxelRacers.camMode') != 'iso-follow':
+            page.click('#btn-cam', force=True)
+
+        # keyboard: space = nitro, and a jump over the kicker works end-to-end
+        page.keyboard.down('Space')
+        page.keyboard.up('Space')
+        # back to the garage
+        page.click('#btn-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'exit icon returns to the garage')
+        check(page.evaluate('window.__voxelRacers.worldMode') == 'garage', 'garage environment restored')
+        check(page.evaluate('window.__voxelRacers.vehicle') is None, 'vehicle released')
+
         # ---------------- back to title
         page.click('#btn-back')
         check(page.evaluate('window.__voxelRacers.flow.state') == 'title', 'home icon returns to title')

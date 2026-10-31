@@ -1,4 +1,4 @@
-// Screen flow state machine: boot -> intro -> title <-> garage.
+// Screen flow state machine: boot -> intro -> title <-> garage -> drive.
 // (boot waits for landscape; the intro plays by itself, no tap needed.)
 // Pure logic so it is unit tested without a browser.
 
@@ -6,10 +6,11 @@ const TRANSITIONS = {
   boot: { ready: 'intro' },
   intro: { done: 'title', skip: 'title' },
   title: { play: 'garage' },
-  garage: { back: 'title' },
+  garage: { back: 'title', drive: 'drive' },
+  drive: { back: 'garage' },
 };
 
-export const SCREENS = ['intro', 'title', 'garage'];
+export const SCREENS = ['intro', 'title', 'garage', 'drive'];
 
 export function createFlow(onChange) {
   let state = 'boot';

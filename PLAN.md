@@ -45,7 +45,7 @@ Rotate prompt, tap-to-start, ADA Studios intro, title screen, 8 animated trucks 
 Title backdrop: voxel stadium at sunset (tire wall, crowd stands, floodlights, ramp, crushed cars, mesas, sun, drifting clouds/dust). Garage: its own brick workshop with roller door, shelves, workbench, lamps and a hazard-striped turntable.
 Tests: world layout, flow state machine, animation maths, particle pool, emission rules, model integrity (no overlapping voxels, parts present).
 
-**Phase 1 — Truck + physics sandbox**
+**Phase 1 — Truck + physics sandbox** (DONE, awaiting feedback: Play -> Garage -> steering-wheel icon -> sandbox bowl with kickers, tabletop, whoops, hills, boulders; arcade physics; joystick + B1 gas + B2 brake, flick up = nitro; 4-camera icon; keyboard/gamepad)
 Voxel truck model (~30x18x36 voxels, big wheels, cage, stacks, light bar). Flat test arena with ramps. Arcade physics with wheel springs. Joystick + 2 buttons (touch, keyboard, gamepad). Camera icon with 4 views.
 Tests: physics step determinism, input mapping, camera cycling.
 

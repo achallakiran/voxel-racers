@@ -260,3 +260,79 @@ img { -webkit-user-drag: none; pointer-events: none; }
   text-align: center; background: var(--night); font-size: 18px;
 }
 #fatal[hidden] { display: none; }
+
+/* ---------- garage: drive button ---------- */
+#btn-drive {
+  position: absolute;
+  right: calc(var(--safe-r, 0px) + 22px);
+  bottom: calc(var(--safe-b) + 18px);
+}
+
+/* ---------- drive HUD (icons only) ---------- */
+#drive.screen { transition: opacity 0.25s ease, visibility 0s linear 0.25s; }
+#drive.screen.on { transition: opacity 0.25s ease; }
+#drive #btn-exit { position: absolute; top: calc(var(--safe-t) + 10px); left: calc(var(--safe-l) + 12px); }
+#drive #btn-cam { position: absolute; top: calc(var(--safe-t) + 10px); right: calc(var(--safe-r, 0px) + 12px); }
+#nitro {
+  position: absolute;
+  top: calc(var(--safe-t) + 18px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(11, 16, 38, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+}
+#nitro svg { width: 20px; height: 20px; fill: #ffd60a; }
+#nitro .bar { width: clamp(90px, 20vw, 170px); height: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.18); overflow: hidden; }
+#nitro .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff9f1c, #ffe66d); border-radius: 6px; transition: width 0.08s linear; }
+#nitro.low .bar i { background: #ff5d5d; }
+
+#joy-zone {
+  position: absolute;
+  left: 0; top: 22%; bottom: 0;
+  width: 46%;
+  pointer-events: auto;
+  touch-action: none;
+}
+#joy-base {
+  --r: 60px;
+  position: absolute;
+  width: calc(var(--r) * 2);
+  height: calc(var(--r) * 2);
+  margin: calc(var(--r) * -1) 0 0 calc(var(--r) * -1);
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  background: rgba(11, 16, 38, 0.3);
+  opacity: 0.45;
+  pointer-events: none;
+}
+#joy-base.active { opacity: 1; background: rgba(11, 16, 38, 0.45); }
+#joy-knob {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 46%; height: 46%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 183, 3, 0.85);
+  border: 3px solid #fff;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+}
+#pedals {
+  position: absolute;
+  right: calc(var(--safe-r, 0px) + 18px);
+  bottom: calc(var(--safe-b) + 18px);
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+.icon-btn.pedal { width: clamp(72px, 19vmin, 104px); height: clamp(72px, 19vmin, 104px); touch-action: none; }
+.icon-btn.pedal.gas { width: clamp(88px, 24vmin, 128px); height: clamp(88px, 24vmin, 128px); background: rgba(46, 204, 113, 0.28); border-color: #b8f5cf; }
+.icon-btn.pedal:not(.gas) { background: rgba(231, 76, 60, 0.28); border-color: #ffc4bd; }
+.icon-btn.pedal.down { transform: scale(0.9); background: rgba(255, 183, 3, 0.5); }
+.icon-btn.pedal svg { width: 56%; height: 56%; stroke-width: 3; }
+#drive.lefty #joy-zone { left: auto; right: 0; }
+#drive.lefty #pedals { right: auto; left: calc(var(--safe-l) + 18px); }

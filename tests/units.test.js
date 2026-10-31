@@ -224,7 +224,7 @@ test('flow: boot -> intro -> title <-> garage, invalid events ignored', () => {
   assert.ok(f.send('back'));
   assert.equal(f.state, 'title');
   assert.deepEqual(log, ['boot>intro', 'intro>title', 'title>garage', 'garage>title']);
-  assert.deepEqual(SCREENS, ['intro', 'title', 'garage']);
+  assert.deepEqual(SCREENS, ['intro', 'title', 'garage', 'drive']);
 });
 
 test('intro can finish by timer as well as by skip', () => {
@@ -297,4 +297,242 @@ test('layout: nothing sits on the truck, tire wall and crowd on their rings', ()
   for (const c of L.carPileLayout()) assert.ok(Math.hypot(c.x, c.z) > L.ARENA.truckClear);
   for (const d of L.dustLayout()) assert.ok(d.y > 0 && d.v > 0);
   for (const c of L.cloudsLayout()) assert.ok(c.cubes.length >= 7);
+});
+
+// ---------- Phase 1: driving sandbox
+import { createVehicle, stepVehicle, tuningFor, BOOST_COST } from '../src/physics/arcade.js';
+import { terrain as ARENA_TERRAIN, heightAt, terrainColumns, wallRing, SANDBOX, OBSTACLES, FEATURES } from '../src/world/arena-layout.js';
+import { stickVector, steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from '../src/core/input.js';
+import { CAMERA_MODES, nextCamera, validCamera, cameraGoal, newCameraState } from '../src/core/camera-modes.js';
+
+const FLAT = { heightAt: () => 0, obstacles: [], radius: 1000 };
+const STATS = { speed: 6, grip: 6, weight: 6 };
+const DT = 1 / 60;
+function run(v, input, terrain, seconds, tune = tuningFor(STATS)) {
+  const events = [];
+  for (let i = 0; i < Math.round(seconds / DT); i++) events.push(...stepVehicle(v, input, terrain, tune, DT));
+  return events;
+}
+
+test('arena: flow reaches drive and back', () => {
+  const f = createFlow();
+  f.send('ready'); f.send('done'); f.send('play');
+  assert.equal(f.state, 'garage');
+  assert.ok(f.send('drive'));
+  assert.equal(f.state, 'drive');
+  assert.ok(!f.send('play'), 'play ignored while driving');
+  assert.ok(f.send('back'));
+  assert.equal(f.state, 'garage');
+  assert.ok(SCREENS.includes('drive'));
+});
+
+test('physics: deterministic', () => {
+  const a = createVehicle(0, 0, 0, FLAT);
+  const b = createVehicle(0, 0, 0, FLAT);
+  const input = { steer: 0.5, gas: 1, brake: 0, boost: false };
+  run(a, input, ARENA_TERRAIN, 3);
+  run(b, input, ARENA_TERRAIN, 3);
+  assert.deepEqual(a, b);
+});
+
+test('physics: gas accelerates forward, capped at max speed', () => {
+  const v = createVehicle(0, 0, 0, FLAT);
+  const tune = tuningFor(STATS);
+  run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 2);
+  assert.ok(v.f > 5, `speed ${v.f}`);
+  assert.ok(v.z > 5 && Math.abs(v.x) < 1e-6, 'moves along +z at heading 0');
+  run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 20);
+  assert.ok(v.f <= tune.maxSpeed + 0.01, `capped ${v.f} <= ${tune.maxSpeed}`);
+  assert.ok(v.f > tune.maxSpeed * 0.9);
+});
+
+test('physics: faster trucks reach higher top speed', () => {
+  const slow = tuningFor({ speed: 2, grip: 5, weight: 5 });
+  const fast = tuningFor({ speed: 9, grip: 5, weight: 5 });
+  assert.ok(fast.maxSpeed > slow.maxSpeed && fast.accel > slow.accel);
+});
+
+test('physics: brake stops, then reverses', () => {
+  const v = createVehicle(0, 0, 0, FLAT);
+  run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 2);
+  run(v, { steer: 0, gas: 0, brake: 1 }, FLAT, 1.5);
+  assert.ok(v.f < 0, `reversing ${v.f}`);
+  run(v, { steer: 0, gas: 0, brake: 1 }, FLAT, 5);
+  assert.ok(v.f >= -tuningFor(STATS).reverseMax - 0.01);
+});
+
+test('physics: steering turns right for positive input, none when standing still', () => {
+  const still = createVehicle(0, 0, 0, FLAT);
+  run(still, { steer: 1, gas: 0, brake: 0 }, FLAT, 1);
+  assert.equal(still.heading, 0);
+  const v = createVehicle(0, 0, 0, FLAT);
+  run(v, { steer: 1, gas: 1, brake: 0 }, FLAT, 1.5);
+  assert.ok(v.heading < -0.3, `heading ${v.heading}`);
+  const w = createVehicle(0, 0, 0, FLAT);
+  run(w, { steer: -1, gas: 1, brake: 0 }, FLAT, 1.5);
+  assert.ok(w.heading > 0.3);
+});
+
+test('physics: grip stat reduces sliding', () => {
+  const slide = (grip) => {
+    const v = createVehicle(0, 0, 0, FLAT);
+    const tune = tuningFor({ speed: 6, grip, weight: 5 });
+    run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 3, tune);
+    run(v, { steer: 1, gas: 1, brake: 0 }, FLAT, 0.6, tune);
+    return Math.abs(v.l);
+  };
+  assert.ok(slide(2) > slide(9));
+});
+
+test('physics: nitro boosts speed past the normal limit and uses energy', () => {
+  const v = createVehicle(0, 0, 0, FLAT);
+  const tune = tuningFor(STATS);
+  run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 6);
+  const events = stepVehicle(v, { steer: 0, gas: 1, brake: 0, boost: true }, FLAT, tune, DT);
+  assert.ok(events.includes('boost'));
+  assert.ok(Math.abs(v.nitro - (1 - BOOST_COST)) < 0.02);
+  run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 1.2);
+  assert.ok(v.f > tune.maxSpeed * 1.05, `boosted ${v.f}`);
+  // not enough energy: no boost
+  const w = createVehicle(0, 0, 0, FLAT);
+  w.nitro = 0.1;
+  assert.ok(!stepVehicle(w, { boost: true }, FLAT, tune, DT).includes('boost'));
+});
+
+test('physics: nitro refills over time', () => {
+  const v = createVehicle(0, 0, 0, FLAT);
+  v.nitro = 0.2;
+  run(v, { gas: 0 }, FLAT, 5);
+  assert.ok(v.nitro > 0.6);
+});
+
+test('physics: a kicker launches the truck, it comes back down and lands', () => {
+  const v = createVehicle(19.8, 19.8, SANDBOX.start.heading, ARENA_TERRAIN);
+  const tune = tuningFor({ speed: 8, grip: 6, weight: 5 });
+  let airborne = 0;
+  let maxY = 0;
+  const events = [];
+  for (let i = 0; i < 60 * 8; i++) {
+    events.push(...stepVehicle(v, { steer: 0, gas: 1, brake: 0 }, ARENA_TERRAIN, tune, DT));
+    if (!v.grounded) airborne++;
+    maxY = Math.max(maxY, v.y);
+  }
+  assert.ok(airborne > 15, `airtime frames ${airborne}`);
+  assert.ok(maxY > 2.2, `peak ${maxY}`);
+  assert.ok(events.some((e) => e.type === 'land'), 'landing event');
+  assert.ok(Number.isFinite(v.x) && Number.isFinite(v.y) && v.y >= 0);
+});
+
+test('physics: stays inside the bowl and bounces off the wall', () => {
+  const v = createVehicle(0, 0, Math.PI / 2, ARENA_TERRAIN); // facing +x, no features on this line
+  v.z = -2; v.x = 5;
+  const events = run(v, { steer: 0, gas: 1, brake: 0 }, { ...ARENA_TERRAIN, obstacles: [], heightAt: () => 0 }, 8);
+  assert.ok(Math.hypot(v.x, v.z) <= SANDBOX.radius + 1e-6);
+  assert.ok(events.some((e) => e.type === 'wall'));
+});
+
+test('physics: obstacles block, but you can jump over (y above height)', () => {
+  const o = { x: 0, z: 8, r: 1.5, h: 1.3 };
+  const t = { heightAt: () => 0, obstacles: [o], radius: 1000 };
+  const v = createVehicle(0, 0, 0, t);
+  const ev = run(v, { steer: 0, gas: 1, brake: 0 }, t, 4);
+  assert.ok(ev.some((e) => e.type === 'hit'));
+  assert.ok(Math.hypot(v.x - o.x, v.z - o.z) >= o.r + 1.3 - 0.01);
+  const hi = createVehicle(0, 5, 0, t);
+  hi.y = 3; hi.grounded = false; hi.vz = 10;
+  stepVehicle(hi, {}, t, tuningFor(STATS), DT);
+  assert.ok(hi.z > 5);
+});
+
+test('arena: height function and voxel columns agree', () => {
+  assert.equal(heightAt(0, 40), 0);
+  assert.equal(OBSTACLES.every((o) => Math.hypot(o.x, o.z) < SANDBOX.radius - 2), true);
+  const cols = terrainColumns(0.5);
+  assert.ok(cols.length > 1500, `columns ${cols.length}`);
+  for (const c of cols.slice(0, 200)) assert.ok(Math.abs(c.h - heightAt(c.x, c.z)) < 1e-9);
+  assert.ok(Math.max(...cols.map((c) => c.h)) >= 3);
+  assert.equal(FEATURES.filter((f) => f.type === 'ramp').length >= 4, true);
+  const ring = wallRing();
+  assert.ok(ring.length > 250);
+  for (const r of ring) assert.ok(Math.abs(Math.hypot(r.x, r.z) - SANDBOX.wallRadius) < 1e-6);
+});
+
+test('arena: start spot is clear and level, facing the first kicker', () => {
+  const s = SANDBOX.start;
+  assert.equal(heightAt(s.x, s.z), 0);
+  for (const o of OBSTACLES) assert.ok(Math.hypot(o.x - s.x, o.z - s.z) > 6);
+  const ahead = heightAt(s.x + Math.sin(s.heading) * 16, s.z + Math.cos(s.heading) * 16);
+  assert.ok(ahead > 0, 'kicker is ahead of the start');
+});
+
+test('input: stick dead zone, range and curve', () => {
+  assert.deepEqual(stickVector(2, 2, 60), { x: 0, y: 0, mag: 0 });
+  const right = stickVector(60, 0, 60);
+  assert.ok(Math.abs(right.x - 1) < 1e-9 && right.y === 0);
+  const up = stickVector(0, -90, 60); // past the rim
+  assert.ok(Math.abs(up.y - 1) < 1e-9, 'y is up-positive and clamped');
+  assert.ok(Math.abs(steerCurve(0.5)) < 0.5 && steerCurve(-1) === -1 && steerCurve(0) === 0);
+});
+
+test('input: flick up triggers nitro, slow push or hold does not', () => {
+  const f = createFlick();
+  assert.equal(f.update(0, 0), false);
+  assert.equal(f.update(0.3, 0.05), false);
+  assert.equal(f.update(0.9, 0.1), true, 'quick flick');
+  assert.equal(f.update(0.95, 0.12), false, 'hold does not retrigger');
+  assert.equal(f.update(0.95, 0.3), false);
+  const g = createFlick();
+  g.update(0.2, 0);
+  assert.equal(g.update(0.5, 0.4), false);
+  assert.equal(g.update(0.9, 1.0), false, 'slow push is not a flick');
+  const h = createFlick();
+  h.update(0, 0);
+  assert.equal(h.update(0.9, 0.05), true);
+  h.update(0, 0.2);
+  assert.equal(h.update(0.9, 0.3), false, 'cooldown');
+  assert.equal(h.update(0.9, 0.3), false);
+});
+
+test('input: keyboard, gamepad and merge', () => {
+  const k = keyboardInput(new Set(['ArrowLeft', 'KeyW']));
+  assert.deepEqual(k, { steer: -1, gas: 1, brake: 0 });
+  assert.deepEqual(keyboardInput(new Set(['ArrowLeft', 'ArrowRight'])).steer, 0);
+  assert.ok(isBoostKey('Space') && !isBoostKey('KeyQ'));
+  const pad = { axes: [0.6, -0.9], buttons: Array.from({ length: 8 }, (_, i) => ({ pressed: i === 0, value: i === 0 ? 1 : 0 })) };
+  const g = gamepadInput(pad);
+  assert.equal(g.gas, 1); assert.equal(g.brake, 0);
+  assert.ok(g.steer > 0.5 && g.stickY > 0.8);
+  assert.deepEqual(gamepadInput(null).gas, 0);
+  const m = mergeInputs([{ steer: 0.8, gas: 0 }, { steer: 0.8, brake: 1 }, { boost: true }]);
+  assert.deepEqual(m, { steer: 1, gas: 0, brake: 1, boost: true });
+  assert.equal(mergeInputs([{}], true).gas, 1, 'auto gas');
+  assert.equal(mergeInputs([{ brake: 1 }], true).gas, 0, 'brake overrides auto gas');
+});
+
+test('camera: four views cycle and wrap, bad values fall back', () => {
+  assert.equal(CAMERA_MODES.length, 4);
+  let m = CAMERA_MODES[0];
+  const seen = [];
+  for (let i = 0; i < 4; i++) { seen.push(m); m = nextCamera(m); }
+  assert.equal(new Set(seen).size, 4);
+  assert.equal(m, CAMERA_MODES[0]);
+  assert.equal(validCamera('nonsense'), 'iso-follow');
+  assert.equal(validCamera('top'), 'top');
+});
+
+test('camera: goals per view', () => {
+  const t = { x: 10, y: 0, z: 5, heading: 0, speed: 0 };
+  const st = newCameraState(t);
+  const iso = cameraGoal('iso-follow', t, st);
+  assert.ok(iso.pos.x > t.x && iso.pos.z > t.z && iso.pos.y > 10, 'iso looks down from a corner');
+  const chase = cameraGoal('chase', t, st);
+  assert.ok(chase.pos.z < t.z && chase.look.z > t.z, 'chase sits behind, looks ahead');
+  const top = cameraGoal('top', t, st);
+  assert.ok(top.pos.y > 30);
+  // fixed view only moves once the truck leaves the dead zone
+  const a = cameraGoal('iso-fixed', { ...t, x: 12 }, st);
+  assert.equal(st.fx, 10);
+  cameraGoal('iso-fixed', { ...t, x: 30 }, st);
+  assert.ok(st.fx > 10 && st.fx < 30);
+  assert.ok(a.fov > 0);
 });

@@ -5,6 +5,9 @@
 
 import * as THREE from '../../lib/three.module.js';
 import {
+  SANDBOX, OBSTACLES, terrainColumns, wallRing,
+} from './arena-layout.js';
+import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
   mesasLayout, cloudsLayout, dustLayout, rampLayout, carPileLayout,
 } from './layout.js';
@@ -126,12 +129,11 @@ function buildSun() {
 
 function buildArena(group) {
   // ground (big, dirt) with a darker ring where the stands start
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(320, 320),
-    new THREE.MeshLambertMaterial({ map: dirtTexture([80, 80]), color: '#ffd9b3' })
-  );
+  const groundMat = new THREE.MeshLambertMaterial({ map: dirtTexture([80, 80]), color: '#ffd9b3' });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(320, 320), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
+  ground.userData.backdrop = true;
   group.add(ground);
 
   // tire wall
@@ -193,6 +195,7 @@ function buildArena(group) {
       const mesh = new THREE.Mesh(UNIT, mesaMat);
       mesh.scale.set(m.w * k, h, m.d * k);
       mesh.position.set(m.x, h / 2, m.z);
+      mesh.userData.backdrop = true;
       group.add(mesh);
     }
   }
@@ -211,6 +214,7 @@ function buildArena(group) {
     }
     clouds.add(cg);
   }
+  clouds.userData.backdrop = true;
   group.add(clouds);
 
   // dust motes
@@ -223,7 +227,7 @@ function buildArena(group) {
   const scatter = scatterRocks(group);
 
   return {
-    clouds, dust, motes, dm, arms, tires: tiles.length, people: people.length, stands: stands.length, towers: towerPos.length, scatter,
+    groundMat, clouds, dust, motes, dm, arms, tires: tiles.length, people: people.length, stands: stands.length, towers: towerPos.length, scatter,
   };
 }
 
@@ -384,6 +388,57 @@ function buildGarage(group) {
   return { platform, lamps: lampX.length };
 }
 
+
+// ------------------------------------------------------------------ sandbox (drive mode)
+const TERRAIN_COLORS = { ramp: '#e2b04a', table: '#e2b04a', hill: '#9c7048', whoops: '#8a5530' };
+
+function buildSandbox(group) {
+  // dirt columns (one stretched box per cell, so ramps read as voxel stairs)
+  const cols = terrainColumns(0.5);
+  const list = cols.map((c) => {
+    const col = new THREE.Color(TERRAIN_COLORS[c.kind] || '#b98550');
+    col.multiplyScalar(c.shade ? 1 : 0.93);
+    return { x: c.x, y: c.h / 2, z: c.z, sx: c.step, sy: c.h, sz: c.step, color: col };
+  });
+  instanced(group, list, new THREE.MeshLambertMaterial(), { cast: true, receive: true });
+
+  // yellow lip markers on the kicker edges
+  const lips = [];
+  for (const c of cols) if (c.kind === 'ramp' && c.h > 1.2) lips.push(c);
+
+  // tire wall ring (3 high)
+  const colorOf = ['#1c1c20', '#e9e9e9', '#d62828'];
+  const ring = wallRing();
+  const tires = [];
+  for (const r of ring) for (let h = 0; h < 3; h++) tires.push({ x: r.x, y: 0.2 + h * 0.4, z: r.z, sx: 0.95, sy: 0.38, sz: 0.95, rot: r.rot, color: colorOf[r.c] });
+  instanced(group, tires, new THREE.MeshLambertMaterial(), { cast: false });
+
+  // boulders (voxel half-spheres) and tire stacks
+  const rocks = [];
+  const stackTires = [];
+  for (const o of OBSTACLES) {
+    if (o.type === 'boulder') {
+      const cell = 0.42;
+      const n = Math.ceil(o.r / cell);
+      for (let i = -n; i <= n; i++) for (let j = 0; j <= n; j++) for (let k = -n; k <= n; k++) {
+        if (i * i + j * j * 1.4 + k * k > (o.r / cell) ** 2) continue;
+        const shade = 0.82 + ((i * 7 + j * 13 + k * 5) & 7) * 0.025;
+        rocks.push({ x: o.x + i * cell, y: cell / 2 + j * cell, z: o.z + k * cell, sx: cell, sy: cell, sz: cell, color: new THREE.Color('#9a6a42').multiplyScalar(shade) });
+      }
+    } else {
+      for (let h = 0; h < 3; h++) stackTires.push({ x: o.x, y: 0.15 + h * 0.3, z: o.z, sx: 1.4, sy: 0.28, sz: 1.4, rot: h * 0.5, color: h === 1 ? '#e9e9e9' : '#1c1c20' });
+    }
+  }
+  instanced(group, rocks, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, stackTires, new THREE.MeshLambertMaterial(), { cast: true });
+
+  // start pad marker (checker strip)
+  const pad = [];
+  for (let i = -3; i <= 3; i++) for (let j = 0; j < 2; j++) pad.push({ x: SANDBOX.start.x + i * 0.7 * Math.SQRT1_2 - j * 0.7 * Math.SQRT1_2, y: 0.02, z: SANDBOX.start.z - i * 0.7 * Math.SQRT1_2 - j * 0.7 * Math.SQRT1_2, sx: 0.7, sy: 0.04, sz: 0.7, rot: Math.PI / 4, color: (i + j) & 1 ? '#f4f1ea' : '#1d1d22' });
+  instanced(group, pad, new THREE.MeshLambertMaterial(), { receive: true });
+  return { columns: cols.length, lips: lips.length, wall: tires.length, rocks: rocks.length };
+}
+
 // ------------------------------------------------------------------ world
 export function createWorld(scene, lights) {
   const outdoor = new THREE.Group();
@@ -391,10 +446,18 @@ export function createWorld(scene, lights) {
   scene.add(outdoor, garage);
 
   const sky = buildSky();
+  sky.userData.backdrop = true;
   outdoor.add(sky);
-  outdoor.add(buildSun());
+  const sunMesh = buildSun();
+  sunMesh.userData.backdrop = true;
+  outdoor.add(sunMesh);
   const arena = buildArena(outdoor);
+  const groundMat = arena.groundMat;
   const gar = buildGarage(garage);
+  const sandbox = new THREE.Group();
+  sandbox.visible = false;
+  scene.add(sandbox);
+  const sbStats = buildSandbox(sandbox);
 
   const { hemi, sun, spot } = lights;
   const fogOut = new THREE.Fog('#f4a96b', 26, 110);
@@ -402,9 +465,14 @@ export function createWorld(scene, lights) {
   let mode = 'outdoor';
 
   function setMode(next) {
-    mode = next === 'garage' ? 'garage' : 'outdoor';
+    mode = next === 'garage' || next === 'drive' ? next : 'outdoor';
     const g = mode === 'garage';
+    const d = mode === 'drive';
     outdoor.visible = !g;
+    // driving keeps the sky, sun, mesas, clouds and ground, but not the stadium props
+    for (const child of outdoor.children) child.visible = !d || !!child.userData.backdrop;
+    sandbox.visible = d;
+    groundMat.color.set(d ? '#cfa57e' : '#ffd9b3');
     garage.visible = g;
     scene.background = new THREE.Color(g ? '#16161e' : '#ffb35a');
     scene.fog = g ? fogGar : fogOut;
@@ -422,10 +490,10 @@ export function createWorld(scene, lights) {
 
   const m = new THREE.Matrix4();
   function update(dt, t, spin) {
-    if (mode === 'outdoor') {
+    if (mode !== 'garage') {
       arena.clouds.position.x = ((t * 0.6 + 70) % 140) - 70;
-      // dust drifts on the wind and wraps
-      for (let i = 0; i < arena.motes.length; i++) {
+      // dust drifts on the wind and wraps (title only)
+      if (mode === 'outdoor') for (let i = 0; i < arena.motes.length; i++) {
         const d = arena.motes[i];
         d.x += d.v * dt;
         if (d.x > 8) d.x = -8;
@@ -434,7 +502,7 @@ export function createWorld(scene, lights) {
         m.setPosition(d.x, y, d.z);
         arena.dust.setMatrixAt(i, m);
       }
-      arena.dust.instanceMatrix.needsUpdate = true;
+      if (mode === 'outdoor') arena.dust.instanceMatrix.needsUpdate = true;
     } else {
       gar.platform.rotation.y = spin;
     }
@@ -446,7 +514,7 @@ export function createWorld(scene, lights) {
     get mode() { return mode; },
     stats: {
       tires: arena.tires, crowd: arena.people, stands: arena.stands, towers: arena.towers,
-      rocks: arena.scatter.rocks, cacti: arena.scatter.cacti, lamps: gar.lamps,
+      rocks: arena.scatter.rocks, cacti: arena.scatter.cacti, lamps: gar.lamps, sandbox: sbStats,
     },
   };
 }
