@@ -18,6 +18,12 @@ import * as TR from './world/track.js';
 import { createRace, formatTime, wrapDelta } from './core/race.js';
 import { resolveCollisions } from './physics/collide.js';
 import { createDriver, driverInput } from './ai/driver.js';
+import { createBrawler, brawlerInput } from './ai/brawler.js';
+import { ramDamage, applyDamage, blastTrucks } from './physics/damage.js';
+import { createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
+import { createMatch, formatClock, comboMultiplier } from './core/arena-match.js';
+import { DebrisPool, burst } from './fx/debris.js';
+import { DebrisRenderer } from './fx/debris-render.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
 import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
@@ -97,6 +103,10 @@ function start() {
 
   // particles (smoke / flame)
   const pool = new ParticlePool(1400);
+  const debris = new DebrisPool(500);
+  const debrisR = new DebrisRenderer(scene, debris);
+  let boomT = 0;          // explosion flash: briefly brightens the sun (no extra light, so no extra shader cost)
+  let flashApplied = 0;
   const particles = new ParticleRenderer(scene, pool);
   const rand = () => Math.random();
 
@@ -274,6 +284,10 @@ function start() {
   let driveMode = 'arena';      // 'arena' | 'race'
   let courseTerrain = ARENA_TERRAIN;
   let race = null;
+  let match = null;
+  let arenaFoes = 5;
+  let arenaT = null;
+  let endTimer = 0;
   let rivals = [];
   let playerAcc = 0;
   let playerPrevS = 0;
@@ -312,14 +326,19 @@ function start() {
     const racing = driveMode === 'race';
     courseTerrain = racing ? TR.terrain : ARENA_TERRAIN;
     clearRivals();
+    debris.life.fill(0); debris.alive = 0;
+    match = null; endTimer = 0; truckMesh.visible = true; boomT = 0;
+    if (!racing) { arenaT = createArenaTerrain(); courseTerrain = arenaT; world.props.set(arenaT.props); }
     const s = racing ? TR.gridPose(4) : SANDBOX.start;
     vehicle = createVehicle(s.x, s.z, s.heading, courseTerrain, tune.ride);
-    if (racing) spawnRivals();
+    if (racing) spawnRivals(); else { spawnBrawlers(); match = createMatch({ foes: rivals.length }); }
+    $('drive').classList.toggle('arena', !racing);
     playerAcc = racing ? wrapDelta(TR.START_S, TR.nearest(s.x, s.z).s) : 0;
     playerPrevS = racing ? TR.nearest(s.x, s.z).s : 0;
     stuckT = 0; place = rivals.length + 1;
     $('drive').classList.toggle('lefty', !!save.leftHanded);
     $('drive').classList.toggle('race', racing);
+    $('combo').classList.remove('show');
     $('drive').classList.remove('go');
     $('results').classList.remove('show');
     $('countdown').classList.remove('show');
@@ -343,7 +362,12 @@ function start() {
     vehicle = null;
     race = null;
     clearRivals();
-    $('drive').classList.remove('race', 'go');
+    match = null;
+    truckMesh.visible = true;
+    boomT = 0; sun.intensity -= flashApplied; flashApplied = 0;
+    world.props.clear();
+    debris.life.fill(0); debris.alive = 0;
+    $('drive').classList.remove('race', 'go', 'arena');
     $('results').classList.remove('show');
     Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
     sun.shadow.camera.updateProjectionMatrix();
@@ -368,7 +392,7 @@ function start() {
 
   // ---- rivals
   function clearRivals() {
-    for (const r of rivals) { scene.remove(r.mesh); disposeTruck(r.mesh); }
+    for (const r of rivals) { scene.remove(r.mesh); disposeTruck(r.mesh); if (r.bar) { scene.remove(r.bar.group); } }
     rivals = [];
   }
   function spawnRivals() {
@@ -429,6 +453,164 @@ function start() {
     const me = playerAcc;
     place = 1 + rivals.filter((r) => r.acc > me).length;
     $('pos').textContent = `${place}/${rivals.length + 1}`;
+  }
+
+  // ---- arena: brawlers, destruction, explosions
+  const barGeo = new THREE.PlaneGeometry(1, 1);
+  function makeBar() {
+    const group = new THREE.Group();
+    const bg = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0x111111, depthTest: false, transparent: true }));
+    const fg = new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color: 0x57e36b, depthTest: false, transparent: true }));
+    bg.scale.set(2.2, 0.28, 1); fg.scale.set(2.1, 0.2, 1); fg.position.z = 0.01;
+    bg.renderOrder = 998; fg.renderOrder = 999;
+    group.add(bg, fg);
+    scene.add(group);
+    return { group, fg };
+  }
+  function spawnBrawlers() {
+    const others = TRUCKS.filter((_, i) => i !== truckIdx);
+    for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+    const a0 = Math.atan2(SANDBOX.start.z, SANDBOX.start.x);
+    rivals = others.slice(0, arenaFoes).map((t, i) => {
+      const f = getFeel(t.id);
+      const rt = tuningFor(t.stats, f.handling, f.sus);
+      const ang = a0 + (i + 1) * (Math.PI * 2 / (arenaFoes + 1));
+      let rad = 26; let x = Math.cos(ang) * rad; let z = Math.sin(ang) * rad;
+      for (let k = 0; k < 24 && courseTerrain.obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + 3); k++) { rad -= 1.2; x = Math.cos(ang) * rad; z = Math.sin(ang) * rad; }
+      const v = createVehicle(x, z, Math.atan2(-x, -z), courseTerrain, rt.ride);
+      const mesh = createTruckMesh(t);
+      mesh.rotation.order = 'YXZ';
+      scene.add(mesh);
+      return { truck: t, mesh, v, tune: rt, brain: createBrawler({ aggression: 0.55 + rand() * 0.35, phase: i }), color: t.paint.body, bar: makeBar(), acc: 0, prevS: 0 };
+    });
+  }
+
+  function fire(x, y, z, n, big) {
+    const scale = QUALITY_SCALE[save.particles] ?? 1;
+    const count = Math.round(n * scale);
+    for (let i = 0; i < count; i++) {
+      const a = rand() * Math.PI * 2; const sp = (0.4 + rand()) * big;
+      const p = makeParticle('flame', 'fire', { x, y, z }, { x: Math.cos(a) * sp, y: 1.2 + rand() * 1.4, z: Math.sin(a) * sp }, 1.4, rand(), rand(), rand());
+      p.size *= 3.2; p.life *= 2.6; p.rise = 2.2;
+      pool.spawn(p);
+      if (i % 2 === 0) {
+        const q = makeParticle('smoke', 'black', { x, y: y + 0.4, z }, { x: Math.cos(a) * sp * 0.4, y: 1.5, z: Math.sin(a) * sp * 0.4 }, 1, rand(), rand(), rand());
+        q.size *= 3.4; q.life *= 2.4; q.rise = 1.4;
+        pool.spawn(q);
+      }
+    }
+  }
+  const hexNum = (c) => new THREE.Color(c).getHex();
+  function shatter(prop, fromX, fromZ) {
+    const def = PROP_DEFS[prop.type];
+    const y = (courseTerrain.heightAt(prop.x, prop.z)) + prop.h * 0.5;
+    const dx = prop.x - fromX; const dz = prop.z - fromZ; const dl = Math.hypot(dx, dz) || 1;
+    const n = Math.round(def.debris * (QUALITY_SCALE[save.particles] ?? 1) + 2);
+    burst(debris, { x: prop.x, y, z: prop.z, colors: def.colors.map(hexNum), count: n, speed: 6, up: 6, u: rand });
+    // shove debris away from whatever hit it
+    for (let i = 0; i < debris.max; i++) if (debris.life[i] > 0 && debris.age[i] === 0) { debris.vel[i * 3] += (dx / dl) * 4; debris.vel[i * 3 + 2] += (dz / dl) * 4; }
+    world.props.remove(prop.id);
+  }
+  function allTrucks() { return [vehicle, ...rivals.map((r) => r.v)]; }
+
+  function explode(ex) {
+    const y = courseTerrain.heightAt(ex.x, ex.z) + 0.6;
+    fire(ex.x, y, ex.z, ex.type === 'fuel' ? 70 : 46, ex.type === 'fuel' ? 7 : 4.5);
+    boomT = 0.5;
+    audio.explode();
+    const d = Math.hypot(ex.x - vehicle.x, ex.z - vehicle.z);
+    shake = Math.max(shake, Math.max(0.2, 1.2 - d / 45));
+    const trucks = allTrucks();
+    for (const h of blastTrucks(trucks, ex.x, ex.z, ex.radius, ex.power)) { if (h.wrecked) wreck(h.index); }
+  }
+  function destroyProp(prop, byX, byZ, byPlayer) {
+    if (!courseTerrain.props || !courseTerrain.props.includes(prop)) return;
+    if (prop.tier === 'blast') {
+      const res = detonate(courseTerrain, prop);
+      for (const q of res.destroyed) shatter(q, prop.x, prop.z);
+      for (const ex of res.explosions) explode(ex);
+      if (byPlayer && match) { const g = match.award(res.score); if (g) audio.chime(); }
+      return;
+    }
+    removeProp(courseTerrain, prop);
+    shatter(prop, byX, byZ);
+    audio.smash();
+    if (byPlayer && match) match.award(PROP_DEFS[prop.type].score);
+  }
+  function handleEvents(events, v, byPlayer) {
+    for (const e of events) {
+      if (!e || !e.obj) continue;
+      if (e.type === 'smash') destroyProp(e.obj, v.x, v.z, byPlayer);
+      else if (e.type === 'hit' && e.obj.tier === 'break') {
+        const res = hitProp(e.obj, e.power);
+        if (res === 'destroyed') destroyProp(e.obj, v.x, v.z, byPlayer);
+        else if (res === 'cracked') {
+          world.props.shake(e.obj.id); audio.smash();
+          burst(debris, { x: e.obj.x, y: 1.2, z: e.obj.z, colors: PROP_DEFS.wall.colors.map(hexNum), count: 5, speed: 4, up: 3, u: rand });
+        }
+      }
+    }
+  }
+  // index 0 = player, 1.. = rivals
+  function wreck(index) {
+    const isPlayer = index === 0;
+    const v = isPlayer ? vehicle : rivals[index - 1].v;
+    const mesh = isPlayer ? truckMesh : rivals[index - 1].mesh;
+    const paint = isPlayer ? currentPaint(TRUCKS[truckIdx]) : rivals[index - 1].truck.paint;
+    v.wrecked = true; v.hp = 0;
+    fire(v.x, v.y + 0.5, v.z, 40, 4);
+    boomT = 0.6;
+    burst(debris, { x: v.x, y: v.y + 0.6, z: v.z, colors: [hexNum(paint.body), hexNum(paint.accent), 0x1c1c20, 0x1c1c20], count: Math.round(34 * (QUALITY_SCALE[save.particles] ?? 1)) + 6, speed: 9, up: 9, size: 0.42, u: rand });
+    audio.explode();
+    shake = Math.max(shake, isPlayer ? 1.2 : 0.8);
+    mesh.visible = false;
+    if (!isPlayer) { rivals[index - 1].bar.group.visible = false; if (match) match.foeWrecked(); }
+    else { if (match) match.playerWrecked(); }
+  }
+  function arenaStep(dt) {
+    const phase = match.phase;
+    const trucks = allTrucks();
+    rivals.forEach((r) => {
+      if (r.v.wrecked) return;
+      const input = brawlerInput(r.brain, r.v, trucks, SANDBOX.radius, phase, dt);
+      handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
+    });
+    const live = trucks.map((v, i) => ({ v, i })).filter((q) => !q.v.wrecked);
+    for (const h of resolveCollisions(live.map((q) => q.v))) {
+      const ia = live[h.a].i; const ib = live[h.b].i;
+      const a = trucks[ia]; const b = trucks[ib];
+      const dmg = ramDamage(a, b, h.power);
+      if (applyDamage(a, dmg.a)) wreck(ia);
+      if (applyDamage(b, dmg.b)) wreck(ib);
+      if (ia === 0 || ib === 0) { shake = Math.max(shake, Math.min(0.8, h.power / 14)); audio.thump(h.power * 0.9); }
+      if (h.power > 6) { burst(debris, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.8, z: (a.z + b.z) / 2, colors: [0x9aa0aa, 0xffd60a, 0x1c1c20], count: 4, speed: 5, up: 4, size: 0.2, u: rand }); }
+    }
+  }
+  function arenaPose(dt) {
+    rivals.forEach((r) => {
+      const v = r.v; const m = r.mesh;
+      if (v.wrecked) return;
+      m.position.set(v.x, v.y - r.tune.ride, v.z);
+      m.rotation.set(-v.pitch, v.heading, v.roll);
+      for (const w of m.userData.wheels) if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
+      const sn = Math.min(1, Math.abs(v.f) / r.tune.maxSpeed);
+      animateTruck(m, dt, 0.3 + sn * 0.6, clock, v.f / 0.6);
+      const near = Math.hypot(v.x - vehicle.x, v.z - vehicle.z) < 50;
+      if (near && v.grounded && sn > 0.25 && rand() < 0.4 * sn * (QUALITY_SCALE[save.particles] ?? 1)) spawnDust(1, 1.2, 0.5, 'dust', m, v);
+      if (near && v.boostT > 0 && rand() < 0.7) {
+        m.updateMatrixWorld(true);
+        tmp.set((rand() - 0.5) * 0.5, 0.55, -m.userData.length / 2);
+        m.localToWorld(tmp);
+        pool.spawn(makeParticle('flame', 'fire', tmp, { x: -Math.sin(v.heading), y: 0.1, z: -Math.cos(v.heading) }, 1, rand(), rand(), rand()));
+      }
+      // health bar floats above the truck and faces the camera
+      const frac = v.hp / v.maxHp;
+      r.bar.group.position.set(v.x, v.y + 3.4, v.z);
+      r.bar.group.quaternion.copy(camera.quaternion);
+      r.bar.fg.scale.x = Math.max(0.001, 2.1 * frac);
+      r.bar.fg.position.x = -(2.1 - r.bar.fg.scale.x) / 2;
+      r.bar.fg.material.color.set(frac > 0.5 ? 0x57e36b : (frac > 0.25 ? 0xffc83a : 0xff4d4d));
+    });
   }
 
   function respawn() {
@@ -546,17 +728,23 @@ function start() {
       if (race.phase === 'countdown') { input.gas = 0; input.boost = false; input.brake = 1; }
       if (race.phase === 'finished') { input.gas = 0; input.boost = false; input.brake = 1; }
     }
+    if (match) {
+      match.tick(dt);
+      if (match.phase !== 'fight' || vehicle.wrecked) { input.gas = 0; input.boost = false; input.brake = vehicle.wrecked ? 0 : 1; input.steer = 0; }
+    }
     let first = true;
     const landings = [];
     for (let i = 0; i < steps; i++) {
       const events = stepVehicle(vehicle, first ? input : { ...input, boost: false }, courseTerrain, tune, 1 / 60);
       first = false;
+      if (match) handleEvents(events, vehicle, true);
       for (const e of events) {
         if (e === 'boost') { shake = Math.max(shake, 0.35); audio.boost(); }
         else if (e.type === 'land') { landings.push(e); shake = Math.max(shake, Math.min(1, e.power / 18)); spawnDust(5, 3, 1.2); audio.thump(e.power); }
         else if (e.type === 'hit' || e.type === 'wall') { shake = Math.max(shake, Math.min(0.8, e.power / 20)); audio.thump(e.power * 0.6); }
       }
-      if (rivals.length) rivalStep(1 / 60);
+      if (rivals.length && race) rivalStep(1 / 60);
+      else if (match) arenaStep(1 / 60);
     }
     const v = vehicle;
     const speedNorm = Math.min(1, Math.abs(v.f) / tune.maxSpeed);
@@ -643,6 +831,42 @@ function start() {
       $('wrongway').classList.toggle('show', wrongWay > 0.5);
       drawMinimap();
     }
+
+    // arena match rules + HUD
+    if (match) {
+      arenaPose(dt);
+      for (const e of match.drainEvents()) {
+        if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
+        else if (e === 'won' || e === 'lost') endTimer = e === 'won' ? 1.2 : 1.6;
+      }
+      const digit = match.countdownDigit();
+      if (match.phase === 'countdown' && digit > 0 && $('countdown').textContent !== String(digit)) showCountdown(String(digit));
+      if (goTimer > 0) { goTimer -= dt; if (goTimer <= 0) $('countdown').classList.remove('show'); }
+      if (endTimer > 0) {
+        endTimer -= dt;
+        if (endTimer <= 0) {
+          audio.chime();
+          $('results').classList.toggle('lost', !match.won);
+          $('res-score').textContent = String(match.score);
+          $('res-wrecked').textContent = `${match.wrecked}/${match.foes}`;
+          $('res-total').textContent = formatClock(180 - match.timeLeft);
+          $('results').classList.add('show');
+        }
+      }
+      $('score').textContent = String(match.score);
+      $('foes').textContent = String(match.foes - match.wrecked);
+      $('atimer').textContent = formatClock(match.timeLeft);
+      $('hp-fill').style.width = `${Math.round(100 * v.hp / v.maxHp)}%`;
+      $('hp').classList.toggle('low', v.hp < 30);
+      const mult = comboMultiplier(match.chain);
+      $('combo').textContent = `x${mult}`;
+      $('combo').classList.toggle('show', mult > 1 && match.chain > 0);
+    }
+    debris.update(dt, courseTerrain.heightAt);
+    debrisR.update();
+    if (boomT > 0) boomT -= dt;
+    const flash = Math.max(0, boomT) * 3;
+    sun.intensity += flash - flashApplied; flashApplied = flash;
 
     // camera
     const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f }, camState);
@@ -749,6 +973,13 @@ function start() {
     get camMode() { return camMode; },
     get race() { return race; },
     get rivals() { return rivals; },
+    get match() { return match; },
+    get arenaTerrain() { return arenaT; },
+    get arenaFoes() { return arenaFoes; },
+    set arenaFoes(n) { arenaFoes = n; },
+    get debris() { return debris; },
+    wreckAll() { rivals.forEach((r, i) => { if (!r.v.wrecked) wreck(i + 1); }); },
+    destroyProp: (p) => destroyProp(p, vehicle.x, vehicle.z, true),
     get place() { return place; },
     respawn,
     get driveMode() { return driveMode; },

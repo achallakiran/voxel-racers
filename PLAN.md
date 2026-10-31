@@ -70,9 +70,12 @@ Tests: spline sampling, lap counting, no-skip checkpoints, loop stick speed.
 **Phase 2.5 — Rivals + richer track** (DONE)
 Flatter road with gentle shoulders (no cliffs to get trapped), sand section, rock garden, 5 potholes (one massive), crushed cars, tyre chicane, gentler jump landings, stronger nitro, closer cameras. 5 AI rivals with collisions, rubber-banding, stuck recovery; position HUD; respawn icon + auto-respawn.
 
-**Phase 5 — Arena combat** (PROPOSED, awaiting decisions: combat model, block button, match format)
+**Phase 5a — Arena rivals, health, destruction** (DONE)
+5 AI brawlers hunt the nearest truck and lunge with nitro; ram damage by speed and angle (head-on hurts less than a rear hit); 100 HP, wreck = explosion; 58 destructible props (smash: crates/barrels/cars/fences plowed through at speed; break: brick walls that crack; blast: TNT and fuel trucks with chain explosions that hurt and launch trucks); voxel debris pool; score with combo multiplier; last-truck-standing match, 3:00 timer, results with trophy or skull. Nitro now burns 4.5 s per tap (cost 0.4).
+
+**Phase 5b/5c — Attack, block, parry, cinematics** (PROPOSED, awaiting decisions: combat model, block button, match format)
 Arena gets rivals as opponents (free-for-all). Build order, each step tested before the next:
-- 5a. Arena rivals + health bars (icons only) + ram damage (speed/angle, rear hits count more) + destructibles in three tiers: smash (cars, crates, fences, barrels), break (walls, tower stacks, tyre walls, rocks; chunk by chunk), blast (red barrels, TNT, fuel trucks; chain explosions, shockwave launches trucks). Voxel debris pool with a budget that scales with particle quality. Combo score.
+- (5a, done below) Arena rivals + health bars (icons only) + ram damage (speed/angle, rear hits count more) + destructibles in three tiers: smash (cars, crates, fences, barrels), break (walls, tower stacks, tyre walls, rocks; chunk by chunk), blast (red barrels, TNT, fuel trucks; chain explosions, shockwave launches trucks). Voxel debris pool with a budget that scales with particle quality. Combo score.
 - 5b. Combat: Attack button (lunge, brief recovery; per-truck signature move using existing rig parts: Toxic jaw, Frostbite plow, Titan bed, Night Rider crane, Yellow Thunder stop sign, Magma flame burst, Crusher stomp, Dune Devil flag whip) and Block (guard cuts damage; ~0.25 s parry window stuns the attacker). Rivals telegraph attacks (rev, flash, red ring) and fight each other; AI states: roam, pick target, approach, telegraph, lunge, recover, retreat when low.
 - 5c. Cinematics: parry counter (~1 s slow-mo, low camera snap), finisher (~2.5 s orbit camera, slow-mo, voxel explosion, wheels fly, crowd roar), player wreck (camera pulls back). All skippable by tap, rate-limited, no text.
 Controls: arena buttons gas, brake, nitro plus attack and block (block may share the brake button; to be decided). Race stays weapon-free.

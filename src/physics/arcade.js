@@ -16,8 +16,8 @@ export const SURFACES = {
   sand: { grip: 0.55, drag: 0.8, maxMul: 0.7 },
   mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
 };
-export const BOOST_COST = 0.34;
-export const BOOST_TIME = 2.0;
+export const BOOST_COST = 0.4;
+export const BOOST_TIME = 4.5;   // one tap burns for 4.5 s
 export const NITRO_REGEN = 0.09;
 const TRUCK_RADIUS = 1.3;
 
@@ -48,7 +48,7 @@ export function createVehicle(x, z, heading, terrain, ride = 0.25) {
     yawRate: 0, grounded: true,
     pitch: 0, roll: 0,
     f: 0, l: 0,               // forward / lateral speed (for HUD, wheels, dust)
-    nitro: 1, boostT: 0,
+    nitro: 1, boostT: 0, hp: 100, maxHp: 100, wrecked: false,
     fallV: 0, surface: 'dirt', rise: 0,
     steerVis: 0,
   };
@@ -154,13 +154,20 @@ export function stepVehicle(v, input, terrain, tune, dt) {
     if (d < minD && d > 1e-6) {
       const ux = dx / d;
       const uz = dz / d;
+      const vn0 = v.vx * ux + v.vz * uz;
+      if (o.breakAt && -vn0 >= o.breakAt) {
+        // fragile prop: plow straight through it, losing a little speed
+        events.push({ type: 'smash', obj: o, power: -vn0 });
+        v.vx *= 0.9; v.vz *= 0.9;
+        continue;
+      }
       nx = o.x + ux * minD;
       nz = o.z + uz * minD;
-      const vn = v.vx * ux + v.vz * uz;
+      const vn = vn0;
       if (vn < 0) {
         v.vx -= 1.25 * vn * ux; v.vz -= 1.25 * vn * uz;
         v.vx *= 0.75; v.vz *= 0.75;
-        events.push({ type: 'hit', power: -vn });
+        events.push({ type: 'hit', power: -vn, obj: o });
       }
     }
   }

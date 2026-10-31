@@ -351,7 +351,7 @@ img { -webkit-user-drag: none; pointer-events: none; }
 @keyframes nitro-pulse { 50% { box-shadow: 0 0 0 8px rgba(255, 214, 10, 0.25); } }
 
 /* ---------- race HUD ---------- */
-#race-hud, #minimap, #countdown, #wrongway, #results { display: none; }
+#arena-hud, #hp, #combo, #race-hud, #minimap, #countdown, #wrongway, #results { display: none; }
 #drive.race #race-hud { display: flex; }
 #drive.race #minimap { display: block; }
 #race-hud {
@@ -439,3 +439,39 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #results .row svg { width: 26px; height: 26px; fill: none; stroke: #ffd60a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 #results .buttons { display: flex; gap: 18px; margin-top: 4px; }
 #results .buttons .icon-btn { pointer-events: auto; }
+
+/* ---- arena HUD */
+#drive.arena #arena-hud { display: flex; }
+#drive.arena #hp { display: flex; }
+#arena-hud {
+  position: absolute; top: calc(var(--safe-t) + 62px); left: 50%; transform: translateX(-50%);
+  align-items: center; gap: 14px; padding: 4px 14px; border-radius: 999px;
+  background: rgba(11, 16, 38, 0.5); border: 2px solid rgba(255, 255, 255, 0.4);
+  font-family: var(--pixel); font-size: clamp(14px, 3.6vmin, 22px); color: #fff; pointer-events: none;
+}
+#scorebox, #foebox { display: flex; align-items: center; gap: 6px; }
+#scorebox svg, #foebox svg, #hp svg { width: 20px; height: 20px; fill: none; stroke: #ffd60a; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#foebox svg { stroke: #ff8a80; }
+#atimer { font-variant-numeric: tabular-nums; }
+#hp {
+  position: absolute; top: calc(var(--safe-t) + 104px); left: 50%; transform: translateX(-50%);
+  align-items: center; gap: 8px; pointer-events: none;
+}
+#hp svg { stroke: #ff5a6a; fill: rgba(255, 90, 106, 0.35); width: 22px; height: 22px; }
+#hp i { display: block; width: clamp(110px, 22vmin, 190px); height: 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.5); border: 2px solid rgba(255, 255, 255, 0.55); overflow: hidden; }
+#hp u { display: block; height: 100%; width: 100%; background: #57e36b; transition: width 0.15s; }
+#hp.low u { background: #ff4d4d; animation: hpPulse 0.5s infinite alternate; }
+@keyframes hpPulse { to { opacity: 0.55; } }
+#combo {
+  position: absolute; top: calc(var(--safe-t) + 132px); left: 50%; transform: translateX(-50%) scale(0.8);
+  font-family: var(--pixel); font-size: clamp(22px, 6vmin, 40px); color: #ffd60a; text-shadow: 0 3px 0 #7a3b00, 0 0 12px rgba(255, 160, 0, 0.8);
+  opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none;
+}
+#combo.show { opacity: 1; transform: translateX(-50%) scale(1.1); }
+#results .arena-row, #results .skull { display: none; }
+#drive.arena #results .arena-row { display: flex; }
+#drive.arena #results .race-row { display: none; }
+#drive.arena #results.lost .trophy { display: none; }
+#drive.arena #results.lost .skull { display: block; }
+#results .skull { width: 56px; height: 56px; margin: 0 auto 6px; fill: none; stroke: #ff8a80; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#drive.arena #combo { display: block; }

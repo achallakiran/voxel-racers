@@ -117,6 +117,8 @@ export function createAudio() {
       setTimeout(() => { for (const o of [e.o1, e.o2, e.sub, e.wh, e.lfo]) { try { o.stop(); } catch { /* already stopped */ } } }, 300);
     },
     thump(power = 10) { const p = Math.min(1, power / 20); tone(70 - p * 20, 0, 0.18, 'sine', 0.35 + p * 0.3); noiseBurst(0.18 + p * 0.15, 500 + p * 700, 0.3 + p * 0.3); },
+    smash() { noiseBurst(0.22, 1400, 0.35); tone(150, 0, 0.12, 'square', 0.18); },
+    explode() { noiseBurst(0.9, 380, 0.7); tone(55, 0, 0.6, 'sine', 0.6); tone(38, 0.05, 0.8, 'sawtooth', 0.25); },
     boost() { noiseBurst(0.7, 1800, 0.35); tone(180, 0, 0.5, 'sawtooth', 0.12); },
     get ready() { return !!ctx; },
     setVolume(v) { volume = Math.min(1, Math.max(0, v)); if (master) master.gain.value = volume * 0.5; },

@@ -76,6 +76,13 @@
       <div id="posbox"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M12 14v4M8 20h8"/></svg><b id="pos">1/6</b></div>
       <div id="timer">0:00.00</div>
     </div>
+    <div id="arena-hud">
+      <div id="scorebox"><svg viewBox="0 0 24 24"><path d="M12 3 14.6 8.6 20.7 9.3 16.2 13.5 17.4 19.5 12 16.5 6.6 19.5 7.8 13.5 3.3 9.3 9.4 8.6z"/></svg><b id="score">0</b></div>
+      <div id="foebox"><svg viewBox="0 0 24 24"><circle cx="12" cy="11" r="7"/><path d="M9 10h.01M15 10h.01M9 20v-3M12 20v-3M15 20v-3"/></svg><b id="foes">5</b></div>
+      <div id="atimer">3:00</div>
+    </div>
+    <div id="hp"><svg viewBox="0 0 24 24"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.600-7 10-7 10z"/></svg><i><u id="hp-fill"></u></i></div>
+    <div id="combo">x2</div>
     <button id="btn-respawn" class="icon-btn small" aria-label="respawn on track">
       <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v5h-5"/></svg>
     </button>
@@ -84,10 +91,13 @@
     <div id="wrongway"><svg viewBox="0 0 24 24"><path d="M8 20V9a4 4 0 0 1 8 0v3"/><path d="m12 9 4 4 4-4"/></svg></div>
     <div id="results">
       <div class="card">
+        <svg class="skull" viewBox="0 0 24 24"><circle cx="12" cy="11" r="7"/><path d="M9 10h.01M15 10h.01M9 20v-3M12 20v-3M15 20v-3"/></svg>
         <svg class="trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3M12 14v4M8 20h8"/></svg>
-        <div class="row"><svg viewBox="0 0 24 24"><path d="M12 3 14.6 8.6 20.7 9.3 16.2 13.5 17.4 19.5 12 16.5 6.6 19.5 7.8 13.5 3.3 9.3 9.4 8.6z"/></svg><b id="res-pos">1/6</b></div>
+        <div class="row race-row"><svg viewBox="0 0 24 24"><path d="M12 3 14.6 8.6 20.7 9.3 16.2 13.5 17.4 19.5 12 16.5 6.6 19.5 7.8 13.5 3.3 9.3 9.4 8.6z"/></svg><b id="res-pos">1/6</b></div>
+        <div class="row arena-row"><svg viewBox="0 0 24 24"><path d="M12 3 14.6 8.6 20.7 9.3 16.2 13.5 17.4 19.5 12 16.5 6.6 19.5 7.8 13.5 3.3 9.3 9.4 8.6z"/></svg><b id="res-score">0</b></div>
+        <div class="row arena-row"><svg viewBox="0 0 24 24"><circle cx="12" cy="11" r="7"/><path d="M9 10h.01M15 10h.01M9 20v-3M12 20v-3M15 20v-3"/></svg><b id="res-wrecked">0/5</b></div>
         <div class="row"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 3h6"/></svg><b id="res-total">0:00.00</b></div>
-        <div class="row"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><b id="res-best">0:00.00</b></div>
+        <div class="row race-row"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><b id="res-best">0:00.00</b></div>
         <div class="buttons">
           <button id="btn-retry" class="icon-btn" aria-label="race again"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20 4v5h-5"/></svg></button>
           <button id="btn-results-exit" class="icon-btn" aria-label="garage"><svg viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/></svg></button>

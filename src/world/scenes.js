@@ -5,7 +5,7 @@
 
 import * as THREE from '../../lib/three.module.js';
 import {
-  SANDBOX, OBSTACLES, terrainColumns, wallRing,
+  SANDBOX, OBSTACLES, terrainColumns, wallRing, heightAt as ARENA_H,
 } from './arena-layout.js';
 import * as TR from './track.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
@@ -592,6 +592,72 @@ function buildTrack(group) {
   return { fineTris: fine.triangles, coarseTris: coarse.triangles, barriers: bar.length, trees: trees.length };
 }
 
+
+// ------------------------------------------------------------------ destructible props
+function propMesh(p) {
+  const g = new THREE.Group();
+  const box = (w, h, d, x, y, z, color) => {
+    const m = new THREE.Mesh(UNIT, lambert(color));
+    m.scale.set(w, h, d); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m;
+  };
+  const dark = (c, k = 0.78) => new THREE.Color(c).multiplyScalar(k);
+  switch (p.type) {
+    case 'crate':
+      box(1.4, 1.4, 1.4, 0, 0.7, 0, p.color);
+      box(1.46, 0.18, 1.46, 0, 0.25, 0, dark(p.color)); box(1.46, 0.18, 1.46, 0, 1.15, 0, dark(p.color));
+      break;
+    case 'barrel':
+      box(1.1, 1.0, 1.1, 0, 0.5, 0, p.color);
+      box(1.16, 0.12, 1.16, 0, 0.25, 0, '#e8edf5'); box(1.16, 0.12, 1.16, 0, 0.75, 0, '#e8edf5');
+      break;
+    case 'fence':
+      for (const x of [-0.8, 0, 0.8]) box(0.18, 1.1, 0.18, x, 0.55, 0, '#8a6a42');
+      box(1.8, 0.2, 0.1, 0, 0.9, 0, p.color); box(1.8, 0.2, 0.1, 0, 0.5, 0, '#f1f1f1');
+      break;
+    case 'car':
+      box(3.4, 0.55, 1.7, 0, 0.45, 0, p.color);
+      box(1.7, 0.4, 1.4, -0.2, 0.9, 0, dark(p.color, 0.9)); box(1.5, 0.28, 1.46, -0.2, 0.92, 0, '#1b2a3a');
+      for (const [x, z] of [[-1.2, -0.85], [-1.2, 0.85], [1.2, -0.85], [1.2, 0.85]]) box(0.6, 0.6, 0.3, x, 0.3, z, '#1c1c20');
+      break;
+    case 'wall':
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+        const off = (r & 1) * 0.4;
+        box(0.76, 0.52, 1.1, -1.2 + c * 0.8 + off - 0.2, 0.28 + r * 0.55, 0, dark(p.color, 0.86 + ((r * 5 + c * 3) % 5) * 0.04));
+      }
+      break;
+    case 'tnt':
+      box(1.5, 1.2, 1.5, 0, 0.6, 0, p.color); box(1.56, 0.22, 1.56, 0, 0.6, 0, '#f4f1ea'); box(0.5, 0.25, 0.5, 0, 1.3, 0, '#ffd60a');
+      break;
+    case 'fuel':
+      box(4.4, 1.7, 2.1, 0.4, 1.1, 0, p.color); box(4.46, 0.3, 2.16, 0.4, 1.1, 0, '#d62828');
+      box(1.4, 1.5, 2.0, -2.5, 0.95, 0, '#d62828');
+      for (const [x, z] of [[-2.6, -1.05], [-2.6, 1.05], [0.6, -1.05], [0.6, 1.05], [2.2, -1.05], [2.2, 1.05]]) box(0.8, 0.8, 0.3, x, 0.4, z, '#1c1c20');
+      break;
+    default: box(1, 1, 1, 0, 0.5, 0, p.color);
+  }
+  return g;
+}
+
+function buildPropMeshes(group) {
+  const byId = new Map();
+  return {
+    set(props) {
+      this.clear();
+      for (const p of props) {
+        const m = propMesh(p);
+        m.position.set(p.x, ARENA_H(p.x, p.z), p.z);
+        m.rotation.y = p.rot || 0;
+        group.add(m); byId.set(p.id, m);
+      }
+    },
+    remove(id) { const m = byId.get(id); if (m) { group.remove(m); byId.delete(id); } },
+    // quick visual feedback when a wall cracks
+    shake(id) { const m = byId.get(id); if (m) m.rotation.z = (Math.random() - 0.5) * 0.08; },
+    clear() { for (const m of byId.values()) group.remove(m); byId.clear(); },
+    get count() { return byId.size; },
+  };
+}
+
 // ------------------------------------------------------------------ world
 export function createWorld(scene, lights) {
   const outdoor = new THREE.Group();
@@ -615,6 +681,9 @@ export function createWorld(scene, lights) {
   sandbox.visible = false;
   scene.add(sandbox);
   const sbStats = buildSandbox(sandbox);
+  const propGroup = new THREE.Group();
+  sandbox.add(propGroup);
+  const propMeshes = buildPropMeshes(propGroup);
   const trackGroup = new THREE.Group();
   trackGroup.visible = false;
   scene.add(trackGroup);
@@ -689,6 +758,7 @@ export function createWorld(scene, lights) {
   return {
     setMode,
     setCourse,
+    props: propMeshes,
     get trackStats() { return trackStats; },
     update,
     get mode() { return mode; },

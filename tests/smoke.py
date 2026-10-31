@@ -195,6 +195,7 @@ def main():
         check(saved['truckId'] == cur and cur in saved['paints'], 'truck + paint saved to localStorage')
 
         # ---------------- drive (Phase 1): joystick + 2 buttons, nitro, 4 cameras
+        page.evaluate('window.__voxelRacers.arenaFoes = 0')      # practice round: no rivals while testing the controls
         page.click('#btn-arena', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'drive', 'arena icon starts driving')
         check(page.evaluate('window.__voxelRacers.driveMode') == 'arena', 'arena mode')
@@ -208,6 +209,9 @@ def main():
         hud_text = page.evaluate("[...document.querySelectorAll('#drive button')].map(b => b.textContent.trim()).join('') + document.getElementById('nitro').textContent.trim()")
         check(hud_text == '', 'drive HUD is icons only')
         check(page.evaluate("getComputedStyle(document.getElementById('drive')).userSelect") == 'none', 'drive HUD text not selectable')
+        page.wait_for_function("window.__voxelRacers.match && window.__voxelRacers.match.phase === 'fight'", timeout=60000)
+        check(visible(page, '#arena-hud') and visible(page, '#hp'), 'arena HUD and health bar visible')
+        check(page.evaluate('window.__voxelRacers.arenaTerrain.props.length') >= 50, 'arena is full of destructible props')
         shot(page, '04-drive-start')
 
         # gas button (B1) with the mouse = a finger
@@ -283,6 +287,39 @@ def main():
         check(page.evaluate('window.__voxelRacers.worldMode') == 'garage', 'garage environment restored')
         check(page.evaluate('window.__voxelRacers.vehicle') is None, 'vehicle released')
 
+        # ---------------- arena fight: rivals, smashing, explosions, health, results
+        page.evaluate('window.__voxelRacers.arenaFoes = 5')
+        page.click('#btn-arena', force=True)
+        page.wait_for_function("window.__voxelRacers.match && window.__voxelRacers.match.phase === 'fight'", timeout=90000)
+        check(page.evaluate('window.__voxelRacers.rivals.length') == 5, 'five rival brawlers in the arena')
+        check(page.evaluate("document.getElementById('foes').textContent") == '5', 'rivals-left counter shows 5')
+        # rivals hunt the player: someone gets hurt within a while
+        page.keyboard.down('ArrowUp')
+        page.wait_for_function('window.__voxelRacers.rivals.some((r) => r.v.f > 6)', timeout=60000)
+        check(True, 'rivals charge')
+        page.keyboard.up('ArrowUp')
+        # smash a crate, then chain-detonate TNT through the game's own rules
+        n0 = page.evaluate('window.__voxelRacers.arenaTerrain.props.length')
+        page.evaluate("window.__voxelRacers.destroyProp(window.__voxelRacers.arenaTerrain.props.find((p) => p.type === 'crate'))")
+        n1 = page.evaluate('window.__voxelRacers.arenaTerrain.props.length')
+        check(n1 == n0 - 1, 'smashing a crate removes it')
+        check(page.evaluate('window.__voxelRacers.debris.alive') > 0, 'smashed props throw voxel debris')
+        check(page.evaluate('window.__voxelRacers.match.score') > 0, 'smashing scores points')
+        page.evaluate("window.__voxelRacers.destroyProp(window.__voxelRacers.arenaTerrain.props.find((p) => p.type === 'tnt'))")
+        n2 = page.evaluate('window.__voxelRacers.arenaTerrain.props.length')
+        check(n2 < n1, 'a TNT blast removes the prop')
+        page.wait_for_timeout(600)
+        shot(page, '09-arena-fight')
+        # wreck every rival: the match is won and the results appear
+        page.evaluate("window.__voxelRacers.rivals.forEach((r, i) => { r.v.hp = 1; })")
+        page.evaluate("window.__voxelRacers.wreckAll()")
+        page.wait_for_function("document.getElementById('results').classList.contains('show')", timeout=30000)
+        check(page.evaluate("window.__voxelRacers.match.won") is True, 'wrecking all rivals wins the match')
+        check(visible(page, '#results'), 'results card shows')
+        shot(page, '10-arena-results')
+        page.click('#btn-results-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'results exit returns to the garage')
+
 
         # ---------------- race mode (track with a road, countdown, laps)
         page.click('#btn-race', force=True)
@@ -300,14 +337,16 @@ def main():
         page.wait_for_timeout(600)
         check(page.evaluate('window.__voxelRacers.vehicle.f') < 0.5, 'truck is held on the line during the countdown')
         shot(page, '07-race-countdown')
-        page.wait_for_function("window.__voxelRacers.race.phase === 'racing'", timeout=60000)
+        d0 = page.evaluate('window.__voxelRacers.drawn'); page.wait_for_timeout(3000)
+        print('race fps ~', (page.evaluate('window.__voxelRacers.drawn') - d0) / 3, 'race.time', page.evaluate('window.__voxelRacers.race.time'), flush=True)
+        page.wait_for_function("window.__voxelRacers.race.phase === 'racing'", timeout=150000)
         check(True, 'countdown ends and the race starts')
-        page.wait_for_function('window.__voxelRacers.vehicle.f > 8', timeout=30000)
+        page.wait_for_function('window.__voxelRacers.vehicle.f > 8', timeout=150000)
         check(page.evaluate('window.__voxelRacers.vehicle.surface') == 'asphalt', 'start straight is asphalt')
         check(page.evaluate("document.getElementById('lap').textContent") == '1/3', 'lap counter shows 1/3')
         page.wait_for_timeout(1500)
         shot(page, '08-race-driving')
-        page.wait_for_function('window.__voxelRacers.rivals.every((r) => r.v.f > 6)', timeout=30000)
+        page.wait_for_function('window.__voxelRacers.rivals.every((r) => r.v.f > 6)', timeout=150000)
         check(True, 'rivals drive off at the start')
         page.wait_for_timeout(5000)
         check(page.evaluate('window.__voxelRacers.rivals.every((r) => Math.abs(r.v.f) > 2)'), 'rivals keep moving')

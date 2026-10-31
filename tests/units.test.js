@@ -956,3 +956,226 @@ test('physics: nitro is strong - top speed 1.5x+, big kick, and it plows through
   assert.ok(boosted > normal * 1.5, `boost ${boosted} vs ${normal}`);
   assert.ok(run2('mud', true) > run2('mud', false) * 1.8, 'nitro through mud');
 });
+
+// ---------- Phase 5a: arena combat
+import { ramDamage, applyDamage, blastTrucks, facing, RAM_MIN_POWER } from '../src/physics/damage.js';
+import { arenaProps, createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from '../src/world/props.js';
+import { createMatch, comboMultiplier, formatClock, MATCH_TIME } from '../src/core/arena-match.js';
+import { createBrawler, brawlerInput } from '../src/ai/brawler.js';
+import { DebrisPool, burst } from '../src/fx/debris.js';
+import { BOOST_TIME } from '../src/physics/arcade.js';
+
+test('nitro: a single tap burns for 4+ seconds and the tank still allows two taps', () => {
+  assert.ok(BOOST_TIME >= 4);
+  const tune = tuningFor(STATS);
+  const t = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => 'asphalt' };
+  const v = createVehicle(0, 0, 0, t);
+  stepVehicle(v, { gas: 1, boost: true }, t, tune, DT);
+  assert.ok(v.boostT > 4.4);
+  let boosting = 0;
+  for (let i = 0; i < 60 * 6; i++) { stepVehicle(v, { gas: 1 }, t, tune, DT); if (v.boostT > 0) boosting++; }
+  assert.ok(boosting / 60 > 4, `burned for ${boosting / 60}s`);
+  const w = createVehicle(0, 0, 0, t);
+  stepVehicle(w, { gas: 1, boost: true }, t, tune, DT);
+  w.boostT = 0;
+  stepVehicle(w, { gas: 1, boost: true }, t, tune, DT);
+  assert.ok(w.boostT > 0, 'second tap works');
+});
+
+test('damage: bumps do nothing, hard rams hurt, head-on hurts less than being hit from behind', () => {
+  const a = { x: 0, z: 0, heading: 0 };               // faces +z
+  const b = { x: 0, z: 3, heading: Math.PI };         // faces back at a
+  assert.deepEqual(ramDamage(a, b, RAM_MIN_POWER - 1), { a: 0, b: 0 });
+  const head = ramDamage(a, b, 20);
+  assert.ok(head.a > 10 && head.b > 10);
+  const c = { x: 0, z: 3, heading: 0 };               // faces away: a hits c in the back
+  const rear = ramDamage(a, c, 20);
+  assert.ok(rear.b > head.b * 1.5, 'tail hit hurts more');
+  assert.ok(rear.a <= head.a + 1e-9, 'the attacker stays protected');
+  assert.ok(facing(a, 0, 5) > 0.99 && facing(a, 0, -5) < -0.99);
+});
+
+test('damage: health bottoms out at zero and reports the wreck once', () => {
+  const v = { hp: 30, maxHp: 100, wrecked: false };
+  assert.equal(applyDamage(v, 10), false);
+  assert.equal(v.hp, 20);
+  assert.equal(applyDamage(v, 50), true);
+  assert.equal(v.hp, 0); assert.equal(v.wrecked, true);
+  assert.equal(applyDamage(v, 5), false, 'wrecked trucks take no more');
+});
+
+test('damage: a blast hurts and launches close trucks, spares far ones', () => {
+  const near = { x: 2, z: 0, vx: 0, vz: 0, vy: 0, hp: 100, maxHp: 100, wrecked: false, grounded: true };
+  const far = { x: 30, z: 0, vx: 0, vz: 0, vy: 0, hp: 100, maxHp: 100, wrecked: false, grounded: true };
+  const res = blastTrucks([near, far], 0, 0, 9, 40);
+  assert.equal(res.length, 1);
+  assert.ok(near.hp < 75 && near.vx > 5 && near.vy > 3 && !near.grounded);
+  assert.equal(far.hp, 100);
+});
+
+test('props: layout is deterministic, varied, on flat ground, clear of the start and each other', () => {
+  const props = arenaProps();
+  assert.deepEqual(props.map((p) => [p.type, +p.x.toFixed(3), +p.z.toFixed(3)]), arenaProps().map((p) => [p.type, +p.x.toFixed(3), +p.z.toFixed(3)]));
+  const types = new Set(props.map((p) => p.type));
+  for (const t of Object.keys(PROP_DEFS)) assert.ok(types.has(t), `has ${t}`);
+  for (const tier of ['smash', 'break', 'blast']) assert.ok(props.some((p) => p.tier === tier));
+  assert.ok(props.length >= 50);
+  for (const p of props) {
+    assert.ok(Math.abs(heightAt(p.x, p.z)) < 0.15, 'flat ground');
+    assert.ok(Math.hypot(p.x, p.z) < SANDBOX.radius - 4, 'inside the bowl');
+    assert.ok(Math.hypot(p.x - SANDBOX.start.x, p.z - SANDBOX.start.z) >= 12, 'clear of the start');
+  }
+  for (let i = 0; i < props.length; i++) for (let j = i + 1; j < props.length; j++) assert.ok(Math.hypot(props[i].x - props[j].x, props[i].z - props[j].z) >= props[i].r + props[j].r, 'no overlap');
+});
+
+test('props: a truck plows through smash props at speed but bounces off at crawl speed', () => {
+  const tune = tuningFor(STATS);
+  const terr = createArenaTerrain([{ id: 0, type: 'crate', tier: 'smash', x: 0, z: 8, r: 0.8, h: 0.8, hp: 1, breakAt: 3.5, rot: 0 }]);
+  terr.heightAt = () => 0;
+  const fast = createVehicle(0, 0, 0, terr);
+  fast.vz = 14; fast.vx = 0;
+  const events = [];
+  for (let i = 0; i < 120; i++) events.push(...stepVehicle(fast, { gas: 1 }, terr, tune, DT));
+  const smash = events.find((e) => e.type === 'smash');
+  assert.ok(smash && smash.obj.type === 'crate', 'smash event names the prop');
+  assert.ok(fast.z > 8.5, 'passes through');
+  const slow = createVehicle(0, 0, 0, terr);
+  slow.vz = 2;
+  const ev2 = [];
+  for (let i = 0; i < 90; i++) ev2.push(...stepVehicle(slow, { gas: 0 }, terr, tune, DT));
+  assert.ok(!ev2.some((e) => e.type === 'smash'), 'no smash at crawl speed');
+});
+
+test('props: walls crack over several hits, then give way', () => {
+  const wall = { tier: 'break', hp: PROP_DEFS.wall.hp, type: 'wall' };
+  assert.equal(hitProp(wall, 2), 'none');
+  let res = 'none'; let hits = 0;
+  while (res !== 'destroyed' && hits < 10) { res = hitProp(wall, 14); hits++; }
+  assert.equal(res, 'destroyed');
+  assert.ok(hits >= 2, `took ${hits} hits`);
+  assert.equal(hitProp({ tier: 'smash' }, 20), 'none');
+});
+
+test('props: blasts chain to neighbours, wreck crates in range and score everything', () => {
+  const mk = (id, type, x, z) => ({ id, type, tier: PROP_DEFS[type].tier, x, z, r: PROP_DEFS[type].r, h: 1, hp: PROP_DEFS[type].hp || 1 });
+  const props = [mk(0, 'tnt', 0, 0), mk(1, 'tnt', 6, 0), mk(2, 'crate', 3, 3), mk(3, 'crate', 40, 40), mk(4, 'tnt', 60, 0)];
+  const terr = { obstacles: [...props], props: [...props] };
+  const res = detonate(terr, props[0]);
+  assert.equal(res.explosions.length, 2, 'the second TNT chains');
+  assert.ok(res.destroyed.includes(props[1]) && res.destroyed.includes(props[2]));
+  assert.ok(!res.destroyed.includes(props[3]) && !res.destroyed.includes(props[4]), 'far props survive');
+  assert.equal(res.score, 100 + 100 + 50);
+  assert.deepEqual(terr.props.map((p) => p.id).sort(), [3, 4]);
+  assert.ok(!terr.obstacles.includes(props[0]), 'removed from collision too');
+  // no infinite loop when two blast props sit in range of each other
+  const a = mk(0, 'fuel', 0, 0); const b = mk(1, 'fuel', 5, 0);
+  const t2 = { obstacles: [a, b], props: [a, b] };
+  assert.equal(detonate(t2, a).explosions.length, 2);
+});
+
+test('props: terrain copies are independent between rounds', () => {
+  const a = createArenaTerrain(); const b = createArenaTerrain();
+  const n = b.props.length;
+  removeProp(a, a.props[0]);
+  assert.equal(b.props.length, n);
+  assert.ok(a.obstacles.length < b.obstacles.length);
+});
+
+test('match: countdown, then fight; wrecking all rivals wins, losing yourself ends it', () => {
+  const m = createMatch({ foes: 2 });
+  assert.equal(m.phase, 'countdown');
+  assert.equal(m.award(100), 0, 'no score during the countdown');
+  m.tick(COUNTDOWN + 0.1);
+  assert.equal(m.phase, 'fight');
+  assert.deepEqual(m.drainEvents(), ['go']);
+  m.foeWrecked(); assert.equal(m.phase, 'fight');
+  m.foeWrecked(); assert.equal(m.phase, 'over'); assert.equal(m.won, true);
+  assert.ok(m.score >= 1000);
+  const l = createMatch({ foes: 2 }); l.tick(5); l.playerWrecked();
+  assert.equal(l.phase, 'over'); assert.equal(l.won, false);
+});
+
+test('match: combo multiplier grows with chained smashes and resets after the window', () => {
+  assert.equal(comboMultiplier(1), 1); assert.equal(comboMultiplier(3), 2); assert.equal(comboMultiplier(30), 5);
+  const m = createMatch({ foes: 3 }); m.tick(5);
+  let total = 0;
+  for (let i = 0; i < 6; i++) total += m.award(50);
+  assert.ok(total > 300, `combo paid ${total}`);
+  m.tick(3);
+  assert.equal(m.chain, 0);
+  assert.equal(m.award(50), 50);
+});
+
+test('match: time runs out, practice mode (0 foes) never auto-wins, clock formats', () => {
+  const m = createMatch({ foes: 1, time: 10 }); m.tick(4); m.tick(11);
+  assert.equal(m.phase, 'over'); assert.equal(m.won, false);
+  const p = createMatch({ foes: 0 }); p.tick(5); p.foeWrecked();
+  assert.equal(p.phase, 'fight');
+  assert.equal(formatClock(MATCH_TIME), '3:00'); assert.equal(formatClock(65), '1:05'); assert.equal(formatClock(-3), '0:00');
+});
+
+test('brawler: waits at the start, hunts the nearest truck, lunges when lined up, backs out when stuck', () => {
+  const tune = tuningFor(STATS);
+  const t = { heightAt: () => 0, obstacles: [], radius: 45, surfaceAt: () => 'dirt' };
+  const me = createVehicle(0, 0, 0, t);
+  const prey = createVehicle(0, 15, 0, t); prey.vx = 0; prey.vz = 0;
+  const b = createBrawler({ aggression: 1 });
+  assert.equal(brawlerInput(b, me, [me, prey], 45, 'countdown', DT).gas, 0);
+  b.lungeCd = 0;
+  const go = brawlerInput(b, me, [me, prey], 45, 'fight', DT);
+  assert.equal(go.gas, 1); assert.ok(Math.abs(go.steer) < 0.2); assert.equal(go.boost, true, 'lines up and lunges');
+  // turns toward a target on the right
+  const right = createVehicle(-15, 0, 0, t);   // +x is the truck's left, -x its right
+  const b2 = createBrawler();
+  assert.ok(brawlerInput(b2, me, [me, right], 45, 'fight', DT).steer > 0.3, 'steer>0 turns right');
+  // ignores wrecked trucks
+  prey.wrecked = true;
+  const b3 = createBrawler();
+  brawlerInput(b3, me, [me, prey], 45, 'fight', DT);
+  assert.equal(b3.target, null);
+  // stuck against a wall: reverses
+  const stuck = createVehicle(0, 0, 0, t); const b4 = createBrawler();
+  let rev = false;
+  for (let i = 0; i < 120; i++) { const inp = brawlerInput(b4, stuck, [stuck, prey], 45, 'fight', DT); if (inp.brake === 1 && inp.gas === 0) rev = true; }
+  assert.equal(rev, true);
+});
+
+test('brawler: five brawlers can fight for a minute without leaving the bowl, and someone gets hurt', () => {
+  const terr = createArenaTerrain();
+  const trucks = TRUCKS.slice(0, 5).map((tk, i) => {
+    const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+    const a = i * 1.256; const x = Math.cos(a) * 24; const z = Math.sin(a) * 24;
+    return { tune, v: createVehicle(x, z, Math.atan2(-x, -z), terr, tune.ride), b: createBrawler({ phase: i }) };
+  });
+  let maxR = 0; let smashes = 0;
+  for (let i = 0; i < 60 * 60; i++) {
+    const all = trucks.map((q) => q.v);
+    for (const q of trucks) {
+      if (q.v.wrecked) continue;
+      for (const e of stepVehicle(q.v, brawlerInput(q.b, q.v, all, SANDBOX.radius, 'fight', DT), terr, q.tune, DT)) {
+        if (e.type === 'smash') { removeProp(terr, e.obj); smashes++; }
+      }
+      maxR = Math.max(maxR, Math.hypot(q.v.x, q.v.z));
+    }
+    const live = all.filter((v) => !v.wrecked);
+    for (const h of resolveCollisions(live)) {
+      const d = ramDamage(live[h.a], live[h.b], h.power);
+      applyDamage(live[h.a], d.a); applyDamage(live[h.b], d.b);
+    }
+  }
+  assert.ok(maxR < SANDBOX.radius + 1, `max radius ${maxR}`);
+  assert.ok(trucks.some((q) => q.v.hp < 100), 'ramming did damage');
+  assert.ok(trucks.every((q) => Number.isFinite(q.v.x) && Number.isFinite(q.v.y)));
+});
+
+test('debris: chunks fly, land on the ground, settle and expire; the pool never overflows', () => {
+  const pool = new DebrisPool(50);
+  burst(pool, { x: 0, y: 1, z: 0, colors: [0xff0000, 0x00ff00], count: 30, u: (() => { let k = 0.1; return () => (k = (k * 7.3 + 0.37) % 1); })() });
+  assert.equal(pool.alive, 30);
+  for (let i = 0; i < 90; i++) pool.update(1 / 60, () => 0);
+  for (let i = 0; i < 50; i++) if (pool.life[i] > 0) assert.ok(pool.pos[i * 3 + 1] >= pool.size[i] / 2 - 1e-6, 'never below the ground');
+  for (let i = 0; i < 60 * 8; i++) pool.update(1 / 60, () => 0);
+  assert.equal(pool.alive, 0);
+  burst(pool, { x: 0, y: 0, z: 0, colors: [1], count: 500 });
+  assert.equal(pool.alive, 50, 'capped at capacity');
+});
