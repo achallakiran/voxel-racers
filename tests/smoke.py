@@ -117,6 +117,7 @@ def main():
         page.wait_for_function(
             "['.line1', '.line2'].every(s => { const e = document.querySelector('#intro ' + s); return e.clientWidth > 0 && e.clientWidth >= e.scrollWidth - 1; })",
             timeout=6000)
+        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .studio')).opacity) > 0.8", timeout=4000)
         check(op('#intro .studio') > 0.8 and op('#intro .emblem') < 0.05, 'studio text shows after the logo has faded')
         studio = page.evaluate("document.querySelector('#intro .line1').textContent + ' ' + document.querySelector('#intro .line2').textContent")
         check(studio == 'ADA STUDIOS PRESENTS', f'intro text reads "{studio}"')
