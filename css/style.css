@@ -336,3 +336,4 @@ img { -webkit-user-drag: none; pointer-events: none; }
 .icon-btn.pedal svg { width: 56%; height: 56%; stroke-width: 3; }
 #drive.lefty #joy-zone { left: auto; right: 0; }
 #drive.lefty #pedals { right: auto; left: calc(var(--safe-l) + 18px); }
+#btn-drive svg { fill: none; stroke: var(--ink); stroke-width: 2.2; }
