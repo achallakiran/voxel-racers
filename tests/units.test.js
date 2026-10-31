@@ -207,29 +207,29 @@ test('particle scale: smoke grows then vanishes, flame shrinks', () => {
 });
 
 // ---------------------------------------------------------------- flow
-test('flow: boot -> start -> intro -> title <-> garage, invalid events ignored', () => {
+test('flow: boot -> intro -> title <-> garage, invalid events ignored', () => {
   const log = [];
   const f = createFlow((s, p) => log.push(`${p}>${s}`));
   assert.equal(f.state, 'boot');
   assert.equal(f.send('play'), false, 'cannot play from boot');
+  assert.equal(f.send('tap'), false, 'there is no tap-to-start screen any more');
   assert.ok(f.send('ready'));
-  assert.equal(f.send('skip'), false, 'cannot skip before intro');
-  assert.ok(f.send('tap'));
-  assert.equal(f.state, 'intro');
+  assert.equal(f.state, 'intro', 'intro starts by itself, no tap needed');
+  assert.equal(f.send('play'), false, 'cannot play during the intro');
   assert.ok(f.send('skip'));
   assert.equal(f.state, 'title');
-  assert.equal(f.send('tap'), false);
+  assert.equal(f.send('skip'), false);
   assert.ok(f.send('play'));
   assert.equal(f.state, 'garage');
   assert.ok(f.send('back'));
   assert.equal(f.state, 'title');
-  assert.deepEqual(log, ['boot>start', 'start>intro', 'intro>title', 'title>garage', 'garage>title']);
-  for (const s of ['start', 'intro', 'title', 'garage']) assert.ok(SCREENS.includes(s));
+  assert.deepEqual(log, ['boot>intro', 'intro>title', 'title>garage', 'garage>title']);
+  assert.deepEqual(SCREENS, ['intro', 'title', 'garage']);
 });
 
 test('intro can finish by timer as well as by skip', () => {
   const f = createFlow();
-  f.send('ready'); f.send('tap');
+  f.send('ready');
   assert.ok(f.send('done'));
   assert.equal(f.state, 'title');
 });

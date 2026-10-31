@@ -84,41 +84,50 @@ def main():
         page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
         page.on('pageerror', lambda e: errors.append(str(e)))
 
-        # ---------------- boot + start screen
+        # ---------------- boot in portrait: rotate prompt, intro waits
+        page.set_viewport_size({'width': 390, 'height': 844})
         page.goto(url)
         page.wait_for_function('window.__voxelRacers && window.__voxelRacers.ready', timeout=20000)
-        check(page.evaluate('window.__voxelRacers.flow.state') == 'start', 'boots to tap-to-start')
-        page.wait_for_timeout(700)  # let the start screen finish fading in
-        check(visible(page, '#start'), 'start screen visible')
-        check(not visible(page, '#rotate'), 'rotate prompt hidden in landscape')
-        page.wait_for_function('window.__voxelRacers.frames > 5', timeout=20000)
-        check(True, 'game loop running behind the start screen')
-
-        # ---------------- portrait shows the rotate prompt, landscape hides it again
-        page.set_viewport_size({'width': 390, 'height': 844})
-        page.wait_for_timeout(200)
+        page.wait_for_timeout(300)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'boot', 'intro waits while the phone is in portrait')
         check(visible(page, '#rotate'), 'portrait shows the rotate-phone prompt')
         check(page.evaluate("getComputedStyle(document.querySelector('.phone')).animationName") == 'tilt', 'phone tilt animation running')
         shot(page, '01-rotate-portrait')
-        page.set_viewport_size({'width': 844, 'height': 390})
-        page.wait_for_timeout(200)
-        check(not visible(page, '#rotate'), 'rotate prompt gone after turning landscape')
 
-        # ---------------- start -> intro
-        page.click('#btn-start')
-        check(page.evaluate('window.__voxelRacers.flow.state') == 'intro', 'tap starts the intro')
+        # ---------------- turn to landscape: intro starts by itself (no tap)
+        page.set_viewport_size({'width': 844, 'height': 390})
+        page.wait_for_function("window.__voxelRacers.flow.state === 'intro'", timeout=5000)
+        check(True, 'turning landscape starts the intro automatically')
+        check(not visible(page, '#rotate'), 'rotate prompt gone after turning landscape')
+        check(page.evaluate("document.getElementById('start')") is None, 'there is no tap-to-start screen')
+        page.wait_for_function('window.__voxelRacers.frames > 5', timeout=20000)
+        check(True, 'game loop running during the intro')
+
+        def op(sel):
+            return page.evaluate("(s) => parseFloat(getComputedStyle(document.querySelector(s)).opacity)", sel)
+
+        # logo shows first (studio text not yet visible)
+        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .emblem')).opacity) > 0.9", timeout=4000)
+        check(op('#intro .studio') < 0.1, 'logo is shown first, studio text not yet')
+        shot(page, '02a-intro-logo')
+        # logo fades away
+        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .emblem')).opacity) < 0.05", timeout=5000)
+        check(True, 'logo fades out')
+        # then ADA STUDIOS PRESENTS appears and types out without clipping
         page.wait_for_function(
-            "['.line1', '.line2'].every(s => { const e = document.querySelector('#intro ' + s); return e.clientWidth >= e.scrollWidth - 1; })",
-            timeout=4000)
-        check(True, 'intro text finishes typing without being clipped')
+            "['.line1', '.line2'].every(s => { const e = document.querySelector('#intro ' + s); return e.clientWidth > 0 && e.clientWidth >= e.scrollWidth - 1; })",
+            timeout=6000)
+        check(op('#intro .studio') > 0.8 and op('#intro .emblem') < 0.05, 'studio text shows after the logo has faded')
         studio = page.evaluate("document.querySelector('#intro .line1').textContent + ' ' + document.querySelector('#intro .line2').textContent")
         check(studio == 'ADA STUDIOS PRESENTS', f'intro text reads "{studio}"')
-        shot(page, '02-intro')
-        page.wait_for_function("window.__voxelRacers.flow.state === 'title'", timeout=6000)
+        shot(page, '02b-intro-studio')
+        page.wait_for_function("window.__voxelRacers.flow.state === 'title'", timeout=9000)
         check(True, 'intro auto-advances to title')
 
         # ---------------- title
-        page.wait_for_timeout(900)
+        page.wait_for_function(
+            "(() => { const e = document.querySelector('#title'); return e.classList.contains('on') && parseFloat(getComputedStyle(e).opacity) > 0.9; })()",
+            timeout=8000)
         check(visible(page, '#title'), 'title screen visible')
         logo = page.evaluate("document.querySelector('#title .logo').textContent")
         check('VOXEL' in logo and 'MONSTERS' in logo, 'title logo says Voxel Monsters')
@@ -129,8 +138,7 @@ def main():
         # skipping the intro by tap also works (reload path)
         page2 = browser.new_page(viewport={'width': 844, 'height': 390})
         page2.goto(url)
-        page2.wait_for_function('window.__voxelRacers && window.__voxelRacers.ready')
-        page2.click('#btn-start')
+        page2.wait_for_function("window.__voxelRacers && window.__voxelRacers.flow.state === 'intro'")
         page2.mouse.click(400, 200)
         check(page2.evaluate('window.__voxelRacers.flow.state') == 'title', 'tapping the intro skips it')
         page2.close()

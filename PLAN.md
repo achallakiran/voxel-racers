@@ -4,7 +4,7 @@ Monster truck racing in voxels. Plain HTML + Three.js (bundled, no CDN), served 
 
 ## Locked decisions
 - Title: **Voxel Monsters**. Studio line: **ADA STUDIOS PRESENTS**.
-- Start flow: rotate-phone prompt (portrait only) -> tap to start (fullscreen, landscape lock where supported, audio unlock) -> studio intro -> title -> garage.
+- Start flow: rotate-phone prompt (portrait only) -> logo fades in/out -> ADA STUDIOS PRESENTS fades in/out (automatic, no tap) -> title -> garage. Sound, fullscreen and landscape lock unlock on the first tap (skip or Play).
 - Roster: 8 trucks with distinct bodies and moving parts: open pickup, buggy, snow-plow, gator-jaw, exposed-engine, crane tow truck, monster school bus, 6-wheel dump truck.
 - Renderer: Three.js, vendored in `lib/`.
 - Camera: 4 views cycled by an icon (Iso-follow default, Fixed iso, Chase, High top-down), saved.

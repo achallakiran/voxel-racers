@@ -1,5 +1,5 @@
 // Voxel Monsters - Phase 0.5.
-// Flow: rotate prompt (portrait) -> tap to start -> ADA Studios intro -> title -> garage.
+// Flow: rotate prompt (portrait) -> logo, then ADA Studios presents (automatic) -> title -> garage.
 // The 3D scene runs behind every screen. Gameplay, physics and tracks arrive later (PLAN.md).
 
 import * as THREE from '../lib/three.module.js';
@@ -7,7 +7,7 @@ import { TRUCKS, getTruck } from './vehicles/truck-stats.js';
 import { createTruckMesh, repaintTruck, animateTruck, disposeTruck } from './vehicles/truck-mesh.js';
 import { createStorage, browserBacking } from './core/storage.js';
 import { FixedStepper } from './core/stepper.js';
-import { createFlow, SCREENS } from './core/flow.js';
+import { createFlow, SCREENS, needsRotate } from './core/flow.js';
 import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
@@ -180,8 +180,7 @@ function start() {
       intro.classList.remove('play');
       void intro.offsetWidth; // restart CSS animation
       intro.classList.add('play');
-      audio.chime();
-      introTimer = setTimeout(() => flow.send('done'), 4200);
+      introTimer = setTimeout(() => flow.send('done'), 6700);
     } else {
       clearTimeout(introTimer);
     }
@@ -199,9 +198,9 @@ function start() {
     } catch { /* ignored */ }
   }
 
-  $('btn-start').addEventListener('click', () => { audio.unlock(); tryLandscape(); flow.send('tap'); });
-  $('intro').addEventListener('pointerdown', () => flow.send('skip'));
-  $('btn-play').addEventListener('click', () => { audio.unlock(); audio.rev(); flow.send('play'); });
+  // A tap is the first chance to unlock sound / fullscreen (browsers require a gesture).
+  $('intro').addEventListener('pointerdown', () => { audio.unlock(); flow.send('skip'); });
+  $('btn-play').addEventListener('click', () => { audio.unlock(); tryLandscape(); audio.rev(); flow.send('play'); });
   $('btn-back').addEventListener('click', () => { audio.click(); flow.send('back'); });
 
   // ---- trucks
@@ -338,14 +337,20 @@ function start() {
     pool.update(dt);
     particles.update();
 
-    // the start and intro screens are fully opaque: skip drawing the 3D scene behind them
-    if (flow.state !== 'start' && flow.state !== 'intro') { renderer.render(scene, camera); drawn++; }
+    // the intro is fully opaque: skip drawing the 3D scene behind it
+    if (flow.state !== 'boot' && flow.state !== 'intro') { renderer.render(scene, camera); drawn++; }
     frames++;
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
-  flow.send('ready');
+  // The intro starts by itself once the phone is in landscape (portrait shows the rotate prompt).
+  function maybeStart() {
+    if (flow.state === 'boot' && !needsRotate(window.innerWidth, window.innerHeight)) flow.send('ready');
+  }
+  window.addEventListener('resize', maybeStart);
+  window.addEventListener('orientationchange', maybeStart);
+  maybeStart();
 
   // Handle for tests / debugging
   window.__voxelRacers = {
