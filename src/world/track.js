@@ -57,7 +57,7 @@ const N = pts.length;
 
 // elevation along the track (always above the ground floor)
 function elevation(s) {
-  return 6 + 3.2 * Math.sin(2 * Math.PI * 2 * s + 0.7) + 1.4 * Math.sin(2 * Math.PI * 5 * s + 0.3);
+  return 3.4 + 1.1 * Math.sin(2 * Math.PI * 2 * s + 0.7) + 0.6 * Math.sin(2 * Math.PI * 5 * s + 0.3);
 }
 
 export const SAMPLES = pts.map((p, i) => {
@@ -72,13 +72,15 @@ export const SAMPLES = pts.map((p, i) => {
 
 // surface by lap fraction along the road
 export const SECTIONS = [
-  { from: 0.0, to: 0.18, surf: 'asphalt' },
-  { from: 0.18, to: 0.46, surf: 'dirt' },
-  { from: 0.46, to: 0.6, surf: 'asphalt' },
-  { from: 0.6, to: 0.68, surf: 'dirt' },
-  { from: 0.68, to: 0.745, surf: 'mud' },
-  { from: 0.745, to: 0.86, surf: 'dirt' },
-  { from: 0.86, to: 1.0, surf: 'asphalt' },
+  { from: 0.0, to: 0.14, surf: 'asphalt' },
+  { from: 0.14, to: 0.29, surf: 'dirt' },
+  { from: 0.29, to: 0.43, surf: 'sand' },
+  { from: 0.43, to: 0.56, surf: 'asphalt' },
+  { from: 0.56, to: 0.67, surf: 'dirt' },
+  { from: 0.67, to: 0.73, surf: 'mud' },
+  { from: 0.73, to: 0.83, surf: 'asphalt' },
+  { from: 0.83, to: 0.93, surf: 'dirt' },
+  { from: 0.93, to: 1.0, surf: 'asphalt' },
 ];
 
 export const CHECKPOINTS = [0, 0.25, 0.5, 0.75];
@@ -160,21 +162,69 @@ const landing = (len, h) => [[0, h], [len, 0]];
 const log = [[0, 0], [0.3, 0.5], [0.9, 0.5], [1.2, 0]];
 
 // every feature starts at its sample's position and extends forward (u >= 0)
-export const FEATURES = [
-  feat(0.10, 'ramp', { kind: 'ramp', w: 10, profile: kicker(9, 3.2) }),
-  feat(0.10 + 22 / LENGTH, 'ramp', { kind: 'ramp', w: 12, profile: landing(14, 2.4) }),
-  feat(0.30, 'whoops', { kind: 'whoops', len: 30, w: 11, amp: 0.55, wave: 4 }),
-  feat(0.53, 'ramp', { kind: 'ramp', w: 10, profile: kicker(8, 2.6) }),
-  feat(0.53 + 19 / LENGTH, 'ramp', { kind: 'ramp', w: 12, profile: landing(12, 2.0) }),
-  feat(0.79, 'ramp', { kind: 'log', w: 12, profile: log }),
-  feat(0.79 + 7 / LENGTH, 'ramp', { kind: 'log', w: 12, profile: log }),
-  feat(0.79 + 14 / LENGTH, 'ramp', { kind: 'log', w: 12, profile: log }),
+const lateral = (s, off, extra) => { const p = sampleAt(s); return { x: p.x + p.tz * off, z: p.z - p.tx * off, ...extra }; };
+
+// gentle landing slopes (never a cliff): any short jump just rolls out
+const JUMP = (s, h, len) => [
+  feat(s, 'ramp', { kind: 'ramp', w: 11, profile: kicker(len, h) }),
+  feat(s + (len + 7) / LENGTH, 'ramp', { kind: 'ramp', w: 12, profile: landing(18, 1.0) }),
+];
+const rockRand = rng(5);
+const rocks = [];
+for (let i = 0; i < 26; i++) {      // rock garden on the dirt section
+  const s = 0.57 + rockRand() * 0.095;
+  rocks.push(lateral(s, (rockRand() - 0.5) * 11, { type: 'bump', kind: 'rock', r: 1.2 + rockRand() * 1.3, h: 0.35 + rockRand() * 0.65 }));
+}
+const pits = [
+  lateral(0.745, -2.5, { type: 'pit', kind: 'pit', r: 4.6, depth: 1.5 }),    // massive pothole, left lane
+  lateral(0.765, 3.0, { type: 'pit', kind: 'pit', r: 3.0, depth: 1.1 }),
+  lateral(0.785, -3.5, { type: 'pit', kind: 'pit', r: 3.4, depth: 1.2 }),
+  lateral(0.8, 2.5, { type: 'pit', kind: 'pit', r: 2.4, depth: 0.9 }),
+  lateral(0.815, -1.0, { type: 'pit', kind: 'pit', r: 2.8, depth: 1.0 }),
 ];
 
+export const FEATURES = [
+  ...JUMP(0.07, 2.4, 9),
+  feat(0.31, 'whoops', { kind: 'whoops', len: 34, w: 11, amp: 0.7, wave: 4.5 }),       // sand dunes
+  ...JUMP(0.49, 3.0, 10),
+  ...rocks,
+  ...pits,
+  feat(0.865, 'ramp', { kind: 'log', w: 12, profile: log }),
+  feat(0.865 + 7 / LENGTH, 'ramp', { kind: 'log', w: 12, profile: log }),
+  feat(0.865 + 14 / LENGTH, 'ramp', { kind: 'log', w: 12, profile: log }),
+];
+
+function bumpHeight(f, x, z) {
+  const d = Math.hypot(x - f.x, z - f.z);
+  return d >= f.r ? 0 : f.h * 0.5 * (1 + Math.cos(Math.PI * d / f.r));
+}
+function pitDepth(f, x, z) {
+  const d = Math.hypot(x - f.x, z - f.z);
+  return d >= f.r ? 0 : f.depth * 0.5 * (1 + Math.cos(Math.PI * d / f.r));
+}
+
 function featureSum(x, z) {
-  let h = 0;
-  for (const f of FEATURES) { const v = featureHeight(f, x, z); if (v > h) h = v; }
-  return h;
+  let up = 0;
+  let down = 0;
+  for (const f of FEATURES) {
+    if (f.type === 'pit') { const d = pitDepth(f, x, z); if (d > down) down = d; }
+    else if (f.type === 'bump') { const v = bumpHeight(f, x, z); if (v > up) up = v; }
+    else { const v = featureHeight(f, x, z); if (v > up) up = v; }
+  }
+  return up - down;
+}
+
+// which kind of feature (for colouring) is at this spot
+function featureKind(x, z) {
+  let best = null; let bestV = 0.05;
+  for (const f of FEATURES) {
+    let v = 0;
+    if (f.type === 'pit') v = pitDepth(f, x, z);
+    else if (f.type === 'bump') v = bumpHeight(f, x, z);
+    else v = featureHeight(f, x, z);
+    if (v > bestV) { bestV = v; best = f.kind; }
+  }
+  return best;
 }
 
 function surfaceFor(s) {
@@ -188,12 +238,13 @@ export function sample(x, z) {
   const ad = Math.abs(n.d);
   const nat = natural(x, z);
   const road = n.y;
-  const blend = smooth((ad - ROAD_HALF) / 6);
-  const base = road + (nat - road) * blend;
-  const f = ad < ROAD_HALF + 2 ? featureSum(x, z) : 0;
+  // beyond the road the ground only rolls gently around the road height, so there are no steep embankments
+  const blend = smooth((ad - ROAD_HALF) / 10);
+  const base = Math.max(0.1, road + (nat - 2.6) * blend);
+  const f = ad < ROAD_HALF + 4 ? featureSum(x, z) : 0;
   const onRoad = ad <= ROAD_HALF;
   return {
-    h: base + f, surf: onRoad ? surfaceFor(n.s) : 'grass', s: n.s, d: n.d, ad, onRoad, feature: f > 0.05, nearest: n,
+    h: Math.max(0.1, base + f), surf: onRoad ? surfaceFor(n.s) : 'grass', s: n.s, d: n.d, ad, onRoad, feature: Math.abs(f) > 0.05, featKind: featureKind(x, z), nearest: n,
   };
 }
 
@@ -227,6 +278,16 @@ function buildObstacles() {
     const z = p.z - p.tx * side * off;
     const type = rand() < 0.6 ? 'boulder' : 'stack';
     out.push(type === 'boulder' ? { type, x, z, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 } : { type, x, z, r: 0.9, h: 0.9 });
+  }
+  // crushed-car piles on the shoulders and a tyre chicane you have to weave through
+  for (const [s, side] of [[0.12, 1], [0.25, -1], [0.37, 1], [0.52, -1], [0.62, 1], [0.7, -1], [0.88, 1], [0.95, -1]]) {
+    const p = sampleAt(s);
+    const off = ROAD_HALF + 2.6;
+    out.push({ type: 'car', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.7, h: 0.9, rot: s * 10 });
+  }
+  for (const [s, off] of [[0.2, -3.5], [0.2 + 12 / LENGTH, 3.5], [0.2 + 24 / LENGTH, -3.5]]) {
+    const p = sampleAt(s);
+    for (let k = 0; k < 2; k++) out.push({ type: 'stack', x: p.x + p.tz * (off + k * 1.1 * Math.sign(off)), z: p.z - p.tx * (off + k * 1.1 * Math.sign(off)), r: 0.9, h: 0.9 });
   }
   return out;
 }
@@ -267,6 +328,14 @@ export const START_S = 0.985;
 export function startPose() {
   const p = sampleAt(START_S);
   return { x: p.x, z: p.z, heading: Math.atan2(p.tx, p.tz), y: p.y };
+}
+
+// starting grid: 2 columns, rows 8 units apart behind the line
+export function gridPose(slot) {
+  const row = Math.floor(slot / 2);
+  const lane = slot % 2 === 0 ? -3 : 3;
+  const p = sampleAt(START_S - (row * 9) / LENGTH);
+  return { x: p.x + p.tz * lane, z: p.z - p.tx * lane, heading: Math.atan2(p.tx, p.tz), s: START_S - (row * 9) / LENGTH };
 }
 
 export const TRACK = {

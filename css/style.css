@@ -370,9 +370,11 @@ img { -webkit-user-drag: none; pointer-events: none; }
   color: #fff;
   pointer-events: none;
 }
-#lapbox { display: flex; align-items: center; gap: 6px; }
-#lapbox svg { width: 20px; height: 20px; fill: none; stroke: #ffd60a; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-#lapbox b { font-weight: 700; }
+#lapbox, #posbox { display: flex; align-items: center; gap: 6px; }
+#lapbox svg, #posbox svg { width: 20px; height: 20px; fill: none; stroke: #ffd60a; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#lapbox b, #posbox b { font-weight: 700; }
+#btn-respawn { display: none; }
+#drive.race #btn-respawn { display: flex; position: absolute; top: calc(var(--safe-t) + 10px); left: calc(var(--safe-l) + 76px); }
 #timer { font-variant-numeric: tabular-nums; }
 #minimap {
   position: absolute;

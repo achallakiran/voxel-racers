@@ -28,7 +28,7 @@ export function cameraGoal(mode, t, state) {
       const dz = t.z - state.fz;
       const d = Math.hypot(dx, dz);
       if (d > dead) { state.fx += (dx / d) * (d - dead); state.fz += (dz / d) * (d - dead); }
-      const D = 34;
+      const D = 24;
       return {
         pos: { x: state.fx + ISO.x * D, y: ISO.y * D, z: state.fz + ISO.z * D },
         look: { x: state.fx, y: 0, z: state.fz }, fov: 36,
@@ -36,17 +36,17 @@ export function cameraGoal(mode, t, state) {
     }
     case 'chase':
       return {
-        pos: { x: t.x - Math.sin(h) * 10, y: t.y + 4.6, z: t.z - Math.cos(h) * 10 },
-        look: { x: t.x + Math.sin(h) * 7, y: t.y + 1.2, z: t.z + Math.cos(h) * 7 }, fov: 62,
+        pos: { x: t.x - Math.sin(h) * 8, y: t.y + 3.6, z: t.z - Math.cos(h) * 8 },
+        look: { x: t.x + Math.sin(h) * 6, y: t.y + 1.2, z: t.z + Math.cos(h) * 6 }, fov: 62,
       };
     case 'top':
       return {
-        pos: { x: t.x, y: t.y + 36, z: t.z + 8 },
+        pos: { x: t.x, y: t.y + 26, z: t.z + 6 },
         look: { x: t.x + Math.sin(h) * sp * 0.15, y: t.y, z: t.z + Math.cos(h) * sp * 0.15 }, fov: 40,
       };
     case 'iso-follow':
     default: {
-      const D = 25;
+      const D = 16;
       const lx = t.x + Math.sin(h) * sp * 0.18;
       const lz = t.z + Math.cos(h) * sp * 0.18;
       return {

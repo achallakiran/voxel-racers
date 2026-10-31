@@ -17,7 +17,7 @@ export const SURFACES = {
   mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
 };
 export const BOOST_COST = 0.34;
-export const BOOST_TIME = 1.4;
+export const BOOST_TIME = 2.0;
 export const NITRO_REGEN = 0.09;
 const TRUCK_RADIUS = 1.3;
 
@@ -36,8 +36,8 @@ export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }, sus
     rollDrag: 0.9,
     steerRate: 2.2 * handling.steer,
     grip: (2.2 + stats.grip * 0.85) * handling.grip,
-    boostMul: 1 + 0.9 * handling.boost,
-    boostMax: 1.35,
+    boostMul: 1 + 2.4 * handling.boost,
+    boostMax: 1.7,
   };
 }
 
@@ -95,7 +95,7 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   if (input.boost && v.boostT <= 0 && v.nitro >= BOOST_COST) {
     v.nitro -= BOOST_COST;
     v.boostT = BOOST_TIME;
-    if (v.grounded) f += 3;
+    if (v.grounded) f += 7;
     events.push('boost');
   }
   if (v.boostT > 0) v.boostT = Math.max(0, v.boostT - dt);
@@ -103,7 +103,8 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   const boosting = v.boostT > 0;
   const surf = SURFACES[(terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt'] || SURFACES.dirt;
   v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
-  const maxF = tune.maxSpeed * (boosting ? tune.boostMax : 1) * surf.maxMul;
+  // nitro punches through soft ground: mud and sand slow you far less while it burns
+  const maxF = tune.maxSpeed * (boosting ? tune.boostMax : 1) * (boosting ? Math.max(surf.maxMul, 0.92) : surf.maxMul);
 
   if (v.grounded) {
     const gas = input.gas || 0;
@@ -115,7 +116,7 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       if (f > 0.4) f -= tune.brake * dt;
       else f = Math.max(-tune.reverseMax, f - tune.accel * 0.7 * dt);
     } else {
-      f *= Math.exp(-(tune.rollDrag + surf.drag) * dt);
+      f *= Math.exp(-(tune.rollDrag + surf.drag * (boosting ? 0.3 : 1)) * dt);
       if (Math.abs(f) < 0.05) f = 0;
     }
     if (gas > 0 && surf.drag > 0) f *= Math.exp(-surf.drag * 0.5 * dt);   // soft ground drags even under power
@@ -131,8 +132,9 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   if (v.grounded) {
     // gravity along the slope: climbing slows, descending speeds up
     const s = slope(terrain, v.x, v.z);
-    v.vx -= GRAVITY * s.gx * 0.8 * dt;
-    v.vz -= GRAVITY * s.gz * 0.8 * dt;
+    const sg = boosting ? 0.35 : 0.8;
+    v.vx -= GRAVITY * s.gx * sg * dt;
+    v.vz -= GRAVITY * s.gz * sg * dt;
   } else {
     const air = Math.exp(-0.05 * dt);
     v.vx *= air;

@@ -451,13 +451,21 @@ function trackColor(x, z, h) {
   if (smp.onRoad) {
     const sAlong = smp.s * TR.LENGTH;
     if (smp.feature) {
-      c = smp.nearest && TR.FEATURES.some((f) => f.kind === 'log' && TR.featureHeightAt(f, x, z) > 0.05) ? [0.48, 0.32, 0.19] : [0.89, 0.69, 0.29];
+      const k = smp.featKind;
+      if (k === 'log') c = [0.48, 0.32, 0.19];
+      else if (k === 'rock') c = [0.5, 0.52, 0.56];
+      else if (k === 'pit') c = [0.2, 0.13, 0.08];
+      else if (k === 'whoops') c = [0.86, 0.7, 0.4];
+      else c = [0.89, 0.69, 0.29];
     } else if (smp.surf === 'asphalt') {
       c = [0.27, 0.28, 0.31];
       if (Math.abs(smp.d) < 0.8 && Math.floor(sAlong / 5) % 2 === 0) c = [0.94, 0.9, 0.66];
       else if (Math.abs(smp.ad - (TR.ROAD_HALF - 0.8)) < 0.7) c = [0.95, 0.95, 0.95];
     } else if (smp.surf === 'mud') {
       c = [0.33, 0.22, 0.13];
+    } else if (smp.surf === 'sand') {
+      c = [0.9, 0.78, 0.47];
+      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.6) c = [0.82, 0.69, 0.4];
     } else {
       c = [0.72, 0.54, 0.33];
       if (Math.abs(Math.abs(smp.d) - 2.2) < 0.7) c = [0.62, 0.45, 0.27];   // tyre ruts
@@ -534,7 +542,7 @@ function buildTrack(group) {
   instanced(group, leaves, new THREE.MeshLambertMaterial(), { cast: true });
 
   // roadside rocks and tyre stacks (solid)
-  const rocks = []; const stacks = [];
+  const rocks = []; const stacks = []; const cars = [];
   for (const o of TR.OBSTACLES) {
     const y0 = TR.heightAt(o.x, o.z);
     if (o.type === 'boulder') {
@@ -545,12 +553,18 @@ function buildTrack(group) {
         const shade = 0.82 + ((i * 7 + j * 13 + k * 5) & 7) * 0.025;
         rocks.push({ x: o.x + i * cell, y: y0 + cell / 2 + j * cell, z: o.z + k * cell, sx: cell, sy: cell, sz: cell, color: new THREE.Color('#8b8e94').multiplyScalar(shade) });
       }
+    } else if (o.type === 'car') {
+      const cols = ['#d62828', '#4cc9f0', '#ffd60a', '#80ed99', '#b185db'];
+      const col = cols[Math.abs(Math.round(o.x * 7 + o.z * 3)) % cols.length];
+      cars.push({ x: o.x, y: y0 + 0.3, z: o.z, sx: 3.4, sy: 0.6, sz: 1.7, rot: o.rot || 0, color: col });
+      cars.push({ x: o.x, y: y0 + 0.75, z: o.z, sx: 1.6, sy: 0.3, sz: 1.3, rot: o.rot || 0, color: '#2b2d42' });
     } else {
       for (let h = 0; h < 3; h++) stacks.push({ x: o.x, y: y0 + 0.15 + h * 0.3, z: o.z, sx: 1.5, sy: 0.28, sz: 1.5, rot: h * 0.5, color: h === 1 ? '#e63946' : '#1c1c20' });
     }
   }
   instanced(group, rocks, new THREE.MeshLambertMaterial(), { cast: true });
   instanced(group, stacks, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, cars, new THREE.MeshLambertMaterial(), { cast: true });
 
   // gates: start/finish arch + three checkpoint arches
   const gateMat = (c) => lambert(c);

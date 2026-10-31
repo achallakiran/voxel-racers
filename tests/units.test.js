@@ -524,11 +524,11 @@ test('camera: goals per view', () => {
   const t = { x: 10, y: 0, z: 5, heading: 0, speed: 0 };
   const st = newCameraState(t);
   const iso = cameraGoal('iso-follow', t, st);
-  assert.ok(iso.pos.x > t.x && iso.pos.z > t.z && iso.pos.y > 10, 'iso looks down from a corner');
+  assert.ok(iso.pos.x > t.x && iso.pos.z > t.z && iso.pos.y > 8, 'iso looks down from a corner');
   const chase = cameraGoal('chase', t, st);
   assert.ok(chase.pos.z < t.z && chase.look.z > t.z, 'chase sits behind, looks ahead');
   const top = cameraGoal('top', t, st);
-  assert.ok(top.pos.y > 30);
+  assert.ok(top.pos.y > 20);
   // fixed view only moves once the truck leaves the dead zone
   const a = cameraGoal('iso-fixed', { ...t, x: 12 }, st);
   assert.equal(st.fx, 10);
@@ -740,7 +740,7 @@ test('track: jumps, whoops and logs rise above the road', () => {
   const k = ramps[0];
   const top = TRK.heightAt(k.x + Math.sin(k.rot) * 8.9, k.z + Math.cos(k.rot) * 8.9);
   const flat = TRK.nearest(k.x + Math.sin(k.rot) * 8.9, k.z + Math.cos(k.rot) * 8.9).y;
-  assert.ok(top - flat > 2.5, `kicker lip ${top - flat}`);
+  assert.ok(top - flat > 2.0, `kicker lip ${top - flat}`);
   assert.ok(TRK.FEATURES.some((f) => f.type === 'whoops'));
 });
 
@@ -837,4 +837,122 @@ test('terrain mesh: columns emit tops and only visible side walls', () => {
   assert.equal(step.positions.length, step.colors.length);
   const q = buildColumns({ x0: 0, z0: 0, nx: 1, nz: 1, cell: 1, quant: 0.25, heightAt: () => 1.13, colorAt: () => [1, 1, 1], sides: false });
   assert.equal(q.positions[1], 1.25);
+});
+
+// ---------- Phase 3: rivals
+import { resolveCollisions, TRUCK_R } from '../src/physics/collide.js';
+import { createDriver, driverInput, rubberBand } from '../src/ai/driver.js';
+
+const TRACK_API = { nearest: TRK.nearest, sampleAt: TRK.sampleAt, length: TRK.LENGTH, roadHalf: TRK.ROAD_HALF };
+
+test('collide: overlapping trucks are pushed apart and bounce', () => {
+  const a = { x: 0, y: 0, z: 0, vx: 10, vz: 0 };
+  const b = { x: 2, y: 0, z: 0, vx: 0, vz: 0 };
+  const hits = resolveCollisions([a, b]);
+  assert.equal(hits.length, 1);
+  assert.ok(hits[0].power > 5);
+  assert.ok(Math.hypot(b.x - a.x, b.z - a.z) >= TRUCK_R * 2 - 1e-6);
+  assert.ok(b.vx > 0 && a.vx < 10, 'momentum passes on');
+  // a heavier truck is pushed less
+  const h = { x: 0, y: 0, z: 0, vx: 5, vz: 0, mass: 4 };
+  const l = { x: 1.5, y: 0, z: 0, vx: 0, vz: 0, mass: 1 };
+  resolveCollisions([h, l]);
+  assert.ok(h.x > -0.8 && l.x - 1.5 > Math.abs(h.x), 'light truck moves more');
+  // flying over another truck does not collide
+  assert.equal(resolveCollisions([{ x: 0, y: 3, z: 0, vx: 0, vz: 0 }, { x: 0, y: 0, z: 0, vx: 0, vz: 0 }]).length, 0);
+});
+
+test('ai: rubber band stays gentle and favours the trailing truck', () => {
+  assert.ok(rubberBand(1, 0.9) > 1 && rubberBand(1, 0.9) <= 1.08);
+  assert.ok(rubberBand(0.9, 1) < 1 && rubberBand(0.9, 1) >= 0.9);
+  assert.equal(rubberBand(0.5, 0.5), 1);
+  assert.equal(rubberBand(9, 0), 1.08);
+});
+
+test('ai: every rival truck can lap the track by itself, stays on the road and does not get stuck', () => {
+  for (const t of TRUCKS) {
+    const feel = getFeel(t.id);
+    const tune = tuningFor(t.stats, feel.handling, feel.sus);
+    const sp = TRK.gridPose(1);
+    const v = createVehicle(sp.x, sp.z, sp.heading, TRK.terrain, tune.ride);
+    const d = createDriver({ skill: 0.95, lane: 2 });
+    let acc = 0; let prev = TRK.nearest(v.x, v.z).s; let time = 0; let offRoad = 0; let stuck = 0;
+    for (let i = 0; i < 60 * 240 && acc < 1; i++) {
+      const input = driverInput(d, v, tune, TRACK_API, { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
+      stepVehicle(v, input, TRK.terrain, tune, DT);
+      const n = TRK.nearest(v.x, v.z);
+      acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
+      if (Math.abs(n.d) > TRK.ROAD_HALF + 0.5) offRoad += DT;
+      if (v.grounded && Math.abs(v.f) < 0.5) stuck += DT;
+    }
+    assert.ok(acc >= 0.98, `${t.id} completed ${(acc * 100).toFixed(0)}% in ${time.toFixed(0)}s`);
+    assert.ok(time < 140, `${t.id} lap time ${time.toFixed(0)}s`);
+    assert.ok(offRoad < time * 0.25, `${t.id} off road ${offRoad.toFixed(1)}s`);
+    assert.ok(stuck < 8, `${t.id} stuck ${stuck.toFixed(1)}s`);
+  }
+});
+
+test('ai: holds still during the countdown', () => {
+  const d = createDriver();
+  const tune = tuningFor(STATS);
+  const sp = TRK.gridPose(0);
+  const v = createVehicle(sp.x, sp.z, sp.heading, TRK.terrain, tune.ride);
+  const input = driverInput(d, v, tune, TRACK_API, { phase: 'countdown' }, DT);
+  assert.equal(input.gas, 0);
+  assert.equal(input.brake, 1);
+});
+
+test('track: grid slots are on the road, behind the line, in two columns', () => {
+  const poses = [0, 1, 2, 3, 4, 5].map((i) => TRK.gridPose(i));
+  for (const p of poses) {
+    const n = TRK.nearest(p.x, p.z);
+    assert.ok(Math.abs(n.d) < TRK.ROAD_HALF - 1, 'on the road');
+    assert.equal(TRK.surfaceAt(p.x, p.z), 'asphalt');
+  }
+  for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) assert.ok(Math.hypot(poses[i].x - poses[j].x, poses[i].z - poses[j].z) > 3.5, 'no overlap');
+});
+
+test('track: variety - sand, mud, potholes, rock garden, crushed cars, jumps and logs', () => {
+  const kinds = new Set(TRK.FEATURES.map((f) => f.kind));
+  for (const k of ['ramp', 'whoops', 'rock', 'pit', 'log']) assert.ok(kinds.has(k), `has ${k}`);
+  assert.ok(TRK.FEATURES.filter((f) => f.kind === 'pit').length >= 4);
+  assert.ok(TRK.FEATURES.filter((f) => f.kind === 'rock').length >= 20);
+  assert.ok(TRK.OBSTACLES.some((o) => o.type === 'car'));
+  const surfaces = new Set(TRK.SECTIONS.map((s) => s.surf));
+  for (const sf of ['asphalt', 'dirt', 'sand', 'mud']) assert.ok(surfaces.has(sf));
+  const pit = TRK.FEATURES.find((f) => f.kind === 'pit');
+  assert.ok(TRK.heightAt(pit.x, pit.z) < TRK.nearest(pit.x, pit.z).y - 0.8, 'the massive pothole is really deep');
+});
+
+test('track: no cliffs - shoulders are gentle and landings are low (cannot get trapped)', () => {
+  let maxOff = 0;
+  for (let i = 0; i < 1500; i++) {
+    const p = TRK.sampleAt(i / 1500);
+    for (const off of [9, 10, 11, 12, 13, -9, -10, -11, -12, -13]) {
+      const x = p.x + p.tz * off; const z = p.z - p.tx * off;
+      const gx = (TRK.heightAt(x + 0.5, z) - TRK.heightAt(x - 0.5, z)); const gz = (TRK.heightAt(x, z + 0.5) - TRK.heightAt(x, z - 0.5));
+      maxOff = Math.max(maxOff, Math.hypot(gx, gz));
+    }
+  }
+  assert.ok(maxOff < 1.1, `steepest shoulder gradient over 1 unit ${maxOff}`);
+  for (const f of TRK.FEATURES.filter((q) => q.type === 'ramp' && q.profile[0][1] > 0)) assert.ok(f.profile[0][1] <= 1.0, 'landing face is low');
+  const ys = TRK.SAMPLES.map((q) => q.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) < 5, 'road does not climb high');
+});
+
+test('physics: nitro is strong - top speed 1.5x+, big kick, and it plows through mud', () => {
+  const tune = tuningFor(STATS);
+  const run2 = (surf, boost) => {
+    const t = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => surf };
+    const v = createVehicle(0, 0, 0, t);
+    run(v, { gas: 1 }, t, 8, tune);
+    if (boost) stepVehicle(v, { gas: 1, boost: true }, t, tune, DT);
+    let peak = 0;
+    for (let i = 0; i < 150; i++) { stepVehicle(v, { gas: 1 }, t, tune, DT); peak = Math.max(peak, v.f); }
+    return peak;
+  };
+  const normal = run2('asphalt', false);
+  const boosted = run2('asphalt', true);
+  assert.ok(boosted > normal * 1.5, `boost ${boosted} vs ${normal}`);
+  assert.ok(run2('mud', true) > run2('mud', false) * 1.8, 'nitro through mud');
 });

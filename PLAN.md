@@ -67,7 +67,10 @@ Loop-the-loop (with a stick-to-surface rule), then Pine Mud Run, Frozen Loop, Vo
 Spline track with banking, hills, jumps, a loop, rocks and cacti, bounded by cliffs and tire walls. Surface-stick rule for the loop. Lap and checkpoint logic, mini-map.
 Tests: spline sampling, lap counting, no-skip checkpoints, loop stick speed.
 
-**Phase 4 — Rivals + race flow** (positions, rubber-banding, pickups)
+**Phase 2.5 — Rivals + richer track** (DONE)
+Flatter road with gentle shoulders (no cliffs to get trapped), sand section, rock garden, 5 potholes (one massive), crushed cars, tyre chicane, gentler jump landings, stronger nitro, closer cameras. 5 AI rivals with collisions, rubber-banding, stuck recovery; position HUD; respawn icon + auto-respawn.
+
+**Phase 4 — Race flow polish** (pickups, per-rival engine sound, podium)
 5 rivals with distinct personalities and colours, racing line with variance, light rubber-banding, pickups (nitro, cash). Countdown, positions (1st/2nd tags), results.
 Tests: AI follows line, position sorting, race state machine.
 

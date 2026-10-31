@@ -15,7 +15,9 @@ import { createWorld } from './world/scenes.js';
 import { createVehicle, stepVehicle, tuningFor, BOOST_COST } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import * as TR from './world/track.js';
-import { createRace, formatTime } from './core/race.js';
+import { createRace, formatTime, wrapDelta } from './core/race.js';
+import { resolveCollisions } from './physics/collide.js';
+import { createDriver, driverInput } from './ai/driver.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
 import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
@@ -272,6 +274,12 @@ function start() {
   let driveMode = 'arena';      // 'arena' | 'race'
   let courseTerrain = ARENA_TERRAIN;
   let race = null;
+  let rivals = [];
+  let playerAcc = 0;
+  let playerPrevS = 0;
+  let stuckT = 0;
+  let place = 1;
+  const TRACK_API = { nearest: TR.nearest, sampleAt: TR.sampleAt, length: TR.LENGTH, roadHalf: TR.ROAD_HALF };
   let goTimer = 0;
   let wrongWay = 0;
   let miniBase = null;
@@ -303,8 +311,13 @@ function start() {
     prevVy = 0; prevF = 0;
     const racing = driveMode === 'race';
     courseTerrain = racing ? TR.terrain : ARENA_TERRAIN;
-    const s = racing ? TR.startPose() : SANDBOX.start;
+    clearRivals();
+    const s = racing ? TR.gridPose(4) : SANDBOX.start;
     vehicle = createVehicle(s.x, s.z, s.heading, courseTerrain, tune.ride);
+    if (racing) spawnRivals();
+    playerAcc = racing ? wrapDelta(TR.START_S, TR.nearest(s.x, s.z).s) : 0;
+    playerPrevS = racing ? TR.nearest(s.x, s.z).s : 0;
+    stuckT = 0; place = rivals.length + 1;
     $('drive').classList.toggle('lefty', !!save.leftHanded);
     $('drive').classList.toggle('race', racing);
     $('drive').classList.remove('go');
@@ -329,6 +342,7 @@ function start() {
     audio.engineStop();
     vehicle = null;
     race = null;
+    clearRivals();
     $('drive').classList.remove('race', 'go');
     $('results').classList.remove('show');
     Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
@@ -351,6 +365,85 @@ function start() {
   $('btn-arena').addEventListener('click', () => startMode('arena'));
   $('btn-retry').addEventListener('click', () => { audio.click(); enterDrive(); });
   $('btn-results-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
+
+  // ---- rivals
+  function clearRivals() {
+    for (const r of rivals) { scene.remove(r.mesh); disposeTruck(r.mesh); }
+    rivals = [];
+  }
+  function spawnRivals() {
+    const others = TRUCKS.filter((_, i) => i !== truckIdx);
+    for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+    const slots = [0, 1, 2, 3, 5];
+    rivals = others.slice(0, 5).map((t, i) => {
+      const f = getFeel(t.id);
+      const rt = tuningFor(t.stats, f.handling, f.sus);
+      const sp = TR.gridPose(slots[i]);
+      const v = createVehicle(sp.x, sp.z, sp.heading, TR.terrain, rt.ride);
+      const mesh = createTruckMesh(t);
+      mesh.rotation.order = 'YXZ';
+      scene.add(mesh);
+      const n = TR.nearest(sp.x, sp.z);
+      return {
+        truck: t, mesh, v, tune: rt,
+        driver: createDriver({ skill: 0.9 + rand() * 0.08, lane: (rand() - 0.5) * 6, phase: rand() * 6, boostEvery: 7 + rand() * 6 }),
+        acc: wrapDelta(TR.START_S, n.s), prevS: n.s, color: t.paint.body,
+      };
+    });
+  }
+  function rivalStep(dt) {
+    const phase = race ? race.phase : 'countdown';
+    for (const r of rivals) {
+      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, playerAcc, myAcc: r.acc }, dt);
+      stepVehicle(r.v, input, TR.terrain, r.tune, dt);
+    }
+    const all = [vehicle, ...rivals.map((r) => r.v)];
+    for (const h of resolveCollisions(all)) {
+      if (h.a === 0 || h.b === 0) {
+        shake = Math.max(shake, Math.min(0.7, h.power / 14));
+        audio.thump(h.power * 0.9);
+      }
+    }
+  }
+  function rivalPose(dt) {
+    for (const r of rivals) {
+      const v = r.v;
+      const n = TR.nearest(v.x, v.z);
+      r.acc += wrapDelta(r.prevS, n.s); r.prevS = n.s;
+      const m = r.mesh;
+      m.position.set(v.x, v.y - r.tune.ride, v.z);
+      m.rotation.set(-v.pitch, v.heading, v.roll);
+      for (const w of m.userData.wheels) if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
+      const sn = Math.min(1, Math.abs(v.f) / r.tune.maxSpeed);
+      animateTruck(m, dt, 0.3 + sn * 0.6, clock, v.f / 0.6);
+      const near = Math.hypot(v.x - vehicle.x, v.z - vehicle.z) < 55;
+      if (near && v.grounded && v.surface !== 'asphalt' && sn > 0.25 && rand() < 0.35 * sn * (QUALITY_SCALE[save.particles] ?? 1)) spawnDust(1, 1.2, 0.5, 'dust', m, v);
+      if (near && v.boostT > 0 && rand() < 0.7) {
+        m.updateMatrixWorld(true);
+        tmp.set((rand() - 0.5) * 0.5, 0.55, -m.userData.length / 2);
+        m.localToWorld(tmp);
+        pool.spawn(makeParticle('flame', 'fire', tmp, { x: -Math.sin(v.heading), y: 0.1, z: -Math.cos(v.heading) }, 1, rand(), rand(), rand()));
+      }
+    }
+    // standings
+    const me = playerAcc;
+    place = 1 + rivals.filter((r) => r.acc > me).length;
+    $('pos').textContent = `${place}/${rivals.length + 1}`;
+  }
+
+  function respawn() {
+    if (!race || !vehicle || race.phase !== 'racing') return;
+    const n = TR.nearest(vehicle.x, vehicle.z);
+    const p = TR.sampleAt(n.s);
+    const nv = createVehicle(p.x, p.z, Math.atan2(p.tx, p.tz), TR.terrain, tune.ride);
+    nv.nitro = vehicle.nitro;
+    Object.assign(vehicle, nv);
+    stuckT = 0;
+    Object.assign(susp, createSuspension());
+    snapCamera();
+    audio.click();
+  }
+  $('btn-respawn').addEventListener('click', respawn);
 
   // ---- minimap (track outline drawn once, then the truck dot each frame)
   const MW = 160; const MH = 110;
@@ -378,6 +471,10 @@ function start() {
     mini.drawImage(miniBase.canvas, 0, 0);
     const px = vehicle.x * miniBase.sc + miniBase.ox;
     const pz = MH - (vehicle.z * miniBase.sc + miniBase.oz);
+    for (const r of rivals) {
+      mini.fillStyle = r.color; mini.strokeStyle = '#000'; mini.lineWidth = 1;
+      mini.beginPath(); mini.arc(r.v.x * miniBase.sc + miniBase.ox, MH - (r.v.z * miniBase.sc + miniBase.oz), 3.2, 0, 7); mini.fill(); mini.stroke();
+    }
     mini.save();
     mini.translate(px, pz);
     mini.rotate(Math.PI - vehicle.heading + Math.PI);
@@ -420,14 +517,14 @@ function start() {
     ], save.autoGas);
   }
 
-  function spawnDust(n, spread, up, tint = 'dust') {
+  function spawnDust(n, spread, up, tint = 'dust', mesh = truckMesh, veh = vehicle) {
     const scale = QUALITY_SCALE[save.particles] ?? 1;
     const count = Math.round(n * scale);
-    for (const w of truckMesh.userData.wheels) {
+    for (const w of mesh.userData.wheels) {
       w.group.getWorldPosition(tmp);
       for (let i = 0; i < count; i++) {
-        const dir = { x: (rand() - 0.5) * spread - vehicle.vx * 0.1, y: up, z: (rand() - 0.5) * spread - vehicle.vz * 0.1 };
-        const p = makeParticle('smoke', tint, { x: tmp.x, y: vehicle.y + 0.12, z: tmp.z }, dir, 0.5, rand(), rand(), rand());
+        const dir = { x: (rand() - 0.5) * spread - veh.vx * 0.1, y: up, z: (rand() - 0.5) * spread - veh.vz * 0.1 };
+        const p = makeParticle('smoke', tint, { x: tmp.x, y: veh.y + 0.12, z: tmp.z }, dir, 0.5, rand(), rand(), rand());
         p.rise = 0.25; p.size *= 1.6; p.life *= 0.7;
         pool.spawn(p);
       }
@@ -459,6 +556,7 @@ function start() {
         else if (e.type === 'land') { landings.push(e); shake = Math.max(shake, Math.min(1, e.power / 18)); spawnDust(5, 3, 1.2); audio.thump(e.power); }
         else if (e.type === 'hit' || e.type === 'wall') { shake = Math.max(shake, Math.min(0.8, e.power / 20)); audio.thump(e.power * 0.6); }
       }
+      if (rivals.length) rivalStep(1 / 60);
     }
     const v = vehicle;
     const speedNorm = Math.min(1, Math.abs(v.f) / tune.maxSpeed);
@@ -516,6 +614,13 @@ function start() {
     if (race) {
       const n = TR.nearest(v.x, v.z);
       race.update(n.s);
+      playerAcc += wrapDelta(playerPrevS, n.s); playerPrevS = n.s;
+      rivalPose(dt);
+      if (race.phase === 'racing') {
+        const wedged = input.gas > 0.5 && v.grounded && Math.abs(v.f) < 1.0;
+        stuckT = wedged ? stuckT + dt : Math.max(0, stuckT - dt * 2);
+        if (stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2) respawn();
+      }
       for (const e of race.drainEvents()) {
         if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
         else if (e === 'checkpoint') audio.click();
@@ -524,6 +629,7 @@ function start() {
           audio.chime();
           $('res-total').textContent = formatTime(race.finishTime);
           $('res-best').textContent = formatTime(race.best);
+          $('res-pos').textContent = `${place}/${rivals.length + 1}`;
           $('results').classList.add('show');
         }
       }
@@ -642,6 +748,9 @@ function start() {
     get vehicle() { return vehicle; },
     get camMode() { return camMode; },
     get race() { return race; },
+    get rivals() { return rivals; },
+    get place() { return place; },
+    respawn,
     get driveMode() { return driveMode; },
     get trackStats() { return world.trackStats; },
     get susp() { return susp; },
