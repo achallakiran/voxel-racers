@@ -56,6 +56,14 @@ export function buildTruckVoxels(shapeIn) {
   const s = { ...DEFAULT_SHAPE, ...shapeIn };
   const has = (f) => s.features.includes(f);
   const R = s.wheelR;
+  // monster wheels are huge: lengthen the truck until neighbouring wheels no longer overlap
+  const minLen = 4 * R + 7 + (s.axles === 3 ? 2 * R + 2 : 0);
+  const baseLen = s.bedLen + s.cabLen + s.hoodLen + 4;
+  if (baseLen < minLen) {
+    const pad = minLen - baseLen;
+    if (s.bed === 'none' || s.bedLen === 0) s.hoodLen += pad;
+    else { s.hoodLen += Math.ceil(pad / 2); s.bedLen += Math.floor(pad / 2); }
+  }
 
   const map = new Map();
   const set = (x, y, z, k) => map.set(`${x},${y},${z}`, { x, y, z, k });
@@ -89,7 +97,7 @@ export function buildTruckVoxels(shapeIn) {
   const axleZs = s.axles === 3
     ? [rearAxleZ, rearAxleZ + 2 * R + 2, frontAxleZ]
     : [rearAxleZ, frontAxleZ];
-  const baseY = Math.max(R + 1, 6);
+  const baseY = Math.max(Math.round(R * 0.85), 6);   // body perches low between giant tyres
   const bodyTop = baseY + s.slabH;
   const cabTop = bodyTop + s.cabH;
 

@@ -7,6 +7,8 @@ import * as THREE from '../../lib/three.module.js';
 import {
   SANDBOX, OBSTACLES, terrainColumns, wallRing,
 } from './arena-layout.js';
+import * as TR from './track.js';
+import { buildColumns, hash2 } from './terrain-mesh.js';
 import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
   mesasLayout, cloudsLayout, dustLayout, rampLayout, carPileLayout,
@@ -89,11 +91,12 @@ function dirtTexture(repeat) {
 }
 
 // ------------------------------------------------------------------ outdoor
-function buildSky() {
+const SUNSET = [[-1, '#ffb35a'], [0.0, '#ffb35a'], [0.07, '#ff8a4c'], [0.2, '#e25a6a'], [0.45, '#7a4c9c'], [1, '#1c2a5e']];
+const DAY = [[-1, '#d9eefb'], [0.0, '#d9eefb'], [0.08, '#bfe3fb'], [0.3, '#7dbcf0'], [0.65, '#4a95e0'], [1, '#2b69c8']];
+
+function buildSky(stopsDef = SUNSET) {
   const geo = new THREE.SphereGeometry(150, 24, 16);
-  const stops = [
-    [-1, '#ffb35a'], [0.0, '#ffb35a'], [0.07, '#ff8a4c'], [0.2, '#e25a6a'], [0.45, '#7a4c9c'], [1, '#1c2a5e'],
-  ].map(([t, c]) => [t, new THREE.Color(c)]);
+  const stops = stopsDef.map(([t, c]) => [t, new THREE.Color(c)]);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
   const col = new THREE.Color();
@@ -196,6 +199,7 @@ function buildArena(group) {
       mesh.scale.set(m.w * k, h, m.d * k);
       mesh.position.set(m.x, h / 2, m.z);
       mesh.userData.backdrop = true;
+      mesh.userData.mesa = true;
       group.add(mesh);
     }
   }
@@ -227,7 +231,7 @@ function buildArena(group) {
   const scatter = scatterRocks(group);
 
   return {
-    groundMat, clouds, dust, motes, dm, arms, tires: tiles.length, people: people.length, stands: stands.length, towers: towerPos.length, scatter,
+    groundMat, cloudMat, clouds, dust, motes, dm, arms, tires: tiles.length, people: people.length, stands: stands.length, towers: towerPos.length, scatter,
   };
 }
 
@@ -439,6 +443,141 @@ function buildSandbox(group) {
   return { columns: cols.length, lips: lips.length, wall: tires.length, rocks: rocks.length };
 }
 
+// ------------------------------------------------------------------ race track
+function trackColor(x, z, h) {
+  const smp = TR.sample(x, z);
+  const j = 0.94 + hash2(Math.round(x * 0.8), Math.round(z * 0.8)) * 0.1;
+  let c;
+  if (smp.onRoad) {
+    const sAlong = smp.s * TR.LENGTH;
+    if (smp.feature) {
+      c = smp.nearest && TR.FEATURES.some((f) => f.kind === 'log' && TR.featureHeightAt(f, x, z) > 0.05) ? [0.48, 0.32, 0.19] : [0.89, 0.69, 0.29];
+    } else if (smp.surf === 'asphalt') {
+      c = [0.27, 0.28, 0.31];
+      if (Math.abs(smp.d) < 0.8 && Math.floor(sAlong / 5) % 2 === 0) c = [0.94, 0.9, 0.66];
+      else if (Math.abs(smp.ad - (TR.ROAD_HALF - 0.8)) < 0.7) c = [0.95, 0.95, 0.95];
+    } else if (smp.surf === 'mud') {
+      c = [0.33, 0.22, 0.13];
+    } else {
+      c = [0.72, 0.54, 0.33];
+      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.7) c = [0.62, 0.45, 0.27];   // tyre ruts
+    }
+    // start / finish line
+    if (smp.s > 1 - 2.6 / TR.LENGTH || smp.s < 1.2 / TR.LENGTH) {
+      c = (Math.floor((x + z) * 0.8) & 1) ? [0.95, 0.95, 0.95] : [0.08, 0.08, 0.1];
+    }
+  } else {
+    const nearRoad = smp.ad < TR.ROAD_HALF + 2.5;
+    c = (Math.floor(x / 2.5) + Math.floor(z / 2.5)) & 1 ? [0.33, 0.64, 0.26] : [0.29, 0.58, 0.24];
+    if (nearRoad) c = [0.55, 0.48, 0.3];                    // dusty road edge
+    if (smp.ad > TR.BARRIER + 4) c = [0.26, 0.5, 0.23];
+  }
+  const k = j * (0.9 + Math.min(1, h * 0.012));
+  return [c[0] * k, c[1] * k, c[2] * k];
+}
+
+function meshFrom(data, material) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(data.normals, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(data.colors, 3));
+  const m = new THREE.Mesh(g, material);
+  m.receiveShadow = true;
+  m.frustumCulled = false;
+  return m;
+}
+
+function buildTrack(group) {
+  const S = TR.SAMPLES;
+  const minX = Math.min(...S.map((p) => p.x)); const maxX = Math.max(...S.map((p) => p.x));
+  const minZ = Math.min(...S.map((p) => p.z)); const maxZ = Math.max(...S.map((p) => p.z));
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const R = 40;
+  const fineCell = 1.25;
+  const fx0 = Math.floor((minX - R) / fineCell) * fineCell; const fz0 = Math.floor((minZ - R) / fineCell) * fineCell;
+  const fine = buildColumns({
+    x0: fx0, z0: fz0, nx: Math.ceil((maxX + R - fx0) / fineCell), nz: Math.ceil((maxZ + R - fz0) / fineCell), cell: fineCell, quant: 0.25,
+    heightAt: TR.heightAt, colorAt: trackColor, include: (x, z) => TR.nearest(x, z).dist < R,
+  });
+  group.add(meshFrom(fine, mat));
+  const far = 150;
+  const cc = 6;
+  const cx0 = Math.floor((minX - far) / cc) * cc; const cz0 = Math.floor((minZ - far) / cc) * cc;
+  const coarse = buildColumns({
+    x0: cx0, z0: cz0, nx: Math.ceil((maxX + far - cx0) / cc), nz: Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
+    heightAt: TR.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => TR.nearest(x, z).dist >= R - 4,
+  });
+  group.add(meshFrom(coarse, mat));
+
+  // barriers
+  const bar = TR.barrierLayout();
+  instanced(group, bar.map((b) => ({ x: b.x, y: b.y + 0.45, z: b.z, sx: 0.6, sy: 0.9, sz: 1.62, rot: b.rot, color: b.c ? '#e63946' : '#f1f1f1' })),
+    new THREE.MeshLambertMaterial(), { cast: false });
+
+  // trees beyond the barriers
+  const trees = TR.sceneryLayout();
+  const trunks = []; const leaves = [];
+  for (const t of trees) {
+    const sc = t.scale;
+    trunks.push({ x: t.x, y: t.y + 0.7 * sc, z: t.z, sx: 0.55 * sc, sy: 1.4 * sc, sz: 0.55 * sc, color: '#6b4a2b' });
+    const g = 0.75 + t.tint * 0.3;
+    const green = new THREE.Color('#2f7d32').multiplyScalar(g);
+    if (t.type === 'pine') {
+      leaves.push({ x: t.x, y: t.y + 1.9 * sc, z: t.z, sx: 3.0 * sc, sy: 1.1 * sc, sz: 3.0 * sc, color: green });
+      leaves.push({ x: t.x, y: t.y + 2.9 * sc, z: t.z, sx: 2.2 * sc, sy: 1.1 * sc, sz: 2.2 * sc, color: green });
+      leaves.push({ x: t.x, y: t.y + 3.9 * sc, z: t.z, sx: 1.3 * sc, sy: 1.1 * sc, sz: 1.3 * sc, color: green });
+    } else {
+      leaves.push({ x: t.x, y: t.y + 2.6 * sc, z: t.z, sx: 3.2 * sc, sy: 2.6 * sc, sz: 3.2 * sc, color: new THREE.Color('#5aa83c').multiplyScalar(g) });
+    }
+  }
+  instanced(group, trunks, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, leaves, new THREE.MeshLambertMaterial(), { cast: true });
+
+  // roadside rocks and tyre stacks (solid)
+  const rocks = []; const stacks = [];
+  for (const o of TR.OBSTACLES) {
+    const y0 = TR.heightAt(o.x, o.z);
+    if (o.type === 'boulder') {
+      const cell = 0.42;
+      const n = Math.ceil(o.r / cell);
+      for (let i = -n; i <= n; i++) for (let j = 0; j <= n; j++) for (let k = -n; k <= n; k++) {
+        if (i * i + j * j * 1.4 + k * k > (o.r / cell) ** 2) continue;
+        const shade = 0.82 + ((i * 7 + j * 13 + k * 5) & 7) * 0.025;
+        rocks.push({ x: o.x + i * cell, y: y0 + cell / 2 + j * cell, z: o.z + k * cell, sx: cell, sy: cell, sz: cell, color: new THREE.Color('#8b8e94').multiplyScalar(shade) });
+      }
+    } else {
+      for (let h = 0; h < 3; h++) stacks.push({ x: o.x, y: y0 + 0.15 + h * 0.3, z: o.z, sx: 1.5, sy: 0.28, sz: 1.5, rot: h * 0.5, color: h === 1 ? '#e63946' : '#1c1c20' });
+    }
+  }
+  instanced(group, rocks, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, stacks, new THREE.MeshLambertMaterial(), { cast: true });
+
+  // gates: start/finish arch + three checkpoint arches
+  const gateMat = (c) => lambert(c);
+  TR.CHECKPOINTS.forEach((cs, idx) => {
+    const p = TR.sampleAt(cs);
+    const g = new THREE.Group();
+    g.position.set(p.x, p.y, p.z);
+    g.rotation.y = Math.atan2(p.tx, p.tz);
+    const w = TR.ROAD_HALF + 0.9;
+    const col = idx === 0 ? '#f1f1f1' : '#4cc9f0';
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(UNIT, gateMat(idx === 0 ? '#222' : '#1d3557'));
+      post.scale.set(0.7, 7, 0.7); post.position.set(side * w, 3.5, 0); post.castShadow = true; g.add(post);
+    }
+    const beam = new THREE.Mesh(UNIT, gateMat(col));
+    beam.scale.set(w * 2 + 0.7, 1.2, 0.8); beam.position.set(0, 6.6, 0); beam.castShadow = true; g.add(beam);
+    if (idx === 0) {
+      for (let i = 0; i < 14; i++) {
+        const sq = new THREE.Mesh(UNIT, gateMat(i & 1 ? '#111' : '#fff'));
+        sq.scale.set((w * 2) / 14, 0.55, 0.85); sq.position.set(-w + (i + 0.5) * ((w * 2) / 14), 6.6 + 0.3 * (i & 1 ? -1 : 1) * 0.5, 0); g.add(sq);
+      }
+    }
+    group.add(g);
+  });
+  return { fineTris: fine.triangles, coarseTris: coarse.triangles, barriers: bar.length, trees: trees.length };
+}
+
 // ------------------------------------------------------------------ world
 export function createWorld(scene, lights) {
   const outdoor = new THREE.Group();
@@ -448,6 +587,10 @@ export function createWorld(scene, lights) {
   const sky = buildSky();
   sky.userData.backdrop = true;
   outdoor.add(sky);
+  const skyDay = buildSky(DAY);
+  skyDay.userData.backdrop = true;
+  skyDay.visible = false;
+  outdoor.add(skyDay);
   const sunMesh = buildSun();
   sunMesh.userData.backdrop = true;
   outdoor.add(sunMesh);
@@ -458,10 +601,16 @@ export function createWorld(scene, lights) {
   sandbox.visible = false;
   scene.add(sandbox);
   const sbStats = buildSandbox(sandbox);
+  const trackGroup = new THREE.Group();
+  trackGroup.visible = false;
+  scene.add(trackGroup);
+  let trackStats = null;
+  let course = 'arena';
 
   const { hemi, sun, spot } = lights;
   const fogOut = new THREE.Fog('#f4a96b', 26, 110);
   const fogGar = new THREE.Fog('#16161e', 14, 40);
+  const fogDay = new THREE.Fog('#cfe6f5', 40, 170);
   let mode = 'outdoor';
 
   function setMode(next) {
@@ -470,21 +619,36 @@ export function createWorld(scene, lights) {
     const d = mode === 'drive';
     outdoor.visible = !g;
     // driving keeps the sky, sun, mesas, clouds and ground, but not the stadium props
+    const racing = d && course === 'race';
     for (const child of outdoor.children) child.visible = !d || !!child.userData.backdrop;
-    sandbox.visible = d;
-    groundMat.color.set(d ? '#cfa57e' : '#ffd9b3');
+    for (const child of outdoor.children) if (child.userData.mesa && racing) child.visible = false;
+    sky.visible = !racing;
+    arena.cloudMat.color.set(racing ? '#ffffff' : '#ffd9e0');
+    skyDay.visible = racing;
+    sandbox.visible = d && course === 'arena';
+    trackGroup.visible = d && course === 'race';
+    groundMat.color.set(d ? (course === 'race' ? '#8db36a' : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
-    scene.background = new THREE.Color(g ? '#16161e' : '#ffb35a');
-    scene.fog = g ? fogGar : fogOut;
+    scene.background = new THREE.Color(g ? '#16161e' : (racing ? '#bfe3fb' : '#ffb35a'));
+    scene.fog = g ? fogGar : (racing ? fogDay : fogOut);
     if (g) {
       hemi.color.set('#8fa0ff'); hemi.groundColor.set('#2a2230'); hemi.intensity = 0.9;
       sun.color.set('#ffe9c8'); sun.intensity = 1.5; sun.position.set(4, 9, 6);
       spot.visible = true;
+    } else if (racing) {
+      hemi.color.set('#e3f0ff'); hemi.groundColor.set('#6a8f4e'); hemi.intensity = 1.25;
+      sun.color.set('#fff2d8'); sun.intensity = 2.4; sun.position.set(8, 12, 5);
+      spot.visible = false;
     } else {
       hemi.color.set('#ffd2a0'); hemi.groundColor.set('#8a4b2a'); hemi.intensity = 1.35;
       sun.color.set('#ffb877'); sun.intensity = 2.5; sun.position.set(8, 6, 5);
       spot.visible = false;
     }
+  }
+  function setCourse(next) {
+    course = next === 'race' ? 'race' : 'arena';
+    if (course === 'race' && !trackStats) trackStats = buildTrack(trackGroup);
+    if (mode === 'drive') setMode('drive');
   }
   setMode('outdoor');
 
@@ -510,6 +674,8 @@ export function createWorld(scene, lights) {
 
   return {
     setMode,
+    setCourse,
+    get trackStats() { return trackStats; },
     update,
     get mode() { return mode; },
     stats: {

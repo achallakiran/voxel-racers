@@ -14,6 +14,8 @@ import { ParticleRenderer } from './fx/particle-render.js';
 import { createWorld } from './world/scenes.js';
 import { createVehicle, stepVehicle, tuningFor, BOOST_COST } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
+import * as TR from './world/track.js';
+import { createRace, formatTime } from './core/race.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
 import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
@@ -267,6 +269,13 @@ function start() {
   let prevF = 0;
   let vehicle = null;
   let tune = null;
+  let driveMode = 'arena';      // 'arena' | 'race'
+  let courseTerrain = ARENA_TERRAIN;
+  let race = null;
+  let goTimer = 0;
+  let wrongWay = 0;
+  let miniBase = null;
+  const mini = $('minimap').getContext('2d');
   let camMode = validCamera(save.camera);
   let camState = null;
   const camPos = new THREE.Vector3();
@@ -289,12 +298,22 @@ function start() {
   function enterDrive() {
     const truck = TRUCKS[truckIdx];
     feel = getFeel(truck.id);
-    tune = tuningFor(truck.stats, feel.handling);
+    tune = tuningFor(truck.stats, feel.handling, feel.sus);
     Object.assign(susp, createSuspension());
     prevVy = 0; prevF = 0;
-    const s = SANDBOX.start;
-    vehicle = createVehicle(s.x, s.z, s.heading, ARENA_TERRAIN);
+    const racing = driveMode === 'race';
+    courseTerrain = racing ? TR.terrain : ARENA_TERRAIN;
+    const s = racing ? TR.startPose() : SANDBOX.start;
+    vehicle = createVehicle(s.x, s.z, s.heading, courseTerrain, tune.ride);
     $('drive').classList.toggle('lefty', !!save.leftHanded);
+    $('drive').classList.toggle('race', racing);
+    $('drive').classList.remove('go');
+    $('results').classList.remove('show');
+    $('countdown').classList.remove('show');
+    $('wrongway').classList.remove('show');
+    race = racing ? createRace({ laps: 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S }) : null;
+    goTimer = 0; wrongWay = 0;
+    if (racing) buildMinimap();
     Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, far: 60 });
     sun.shadow.camera.updateProjectionMatrix();
     snapCamera();
@@ -309,6 +328,9 @@ function start() {
     keys.clear();
     audio.engineStop();
     vehicle = null;
+    race = null;
+    $('drive').classList.remove('race', 'go');
+    $('results').classList.remove('show');
     Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
     sun.shadow.camera.updateProjectionMatrix();
     sun.target.position.set(0, 0, 0);
@@ -319,7 +341,50 @@ function start() {
     frameCamera();
   }
 
-  $('btn-drive').addEventListener('click', () => { audio.unlock(); audio.click(); flow.send('drive'); });
+  function startMode(mode) {
+    audio.unlock(); audio.click();
+    driveMode = mode;
+    world.setCourse(mode);
+    flow.send('drive');
+  }
+  $('btn-race').addEventListener('click', () => startMode('race'));
+  $('btn-arena').addEventListener('click', () => startMode('arena'));
+  $('btn-retry').addEventListener('click', () => { audio.click(); enterDrive(); });
+  $('btn-results-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
+
+  // ---- minimap (track outline drawn once, then the truck dot each frame)
+  const MW = 160; const MH = 110;
+  function buildMinimap() {
+    const c = document.createElement('canvas');
+    c.width = MW; c.height = MH;
+    const g = c.getContext('2d');
+    const S = TR.SAMPLES;
+    const minX = Math.min(...S.map((p) => p.x)); const maxX = Math.max(...S.map((p) => p.x));
+    const minZ = Math.min(...S.map((p) => p.z)); const maxZ = Math.max(...S.map((p) => p.z));
+    const sc = Math.min((MW - 16) / (maxX - minX), (MH - 16) / (maxZ - minZ));
+    const ox = (MW - (maxX - minX) * sc) / 2 - minX * sc;
+    const oz = (MH - (maxZ - minZ) * sc) / 2 - minZ * sc;
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    const path = () => { g.beginPath(); S.forEach((p, i) => (i ? g.lineTo(p.x * sc + ox, MH - (p.z * sc + oz)) : g.moveTo(p.x * sc + ox, MH - (p.z * sc + oz)))); g.closePath(); };
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 7; path(); g.stroke();
+    g.strokeStyle = '#3b3d44'; g.lineWidth = 4.5; path(); g.stroke();
+    const sp = TR.startPose();
+    g.fillStyle = '#ffd60a'; g.fillRect(sp.x * sc + ox - 4, MH - (sp.z * sc + oz) - 1.5, 8, 3);
+    miniBase = { canvas: c, sc, ox, oz };
+  }
+  function drawMinimap() {
+    if (!miniBase || !vehicle) return;
+    mini.clearRect(0, 0, MW, MH);
+    mini.drawImage(miniBase.canvas, 0, 0);
+    const px = vehicle.x * miniBase.sc + miniBase.ox;
+    const pz = MH - (vehicle.z * miniBase.sc + miniBase.oz);
+    mini.save();
+    mini.translate(px, pz);
+    mini.rotate(Math.PI - vehicle.heading + Math.PI);
+    mini.fillStyle = '#ff3b30'; mini.strokeStyle = '#fff'; mini.lineWidth = 1.5;
+    mini.beginPath(); mini.moveTo(0, -6); mini.lineTo(4.5, 5); mini.lineTo(-4.5, 5); mini.closePath(); mini.fill(); mini.stroke();
+    mini.restore();
+  }
   $('btn-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
   $('btn-cam').addEventListener('click', () => {
     camMode = nextCamera(camMode);
@@ -355,26 +420,39 @@ function start() {
     ], save.autoGas);
   }
 
-  function spawnDust(n, spread, up) {
+  function spawnDust(n, spread, up, tint = 'dust') {
     const scale = QUALITY_SCALE[save.particles] ?? 1;
     const count = Math.round(n * scale);
     for (const w of truckMesh.userData.wheels) {
       w.group.getWorldPosition(tmp);
       for (let i = 0; i < count; i++) {
         const dir = { x: (rand() - 0.5) * spread - vehicle.vx * 0.1, y: up, z: (rand() - 0.5) * spread - vehicle.vz * 0.1 };
-        const p = makeParticle('smoke', 'dust', { x: tmp.x, y: vehicle.y + 0.12, z: tmp.z }, dir, 0.5, rand(), rand(), rand());
+        const p = makeParticle('smoke', tint, { x: tmp.x, y: vehicle.y + 0.12, z: tmp.z }, dir, 0.5, rand(), rand(), rand());
         p.rise = 0.25; p.size *= 1.6; p.life *= 0.7;
         pool.spawn(p);
       }
     }
   }
 
+  function showCountdown(text) {
+    const el = $('countdown');
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+  }
+
   function driveFrame(dt, steps) {
     const input = readInput();
+    if (race) {
+      race.tick(dt);
+      if (race.phase === 'countdown') { input.gas = 0; input.boost = false; input.brake = 1; }
+      if (race.phase === 'finished') { input.gas = 0; input.boost = false; input.brake = 1; }
+    }
     let first = true;
     const landings = [];
     for (let i = 0; i < steps; i++) {
-      const events = stepVehicle(vehicle, first ? input : { ...input, boost: false }, ARENA_TERRAIN, tune, 1 / 60);
+      const events = stepVehicle(vehicle, first ? input : { ...input, boost: false }, courseTerrain, tune, 1 / 60);
       first = false;
       for (const e of events) {
         if (e === 'boost') { shake = Math.max(shake, 0.35); audio.boost(); }
@@ -394,7 +472,7 @@ function start() {
     audio.engineSet(rev, input.gas);
 
     // pose
-    truckMesh.position.set(v.x, v.y, v.z);
+    truckMesh.position.set(v.x, v.y - tune.ride, v.z);
     truckMesh.rotation.set(-v.pitch, v.heading, v.roll);
     for (const w of truckMesh.userData.wheels) {
       if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
@@ -415,10 +493,11 @@ function start() {
     // dust behind the wheels, flames while boosting
     const scale = QUALITY_SCALE[save.particles] ?? 1;
     if (v.grounded) {
-      const rate = (Math.abs(v.f) > 2 ? 16 * speedNorm + 10 * Math.min(1, Math.abs(v.l) / 4) : 0);
+      const asphalt = v.surface === 'asphalt';
+      const rate = (Math.abs(v.f) > 2 ? (16 * speedNorm + 10 * Math.min(1, Math.abs(v.l) / 4)) * (asphalt ? 0.12 : (v.surface === 'mud' ? 1.5 : 1)) : 0);
       const tk = takeSpawns(dustCarry, rate, dt, 1);
       dustCarry = tk.carry;
-      if (tk.n > 0) spawnDust(Math.max(1, Math.round(tk.n / 2)), 1.2, 0.5);
+      if (tk.n > 0) spawnDust(Math.max(1, Math.round(tk.n / 2)), 1.2, 0.5, asphalt ? 'gray' : 'dust');
     }
     if (boosting) {
       const tk = takeSpawns(flameCarry, 90, dt, scale);
@@ -432,6 +511,32 @@ function start() {
       }
     }
     emitExhaust(dt);
+
+    // race rules + HUD
+    if (race) {
+      const n = TR.nearest(v.x, v.z);
+      race.update(n.s);
+      for (const e of race.drainEvents()) {
+        if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
+        else if (e === 'checkpoint') audio.click();
+        else if (e === 'lap') audio.chime();
+        else if (e === 'finish') {
+          audio.chime();
+          $('res-total').textContent = formatTime(race.finishTime);
+          $('res-best').textContent = formatTime(race.best);
+          $('results').classList.add('show');
+        }
+      }
+      const digit = race.countdownDigit();
+      if (race.phase === 'countdown' && digit > 0 && $('countdown').textContent !== String(digit)) showCountdown(String(digit));
+      if (goTimer > 0) { goTimer -= dt; if (goTimer <= 0) { $('countdown').classList.remove('show'); } }
+      $('lap').textContent = `${Math.min(race.lap, race.laps)}/${race.laps}`;
+      $('timer').textContent = formatTime(race.phase === 'finished' ? race.finishTime : race.time);
+      const along = Math.sin(v.heading) * n.tx + Math.cos(v.heading) * n.tz;
+      wrongWay = (v.f > 3 && along < -0.3 && race.phase === 'racing') ? Math.min(1, wrongWay + dt) : Math.max(0, wrongWay - dt * 2);
+      $('wrongway').classList.toggle('show', wrongWay > 0.5);
+      drawMinimap();
+    }
 
     // camera
     const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f }, camState);
@@ -536,6 +641,9 @@ function start() {
     get rev() { return rev; },
     get vehicle() { return vehicle; },
     get camMode() { return camMode; },
+    get race() { return race; },
+    get driveMode() { return driveMode; },
+    get trackStats() { return world.trackStats; },
     get susp() { return susp; },
     get voice() { return feel.voice; },
     get fov() { return camera.fov; },

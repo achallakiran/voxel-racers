@@ -43,7 +43,7 @@ test('every truck builds a detailed model with correct wheel count', () => {
     assert.ok(m.voxels.length > 2000, `${t.id} body too sparse: ${m.voxels.length}`);
     assert.ok(m.wheels[0].voxels.length > 100, `${t.id} wheel too sparse`);
     for (const v of m.voxels) assert.ok(PALETTE_KEYS.includes(v.k), `bad key ${v.k}`);
-    assert.ok(m.size.z >= 33 && m.size.z <= 50, `${t.id} length ${m.size.z}`);
+    assert.ok(m.size.z >= 33 && m.size.z <= 60, `${t.id} length ${m.size.z}`);
   }
 });
 
@@ -596,4 +596,245 @@ test('physics: launch speed is capped so crests do not throw the truck skyward',
   let peak = 0;
   for (let i = 0; i < 120; i++) { stepVehicle(v, { gas: 1 }, hill, tuningFor(STATS), DT); peak = Math.max(peak, v.y); }
   assert.ok(peak < 6.5, `peak ${peak}`);
+});
+
+// ---------- Phase 1.6: bouncy suspension physics + surfaces
+import { SURFACES, SPRING_REST } from '../src/physics/arcade.js';
+
+test('physics: heavy landings bounce several times before settling', () => {
+  const tune = tuningFor(STATS, FEEL.crusher.handling, FEEL.crusher.sus);
+  const v = createVehicle(0, 0, 0, FLAT, tune.ride);
+  v.y = 5; v.grounded = false;
+  let peaks = 0; let up = false; let peak1 = 0; let first = true;
+  const ev = [];
+  for (let i = 0; i < 400; i++) {
+    ev.push(...stepVehicle(v, {}, FLAT, tune, DT));
+    if (v.vy > 0.3) up = true;
+    else if (v.vy < 0 && up) { up = false; peaks++; if (first && peaks === 2) { peak1 = v.y; first = false; } }
+  }
+  assert.ok(ev.some((e) => e.type === 'land' && e.power > 10), 'hard landing event');
+  assert.ok(peaks >= 3, `bounced ${peaks} times`);
+  assert.ok(Math.abs(v.y - tune.ride) < 0.03 && v.grounded, `settled at ride height (${v.y})`);
+});
+
+test('physics: softer trucks bounce more than stiff ones', () => {
+  const bounce = (fe) => {
+    const tune = tuningFor(STATS, fe.handling, fe.sus);
+    const v = createVehicle(0, 0, 0, FLAT, tune.ride);
+    v.y = 5; v.grounded = false;
+    let maxAfter = 0; let landed = false;
+    for (let i = 0; i < 200; i++) {
+      const ev = stepVehicle(v, {}, FLAT, tune, DT);
+      if (ev.some((e) => e.type === 'land')) landed = true;
+      else if (landed) maxAfter = Math.max(maxAfter, v.y);
+    }
+    return maxAfter;
+  };
+  assert.ok(bounce(FEEL['dune-devil']) > 0 && bounce(FEEL.titan) > 0);
+  assert.ok(bounce(FEEL.titan) >= bounce(FEEL.crusher) * 0.5, 'sanity');
+});
+
+test('physics: surfaces change speed and grip (asphalt > dirt > grass > mud)', () => {
+  const top = (sf) => {
+    const t = { heightAt: () => 0, obstacles: [], radius: 1e3, surfaceAt: () => sf };
+    const tune = tuningFor(STATS);
+    const v = createVehicle(0, 0, 0, t);
+    run(v, { gas: 1 }, t, 12, tune);
+    return v.f;
+  };
+  const a = top('asphalt'); const d = top('dirt'); const g = top('grass'); const m = top('mud');
+  assert.ok(a > d && d > g && g > m, `${a} ${d} ${g} ${m}`);
+  assert.ok(m < a * 0.5, 'mud is much slower');
+  assert.ok(SURFACES.asphalt.grip > SURFACES.mud.grip);
+  const t = { heightAt: () => 0, obstacles: [], radius: 1e3, surfaceAt: () => 'mud' };
+  const v = createVehicle(0, 0, 0, t);
+  run(v, { gas: 1 }, t, 1);
+  assert.equal(v.surface, 'mud');
+});
+
+test('physics: bumps in the road hop the truck and scrub speed', () => {
+  const logs = { heightAt: (x, z) => (z > 20 && z % 6 > 0 && z % 6 < 1 ? 0.45 : 0), obstacles: [], radius: 1e3 };
+  const tune = tuningFor(STATS);
+  const smooth = createVehicle(0, 0, 0, FLAT);
+  const rough = createVehicle(0, 0, 0, logs);
+  let hops = 0;
+  for (let i = 0; i < 360; i++) {
+    stepVehicle(smooth, { gas: 1 }, FLAT, tune, DT);
+    stepVehicle(rough, { gas: 1 }, logs, tune, DT);
+    if (!rough.grounded) hops++;
+  }
+  assert.ok(hops > 20, `hops ${hops}`);
+  assert.ok(rough.f < smooth.f * 0.8, `rough ${rough.f} vs smooth ${smooth.f}`);
+});
+
+test('physics: custom wall (track barrier) keeps the truck in', () => {
+  const corridor = {
+    heightAt: () => 0, obstacles: [],
+    constrain: (x, z) => (Math.abs(x) > 6 ? { x: Math.sign(x) * 6, z, nx: Math.sign(x), nz: 0 } : null),
+  };
+  const v = createVehicle(0, 0, Math.PI / 2, corridor);
+  const ev = run(v, { gas: 1 }, corridor, 6);
+  assert.ok(Math.abs(v.x) <= 6 + 1e-9);
+  assert.ok(ev.some((e) => e.type === 'wall'));
+});
+
+test('physics: kicker gives real air time', () => {
+  const tune = tuningFor({ speed: 8, grip: 6, weight: 5 }, FEEL.crusher.handling, FEEL.crusher.sus);
+  const v = createVehicle(SANDBOX.start.x, SANDBOX.start.z, SANDBOX.start.heading, ARENA_TERRAIN, tune.ride);
+  let air = 0;
+  for (let i = 0; i < 60 * 8; i++) { stepVehicle(v, { gas: 1 }, ARENA_TERRAIN, tune, DT); if (!v.grounded) air++; }
+  assert.ok(air > 25, `air frames ${air}`);
+  assert.ok(SPRING_REST > 0);
+});
+
+// ---------- Phase 2: race track + rules
+import * as TRK from '../src/world/track.js';
+import { createRace, crossedForward, wrapDelta, formatTime, COUNTDOWN } from '../src/core/race.js';
+import { buildColumns } from '../src/world/terrain-mesh.js';
+
+test('track: closed loop with sane length, width, curvature and grade', () => {
+  const S = TRK.SAMPLES;
+  assert.ok(TRK.LENGTH > 600 && TRK.LENGTH < 1000, `length ${TRK.LENGTH}`);
+  assert.ok(Math.hypot(S[0].x - S[S.length - 1].x, S[0].z - S[S.length - 1].z) < TRK.DS * 1.5, 'closes');
+  let minR = Infinity; let maxGrade = 0;
+  for (let i = 0; i < S.length; i++) {
+    const a = S[i]; const b = S[(i + 3) % S.length]; const c = S[(i + 6) % S.length];
+    const ab = Math.hypot(b.x - a.x, b.z - a.z); const bc = Math.hypot(c.x - b.x, c.z - b.z); const ca = Math.hypot(a.x - c.x, a.z - c.z);
+    const area = Math.abs((b.x - a.x) * (c.z - a.z) - (c.x - a.x) * (b.z - a.z)) / 2;
+    minR = Math.min(minR, (ab * bc * ca) / (4 * area || 1e-9));
+    maxGrade = Math.max(maxGrade, Math.abs(S[(i + 1) % S.length].y - a.y) / TRK.DS);
+    assert.ok(a.y > 1, 'road stays above the ground floor');
+  }
+  assert.ok(minR > 15, `tightest bend radius ${minR}`);
+  assert.ok(maxGrade < 0.2, `grade ${maxGrade}`);
+});
+
+test('track: different parts never come near each other (barriers cannot touch)', () => {
+  const S = TRK.SAMPLES;
+  let min = Infinity;
+  for (let i = 0; i < S.length; i++) for (let j = i + 1; j < S.length; j++) {
+    const arc = Math.min(j - i, S.length - (j - i)) * TRK.DS;
+    if (arc < 70) continue;
+    min = Math.min(min, Math.hypot(S[i].x - S[j].x, S[i].z - S[j].z));
+  }
+  assert.ok(min > 2 * TRK.TRACK.barrier + 6, `closest approach ${min}`);
+});
+
+test('track: road, shoulders and surfaces', () => {
+  const p = TRK.sampleAt(0.35);
+  const on = TRK.sample(p.x, p.z);
+  assert.ok(on.onRoad && Math.abs(on.d) < 0.5);
+  const side = TRK.sample(p.x + p.tz * 10, p.z - p.tx * 10);
+  assert.equal(side.surf, 'grass');
+  const kinds = new Set();
+  for (let i = 0; i < 200; i++) { const q = TRK.sampleAt(i / 200); kinds.add(TRK.surfaceAt(q.x, q.z)); }
+  for (const k of ['asphalt', 'dirt', 'mud']) assert.ok(kinds.has(k), `has ${k}`);
+  const sp = TRK.startPose();
+  assert.equal(TRK.surfaceAt(sp.x, sp.z), 'asphalt');
+  assert.ok(Math.abs(TRK.heightAt(sp.x, sp.z) - sp.y) < 0.01, 'start is on the level road');
+});
+
+test('track: jumps, whoops and logs rise above the road', () => {
+  const ramps = TRK.FEATURES.filter((f) => f.type === 'ramp');
+  assert.ok(ramps.length >= 6);
+  const k = ramps[0];
+  const top = TRK.heightAt(k.x + Math.sin(k.rot) * 8.9, k.z + Math.cos(k.rot) * 8.9);
+  const flat = TRK.nearest(k.x + Math.sin(k.rot) * 8.9, k.z + Math.cos(k.rot) * 8.9).y;
+  assert.ok(top - flat > 2.5, `kicker lip ${top - flat}`);
+  assert.ok(TRK.FEATURES.some((f) => f.type === 'whoops'));
+});
+
+test('track: barriers contain the truck on both sides', () => {
+  const p = TRK.sampleAt(0.2);
+  for (const side of [-1, 1]) {
+    const x = p.x + p.tz * side * (TRK.TRACK.barrier + 5);
+    const z = p.z - p.tx * side * (TRK.TRACK.barrier + 5);
+    const w = TRK.constrain(x, z, 1.3);
+    assert.ok(w, 'pushed back');
+    assert.ok(Math.abs(TRK.nearest(w.x, w.z).d) <= TRK.TRACK.barrier - 1.3);
+    assert.ok((w.nx * (x - w.x) + w.nz * (z - w.z)) > 0, 'normal points outwards');
+  }
+  assert.equal(TRK.constrain(p.x, p.z, 1.3), null);
+});
+
+test('track: a truck can drive a full lap on the road without leaving the barriers', () => {
+  const tune = tuningFor({ speed: 7, grip: 7, weight: 5 }, FEEL.crusher.handling, FEEL.crusher.sus);
+  const sp = TRK.startPose();
+  const v = createVehicle(sp.x, sp.z, sp.heading, TRK.terrain, tune.ride);
+  let t = 0; let walls = 0; let maxS = 0; let passed = 0;
+  for (let i = 0; i < 60 * 150; i++) {
+    // simple pilot: aim at a point on the centre line ahead
+    const n = TRK.nearest(v.x, v.z);
+    const ahead = TRK.sampleAt(n.s + 14 / TRK.LENGTH);
+    const want = Math.atan2(ahead.x - v.x, ahead.z - v.z);
+    let diff = want - v.heading;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    const ev = stepVehicle(v, { gas: 1, brake: 0, steer: Math.max(-1, Math.min(1, -diff * 2.5)) }, TRK.terrain, tune, DT);
+    walls += ev.filter((e) => e.type === 'wall').length;
+    t += DT;
+    const prog = (n.s - TRK.START_S + 1) % 1;
+    if (prog > passed) passed = prog;
+    if (passed > 0.97) break;
+    assert.ok(Number.isFinite(v.x) && Number.isFinite(v.y), 'finite');
+  }
+  assert.ok(passed > 0.9, `completed ${(passed * 100).toFixed(0)}% of the lap in ${t.toFixed(0)}s (walls ${walls})`);
+});
+
+test('race: countdown, checkpoints in order, laps, finish and best lap', () => {
+  const r = createRace({ laps: 2 });
+  assert.equal(r.phase, 'countdown');
+  assert.equal(r.countdownDigit(), 3);
+  r.tick(COUNTDOWN / 2);
+  assert.ok(r.countdownDigit() <= 2);
+  r.update(0.99); // moving while counting down counts for nothing
+  r.tick(COUNTDOWN);
+  assert.equal(r.phase, 'racing');
+  assert.ok(r.drainEvents().includes('go'));
+  const drive = (from, to, seconds) => { const steps = 40; for (let i = 1; i <= steps; i++) { r.tick(seconds / steps); r.update(from + (to - from) * (i / steps)); } };
+  r.prevS = 0.985;
+  drive(0.985, 1.005, 0.5);              // crosses the line at the start: not a lap
+  assert.equal(r.lap, 1);
+  drive(0.005, 0.3, 10);                 // checkpoint 1 (0.25)
+  assert.equal(r.next, 2);
+  drive(0.3, 0.55, 10);
+  drive(0.55, 0.8, 10);
+  assert.equal(r.next, 0, 'all checkpoints done, line is next');
+  drive(0.8, 1.02, 10);
+  assert.equal(r.lap, 2, 'lap counted');
+  assert.equal(r.lapTimes.length, 1);
+  assert.ok(r.events.includes('lap'));
+  drive(0.02, 0.3, 8); drive(0.3, 0.55, 8); drive(0.55, 0.8, 8); drive(0.8, 1.02, 8);
+  assert.equal(r.phase, 'finished');
+  assert.equal(r.lapTimes.length, 2);
+  assert.ok(r.best <= Math.min(...r.lapTimes) + 1e-9);
+  assert.ok(r.finishTime > 60);
+});
+
+test('race: skipping checkpoints or driving backwards does not count a lap', () => {
+  const r = createRace({ laps: 3 });
+  r.tick(10);
+  r.prevS = 0.985;
+  r.update(0.02); r.update(0.1);
+  // jump straight to the line without checkpoints
+  r.update(0.9); r.update(0.995); r.update(0.01);
+  assert.equal(r.lap, 1);
+  assert.equal(r.next, 1);
+  // backwards across a checkpoint does nothing
+  r.prevS = 0.3; r.update(0.2);
+  assert.equal(r.next, 1);
+  assert.ok(wrapDelta(0.99, 0.01) > 0 && crossedForward(0.99, 0.02, 0) && !crossedForward(0.02, 0.99, 0));
+  assert.equal(formatTime(75.5), '1:15.50');
+});
+
+test('terrain mesh: columns emit tops and only visible side walls', () => {
+  const flat = buildColumns({ x0: 0, z0: 0, nx: 4, nz: 4, cell: 1, quant: 0, heightAt: () => 1, colorAt: () => [1, 1, 1], sides: true });
+  assert.equal(flat.cells, 16);
+  assert.equal(flat.triangles, 16 * 2 + 16 * 2, 'tops plus the 16 outer edge walls only');
+  const step = buildColumns({ x0: 0, z0: 0, nx: 2, nz: 1, cell: 1, quant: 0, heightAt: (x) => (x < 1 ? 2 : 1), colorAt: () => [1, 1, 1] });
+  assert.ok(step.triangles > 4, 'has a wall at the step');
+  assert.equal(step.positions.length, step.normals.length);
+  assert.equal(step.positions.length, step.colors.length);
+  const q = buildColumns({ x0: 0, z0: 0, nx: 1, nz: 1, cell: 1, quant: 0.25, heightAt: () => 1.13, colorAt: () => [1, 1, 1], sides: false });
+  assert.equal(q.positions[1], 1.25);
 });

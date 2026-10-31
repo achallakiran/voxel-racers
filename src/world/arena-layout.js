@@ -20,11 +20,11 @@ const LANDING = (len, h) => [[0, h], [len, 0]];
 const TABLE = [[0, 0], [7, 2.4], [13, 2.4], [20, 0]];
 
 export const FEATURES = [
-  { type: 'ramp', kind: 'ramp', ...diag(15), rot: -3 * Math.PI / 4, w: 7, profile: KICKER(8, 2.0) },     // K1
-  { type: 'ramp', kind: 'ramp', ...diag(1), rot: -3 * Math.PI / 4, w: 8, profile: LANDING(10, 1.3) },    // K1 landing
+  { type: 'ramp', kind: 'ramp', ...diag(15), rot: -3 * Math.PI / 4, w: 7, profile: KICKER(8, 3.0) },     // K1
+  { type: 'ramp', kind: 'ramp', ...diag(1), rot: -3 * Math.PI / 4, w: 8, profile: LANDING(11, 2.0) },    // K1 landing
   { type: 'ramp', kind: 'table', x: -24, z: 5, rot: 0, w: 8, profile: TABLE },                           // tabletop
-  { type: 'ramp', kind: 'ramp', x: -8, z: -30, rot: Math.PI / 2, w: 7, profile: KICKER(9, 2.4) },        // big kicker
-  { type: 'ramp', kind: 'ramp', x: 11, z: -30, rot: Math.PI / 2, w: 9, profile: LANDING(11, 1.6) },      // its landing
+  { type: 'ramp', kind: 'ramp', x: -8, z: -30, rot: Math.PI / 2, w: 7, profile: KICKER(9, 3.6) },        // big kicker
+  { type: 'ramp', kind: 'ramp', x: 11, z: -30, rot: Math.PI / 2, w: 9, profile: LANDING(12, 2.4) },      // its landing
   { type: 'whoops', kind: 'whoops', x: -22, z: -18, rot: 0, len: 18, w: 6, amp: 0.5, wave: 3 },
   { type: 'hill', kind: 'hill', x: -6, z: 31, r: 10, h: 3.6 },
   { type: 'hill', kind: 'hill', x: 31, z: 4, r: 8, h: 2.6 },
@@ -57,7 +57,7 @@ function profileAt(profile, u) {
   return 0;
 }
 
-function featureHeight(f, x, z) {
+export function featureHeight(f, x, z) {
   if (f.type === 'hill') {
     const d = Math.hypot(x - f.x, z - f.z);
     return d >= f.r ? 0 : f.h * 0.5 * (1 + Math.cos(Math.PI * d / f.r));
@@ -97,7 +97,7 @@ export function heightAt(x, z) {
   return h;
 }
 
-export const terrain = { heightAt, obstacles: OBSTACLES, radius: SANDBOX.radius };
+export const terrain = { heightAt, obstacles: OBSTACLES, radius: SANDBOX.radius, surfaceAt: () => 'dirt' };
 
 // Voxel columns for the renderer: one stretched box per cell whose top is the height at the cell centre.
 export function terrainColumns(step = 0.5) {

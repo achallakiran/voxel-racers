@@ -5,14 +5,30 @@
 // Heading convention: forward = (sin h, cos h). Steering input > 0 turns right (heading decreases).
 
 export const GRAVITY = 30;
+export const SPRING_REST = 0.3;     // chassis ride height the springs aim for (before sag)
+export const MAX_UP = 14;           // launch speed cap
+
+// Surface effects: grip multiplier, extra rolling drag, top-speed multiplier
+export const SURFACES = {
+  asphalt: { grip: 1.2, drag: 0.0, maxMul: 1.0 },
+  dirt: { grip: 0.85, drag: 0.1, maxMul: 0.97 },
+  grass: { grip: 0.65, drag: 0.5, maxMul: 0.82 },
+  sand: { grip: 0.55, drag: 0.8, maxMul: 0.7 },
+  mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
+};
 export const BOOST_COST = 0.34;
 export const BOOST_TIME = 1.4;
 export const NITRO_REGEN = 0.09;
 const TRUCK_RADIUS = 1.3;
 
 // stats are 1..10 (see truck-stats.js)
-export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }) {
+export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }, sus = { k: 55, bounce: 1 }) {
+  const K = 7.5 * sus.k;
   return {
+    suspK: K,
+    suspC: 0.5 * Math.sqrt(K),
+    ride: SPRING_REST - GRAVITY / K,        // resting chassis height above the ground
+    restitution: 0.5 + 0.2 * (sus.bounce - 1),
     maxSpeed: 12 + stats.speed * 1.6,
     accel: 10 + stats.speed * 1.1 - stats.weight * 0.35,
     brake: 34,
@@ -25,19 +41,26 @@ export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }) {
   };
 }
 
-export function createVehicle(x, z, heading, terrain) {
+export function createVehicle(x, z, heading, terrain, ride = 0.25) {
   return {
-    x, z, y: terrain.heightAt(x, z), heading,
+    x, z, y: terrain.heightAt(x, z) + ride, heading,
     vx: 0, vz: 0, vy: 0,
     yawRate: 0, grounded: true,
     pitch: 0, roll: 0,
     f: 0, l: 0,               // forward / lateral speed (for HUD, wheels, dust)
     nitro: 1, boostT: 0,
+    fallV: 0, surface: 'dirt', rise: 0,
     steerVis: 0,
   };
 }
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function circleWall(x, z, R) {
+  const d = Math.hypot(x, z);
+  if (d <= R || d === 0) return null;
+  return { x: (x / d) * R, z: (z / d) * R, nx: x / d, nz: z / d };
+}
 
 function slope(terrain, x, z) {
   const e = 0.4;
@@ -78,7 +101,9 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   if (v.boostT > 0) v.boostT = Math.max(0, v.boostT - dt);
   else v.nitro = Math.min(1, v.nitro + NITRO_REGEN * dt);
   const boosting = v.boostT > 0;
-  const maxF = tune.maxSpeed * (boosting ? tune.boostMax : 1);
+  const surf = SURFACES[(terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt'] || SURFACES.dirt;
+  v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
+  const maxF = tune.maxSpeed * (boosting ? tune.boostMax : 1) * surf.maxMul;
 
   if (v.grounded) {
     const gas = input.gas || 0;
@@ -90,14 +115,15 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       if (f > 0.4) f -= tune.brake * dt;
       else f = Math.max(-tune.reverseMax, f - tune.accel * 0.7 * dt);
     } else {
-      f *= Math.exp(-tune.rollDrag * dt);
+      f *= Math.exp(-(tune.rollDrag + surf.drag) * dt);
       if (Math.abs(f) < 0.05) f = 0;
     }
+    if (gas > 0 && surf.drag > 0) f *= Math.exp(-surf.drag * 0.5 * dt);   // soft ground drags even under power
     if (f > maxF) f -= (f - maxF) * 1.5 * dt;
 
     // sideways grip; braking while turning at speed lets the back end slide
     const sliding = (input.brake || 0) > 0 && f > 6;
-    l *= Math.exp(-tune.grip * (sliding ? 0.35 : 1) * dt);
+    l *= Math.exp(-tune.grip * surf.grip * (sliding ? 0.35 : 1) * dt);
   }
   v.vx = f * sinH + l * cosH;
   v.vz = f * cosH - l * sinH;
@@ -105,8 +131,8 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   if (v.grounded) {
     // gravity along the slope: climbing slows, descending speeds up
     const s = slope(terrain, v.x, v.z);
-    v.vx -= GRAVITY * s.gx * 0.45 * dt;
-    v.vz -= GRAVITY * s.gz * 0.45 * dt;
+    v.vx -= GRAVITY * s.gx * 0.8 * dt;
+    v.vz -= GRAVITY * s.gz * 0.8 * dt;
   } else {
     const air = Math.exp(-0.05 * dt);
     v.vx *= air;
@@ -136,56 +162,64 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       }
     }
   }
-  // bounded world
-  const R = terrain.radius - TRUCK_RADIUS;
-  const dist = Math.hypot(nx, nz);
-  if (dist > R) {
-    const ux = nx / dist;
-    const uz = nz / dist;
-    nx = ux * R; nz = uz * R;
-    const vn = v.vx * ux + v.vz * uz;
+  // bounded world: tracks supply their own barrier shape, the arena is a circle
+  const wall = terrain.constrain ? terrain.constrain(nx, nz, TRUCK_RADIUS) : circleWall(nx, nz, (terrain.radius || 1e9) - TRUCK_RADIUS);
+  if (wall) {
+    nx = wall.x; nz = wall.z;
+    const vn = v.vx * wall.nx + v.vz * wall.nz;     // wall.n points out of the playable area
     if (vn > 0) {
-      v.vx -= 1.4 * vn * ux; v.vz -= 1.4 * vn * uz;
+      v.vx -= 1.4 * vn * wall.nx; v.vz -= 1.4 * vn * wall.nz;
       v.vx *= 0.8; v.vz *= 0.8;
       events.push({ type: 'wall', power: vn });
     }
   }
 
-  // vertical
+  // vertical: the chassis rides on springs over the terrain. Compression pushes it up, so it
+  // bounces over bumps, takes off from kickers and crests, and slams down on hard landings.
   let g1 = terrain.heightAt(nx, nz);
-  if (g1 - v.y > 0.7) {                       // the face of a ramp or landing: a wall
+  if (g1 - v.y > 0.9) {                       // the face of a ramp or landing: a wall
     const vn = Math.hypot(v.vx, v.vz);
     nx = v.x; nz = v.z;
     v.vx *= -0.2; v.vz *= -0.2;
     g1 = terrain.heightAt(nx, nz);
     if (vn > 3) events.push({ type: 'hit', power: vn });
   }
-  if (v.grounded) {
-    const free = v.y + v.vy * dt - 0.5 * GRAVITY * dt * dt;
-    if (free > g1 + 0.08) {
-      v.grounded = false;
-      v.vy = Math.min(v.vy, 9);                // cap launch speed so crests never throw you skyward
-      v.vy -= GRAVITY * dt;
-      v.y += v.vy * dt;
-    } else {
-      v.vy = clamp((g1 - v.y) / dt, -30, 30);
-      v.y = g1;
+  const wasGrounded = v.grounded;
+  const gPrev = terrain.heightAt(v.x, v.z);
+  let h = v.y - g1;
+  if (!wasGrounded) v.fallV = Math.min(v.fallV, v.vy);
+  let ay = -GRAVITY;
+  if (h < SPRING_REST) ay += tune.suspK * (SPRING_REST - h) - tune.suspC * v.vy;
+  v.vy = clamp(v.vy + ay * dt, -45, MAX_UP);
+  v.y += v.vy * dt;
+  h = v.y - g1;
+  let slam = 0;
+  if (h < 0) {                                // bottomed out
+    v.y = g1;
+    if (v.vy < 0) {
+      slam = -v.vy;
+      v.vy = slam > 3 ? slam * tune.restitution : 0;
+      if (slam > 5) { v.vx *= 0.93; v.vz *= 0.93; }
     }
-  } else {
-    v.vy -= GRAVITY * dt;
-    v.y += v.vy * dt;
-    if (v.y <= g1) {
-      const impact = -v.vy;
-      v.y = g1;
-      if (impact > 9) {                        // heavy truck: one bounce
-        v.vy = impact * 0.18;
-        v.y = g1 + 0.001;
-        v.vx *= 0.9; v.vz *= 0.9;
-      } else {
-        v.grounded = true;
-        v.vy = 0;
-      }
-      if (impact > 4) events.push({ type: 'land', power: impact });
+    h = 0;
+  }
+  v.grounded = h < SPRING_REST + 0.12;
+  if (v.grounded && !wasGrounded) {
+    const impact = Math.max(-v.fallV, slam);
+    if (impact > 4) events.push({ type: 'land', power: impact });
+    v.fallV = 0;
+  } else if (v.grounded) {
+    v.fallV = 0;
+    if (slam > 6) events.push({ type: 'land', power: slam });
+  }
+  // hitting rising ground (logs, steps, rocks) scrubs speed; ramps do not, because the chassis follows them
+  const upRate = (g1 - gPrev) / dt;
+  v.rise = upRate;
+  if (v.grounded && upRate > 3) {
+    const hitV = Math.max(0, upRate - Math.max(v.vy, 0));
+    if (hitV > 0.5) {
+      const k = Math.exp(-0.09 * hitV * dt * 6);
+      v.vx *= k; v.vz *= k;
     }
   }
   v.x = nx;

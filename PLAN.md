@@ -55,11 +55,19 @@ Visible nitro button (tap, above gas). Per-truck engine voice, handling and susp
 - **Arena** (Phase 2): bounded stadium, smash crushable car piles, collect stars, stunt score for air time/flips, timed rounds, rewards.
 - **Race** (Phases 3-4): bounded track with a real road (asphalt + dirt sections), grass/mud/rock off-road, barriers, checkpoints, 3 laps, rivals.
 
-**Phase 3 — Dust Canyon race track (mixed road)**
+**Phase 1.6 — Monster physics + wheels** (DONE)
+Giant tyres (wheels taller than the body), spring-suspension physics: bouncy landings, hops over bumps, speed scrubbed by rough ground, surface grip/drag (asphalt, dirt, grass, mud).
+
+**Phase 2 — Race track** (DONE, first track: Greenridge Run)
+750 m bounded loop with a road (asphalt, dirt, mud strip), grass shoulders, hills, 2 big jumps, whoops, rumble logs, barriers, trees, checkpoints, 3 laps, countdown, minimap, results. Race and Arena are separate garage buttons.
+Tests: track geometry (closed, curvature, clearance, grade), barrier containment, a bot drives a full lap, race rules (order, skipping, backwards), terrain mesh.
+
+**Phase 3 — More tracks + loop** (next)
+Loop-the-loop (with a stick-to-surface rule), then Pine Mud Run, Frozen Loop, Volcano Rim. Pick via a track icon.
 Spline track with banking, hills, jumps, a loop, rocks and cacti, bounded by cliffs and tire walls. Surface-stick rule for the loop. Lap and checkpoint logic, mini-map.
 Tests: spline sampling, lap counting, no-skip checkpoints, loop stick speed.
 
-**Phase 4 — Rivals + race flow**
+**Phase 4 — Rivals + race flow** (positions, rubber-banding, pickups)
 5 rivals with distinct personalities and colours, racing line with variance, light rubber-banding, pickups (nitro, cash). Countdown, positions (1st/2nd tags), results.
 Tests: AI follows line, position sorting, race state machine.
 
