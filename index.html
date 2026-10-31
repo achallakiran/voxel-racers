@@ -4,21 +4,46 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0b1026">
-  <title>Voxel Racers</title>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Voxel Monsters</title>
   <link rel="icon" href="assets/logo.jpeg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <canvas id="game" aria-label="Voxel Racers"></canvas>
+  <canvas id="game" aria-label="Voxel Monsters"></canvas>
 
-  <!-- Splash: Ada's Games logo -->
-  <div id="splash">
-    <img src="assets/logo.jpeg" alt="Alien Dimension Arcade - Ada's Games">
+  <!-- Tap to start: unlocks audio, goes fullscreen / landscape where the browser allows -->
+  <div id="start" class="screen">
+    <button id="btn-start" class="icon-btn huge" aria-label="start">
+      <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    </button>
   </div>
 
-  <!-- Garage preview (foundation build): truck picker with icon-only controls -->
-  <div id="garage" hidden>
+  <!-- Studio intro -->
+  <div id="intro" class="screen">
+    <img class="emblem" src="assets/logo.jpeg" alt="">
+    <div class="studio">
+      <span class="line1">ADA STUDIOS</span>
+      <span class="line2">PRESENTS</span>
+    </div>
+  </div>
+
+  <!-- Title -->
+  <div id="title" class="screen passthrough">
+    <h1 class="logo"><span class="w1">VOXEL</span><span class="w2">MONSTERS</span></h1>
+    <button id="btn-play" class="icon-btn huge" aria-label="play">
+      <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+  </div>
+
+  <!-- Garage: icon-only controls -->
+  <div id="garage" class="screen passthrough">
+    <button id="btn-back" class="icon-btn small" aria-label="back">
+      <svg viewBox="0 0 24 24"><path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/></svg>
+    </button>
     <div id="truck-name"></div>
+    <div id="truck-blurb"></div>
     <div id="truck-stats"></div>
     <div id="controls">
       <button id="btn-prev" class="icon-btn" aria-label="previous truck">
@@ -30,6 +55,14 @@
       <button id="btn-next" class="icon-btn" aria-label="next truck">
         <svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg>
       </button>
+    </div>
+  </div>
+
+  <!-- Portrait: turn your phone (CSS shows this only in portrait) -->
+  <div id="rotate" aria-label="rotate your device">
+    <div class="phone-wrap">
+      <svg class="phone" viewBox="0 0 64 100"><rect x="6" y="4" width="52" height="92" rx="9"/><rect x="14" y="14" width="36" height="66" rx="3" class="scr"/><circle cx="32" cy="88" r="3"/></svg>
+      <svg class="arc" viewBox="0 0 120 120"><path d="M20 78a46 46 0 0 1 80-8"/><path d="m100 70-2-17m2 17-16-4"/></svg>
     </div>
   </div>
 

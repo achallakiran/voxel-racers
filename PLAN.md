@@ -1,8 +1,11 @@
-# Voxel Racers — Implementation Plan
+# Voxel Monsters — Implementation Plan
 
 Monster truck racing in voxels. Plain HTML + Three.js (bundled, no CDN), served from the root of `main` via GitHub Pages.
 
 ## Locked decisions
+- Title: **Voxel Monsters**. Studio line: **ADA STUDIOS PRESENTS**.
+- Start flow: rotate-phone prompt (portrait only) -> tap to start (fullscreen, landscape lock where supported, audio unlock) -> studio intro -> title -> garage.
+- Roster: 8 trucks with distinct bodies and moving parts: open pickup, buggy, snow-plow, gator-jaw, exposed-engine, crane tow truck, monster school bus, 6-wheel dump truck.
 - Renderer: Three.js, vendored in `lib/`.
 - Camera: 4 views cycled by an icon (Iso-follow default, Fixed iso, Chase, High top-down), saved.
 - Controls: joystick + 2 buttons. B1 = gas (hold), B2 = brake/reverse, joystick flick up = nitro. Optional Auto-gas in Settings. Keyboard and gamepad fallback.
@@ -36,6 +39,10 @@ Each phase ends with: tests pass, push to `main`, you test, feedback, next phase
 
 **Phase 0 — Foundation** (this push: logo + plan)
 Repo skeleton, bundled Three.js, game loop, Pages-ready `index.html`, test runner, CI smoke test.
+
+**Phase 0.5 — Start flow + truck variety** 
+Rotate prompt, tap-to-start, ADA Studios intro, title screen, 8 animated trucks (pistons, crank pulley, plow, jaw, crane, dump bed, stop sign, flag), pooled smoke/flame particles that follow the revs.
+Tests: flow state machine, animation maths, particle pool, emission rules, model integrity (no overlapping voxels, parts present).
 
 **Phase 1 — Truck + physics sandbox**
 Voxel truck model (~30x18x36 voxels, big wheels, cage, stacks, light bar). Flat test arena with ramps. Arcade physics with wheel springs. Joystick + 2 buttons (touch, keyboard, gamepad). Camera icon with 4 views.

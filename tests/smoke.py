@@ -1,19 +1,22 @@
 """Headless-browser smoke test.
 
-Serves the repo root, loads index.html in Chrome, and checks that the game boots
-without console errors, renders frames, responds to the icon buttons, and that
-nothing on the page is text-selectable.
+Serves the repo root, loads index.html in Chrome and walks the whole start-up flow:
+rotate prompt (portrait) -> tap to start -> ADA Studios intro -> title -> garage.
+Then cycles all trucks checking for console errors, animated parts, smoke, icon-only
+controls and non-selectable text.
 
 Usage: python3 tests/smoke.py [screenshot_dir]
-Needs: pip install playwright, and a Chrome/Chromium binary (CHROME env var or google-chrome).
+Needs: pip install playwright pillow, and a Chrome/Chromium binary (CHROME env var or google-chrome).
 """
 import http.server
 import os
 import socketserver
 import sys
 import threading
+from io import BytesIO
 from pathlib import Path
 
+from PIL import Image
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +47,27 @@ def check(cond, msg):
         failures.append(msg)
 
 
+def colours(png, size=(64, 32)):
+    img = Image.open(BytesIO(png)).convert('RGB').resize(size)
+    return len({(r >> 4, g >> 4, b >> 4) for r, g, b in img.getdata()})
+
+
+def shot(page, name):
+    png = page.screenshot()
+    if SHOT_DIR:
+        SHOT_DIR.mkdir(parents=True, exist_ok=True)
+        (SHOT_DIR / f'{name}.png').write_bytes(png)
+    return png
+
+
+def visible(page, sel):
+    return page.evaluate(
+        """(s) => { const e = document.querySelector(s); if (!e) return false;
+           const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && parseFloat(cs.opacity) > 0.5; }""",
+        sel,
+    )
+
+
 def main():
     srv = serve()
     url = f'http://127.0.0.1:{srv.server_address[1]}/index.html'
@@ -55,65 +79,123 @@ def main():
             args=['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader',
                   '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
         )
-        # landscape phone
-        page = browser.new_page(viewport={'width': 844, 'height': 390})
+        page = browser.new_page(viewport={'width': 844, 'height': 390})  # landscape phone
         errors = []
         page.on('console', lambda m: errors.append(m.text) if m.type == 'error' else None)
         page.on('pageerror', lambda e: errors.append(str(e)))
 
+        # ---------------- boot + start screen
         page.goto(url)
         page.wait_for_function('window.__voxelRacers && window.__voxelRacers.ready', timeout=20000)
-        check(True, 'game boots')
-
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'start', 'boots to tap-to-start')
+        page.wait_for_timeout(700)  # let the start screen finish fading in
+        check(visible(page, '#start'), 'start screen visible')
+        check(not visible(page, '#rotate'), 'rotate prompt hidden in landscape')
         page.wait_for_function('window.__voxelRacers.frames > 5', timeout=20000)
-        check(True, 'renders frames')
+        check(True, 'game loop running behind the start screen')
 
-        voxels = page.evaluate('window.__voxelRacers.voxels')
-        check(voxels > 1500, f'truck has detail ({voxels} voxels)')
+        # ---------------- portrait shows the rotate prompt, landscape hides it again
+        page.set_viewport_size({'width': 390, 'height': 844})
+        page.wait_for_timeout(200)
+        check(visible(page, '#rotate'), 'portrait shows the rotate-phone prompt')
+        check(page.evaluate("getComputedStyle(document.querySelector('.phone')).animationName") == 'tilt', 'phone tilt animation running')
+        shot(page, '01-rotate-portrait')
+        page.set_viewport_size({'width': 844, 'height': 390})
+        page.wait_for_timeout(200)
+        check(not visible(page, '#rotate'), 'rotate prompt gone after turning landscape')
 
-        check(page.evaluate('window.__voxelRacers.trucks') == 6, 'six trucks in roster')
-        check(page.evaluate('window.__voxelRacers.scenery.cacti') > 0, 'scenery generated')
+        # ---------------- start -> intro
+        page.click('#btn-start')
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'intro', 'tap starts the intro')
+        page.wait_for_function(
+            "['.line1', '.line2'].every(s => { const e = document.querySelector('#intro ' + s); return e.clientWidth >= e.scrollWidth - 1; })",
+            timeout=4000)
+        check(True, 'intro text finishes typing without being clipped')
+        studio = page.evaluate("document.querySelector('#intro .line1').textContent + ' ' + document.querySelector('#intro .line2').textContent")
+        check(studio == 'ADA STUDIOS PRESENTS', f'intro text reads "{studio}"')
+        shot(page, '02-intro')
+        page.wait_for_function("window.__voxelRacers.flow.state === 'title'", timeout=6000)
+        check(True, 'intro auto-advances to title')
 
-        # splash is dismissed and garage appears
-        page.evaluate('window.__voxelRacers.endSplash()')
-        page.wait_for_selector('#garage:not([hidden])', timeout=5000)
+        # ---------------- title
         page.wait_for_timeout(900)
-        check(page.locator('#splash').count() == 0, 'splash removed after fade')
+        check(visible(page, '#title'), 'title screen visible')
+        logo = page.evaluate("document.querySelector('#title .logo').textContent")
+        check('VOXEL' in logo and 'MONSTERS' in logo, 'title logo says Voxel Monsters')
+        check(page.title() == 'Voxel Monsters', 'page title is Voxel Monsters')
+        page.wait_for_timeout(1200)
+        shot(page, '03-title')
 
-        # icon buttons switch trucks and persist
+        # skipping the intro by tap also works (reload path)
+        page2 = browser.new_page(viewport={'width': 844, 'height': 390})
+        page2.goto(url)
+        page2.wait_for_function('window.__voxelRacers && window.__voxelRacers.ready')
+        page2.click('#btn-start')
+        page2.mouse.click(400, 200)
+        check(page2.evaluate('window.__voxelRacers.flow.state') == 'title', 'tapping the intro skips it')
+        page2.close()
+
+        # ---------------- title -> garage
+        page.click('#btn-play', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'play opens the garage')
+        page.wait_for_timeout(900)
+        check(visible(page, '#controls'), 'garage controls visible')
+        page.wait_for_function('window.__voxelRacers.drawn > 5', timeout=20000)
+        check(True, 'garage renders the 3D scene')
+
+        # ---------------- cycle all trucks
+        n = page.evaluate('window.__voxelRacers.trucks')
+        check(n == 8, f'eight trucks in roster ({n})')
         first = page.evaluate('window.__voxelRacers.truckId')
-        page.click('#btn-next')
-        second = page.evaluate('window.__voxelRacers.truckId')
-        check(first != second, f'next button changes truck ({first} -> {second})')
-        page.click('#btn-prev')
-        check(page.evaluate('window.__voxelRacers.truckId') == first, 'prev button returns')
-        page.click('#btn-next')
+        seen = {}
+        for i in range(n):
+            tid = page.evaluate('window.__voxelRacers.truckId')
+            page.wait_for_timeout(1400)
+            info = page.evaluate(
+                "({v: window.__voxelRacers.voxels, parts: window.__voxelRacers.parts, em: window.__voxelRacers.emitters, w: window.__voxelRacers.wheels})")
+            png = shot(page, f'truck-{i + 1}-{tid}')
+            seen[tid] = info
+            check(info['v'] > 2000, f"{tid}: detailed ({info['v']} voxels)")
+            check(info['parts'] or info['em'], f"{tid}: has motion/smoke (parts={info['parts']}, emitters={info['em']})")
+            check(colours(png) > 12, f'{tid}: renders')
+            page.click('#btn-next')
+        check(page.evaluate('window.__voxelRacers.truckId') == first, 'next x8 wraps back to the first truck')
+        check(seen['titan']['w'] == 6, 'Titan has six wheels')
+        check(seen['yellow-thunder']['w'] == 4 and 'stopsign' in seen['yellow-thunder']['parts'], 'bus has a swinging stop sign')
+        check('jaw' in seen['toxic']['parts'], 'Toxic has a moving jaw')
+        check(any(x.startswith('piston') for x in seen['magma']['parts']) and 'pulley' in seen['magma']['parts'], 'Magma has pistons and crank pulley')
+        check('crane' in seen['night-rider']['parts'] and 'hook' in seen['night-rider']['parts'], 'Night Rider has crane and hook')
+
+        # ---------------- smoke particles really appear when revving
+        page.mouse.move(420, 120)
+        page.mouse.down()
+        page.wait_for_timeout(1800)
+        alive = page.evaluate('window.__voxelRacers.particlesAlive')
+        page.mouse.up()
+        check(alive > 10, f'revving produces particles ({alive} alive)')
+        check(page.evaluate('window.__voxelRacers.rev') > 0.5, 'holding the screen revs the engine')
+
+        # ---------------- paint + persistence
         page.click('#btn-paint')
         saved = page.evaluate("JSON.parse(localStorage.getItem('voxel-racers:save'))")
-        check(saved['truckId'] == second and second in saved['paints'], 'truck + paint saved to localStorage')
+        cur = page.evaluate('window.__voxelRacers.truckId')
+        check(saved['truckId'] == cur and cur in saved['paints'], 'truck + paint saved to localStorage')
 
-        # nothing is selectable, buttons carry no text
-        sel = page.evaluate("getComputedStyle(document.body).userSelect")
+        # ---------------- back to title
+        page.click('#btn-back')
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'title', 'home icon returns to title')
+
+        # ---------------- icon-only and unselectable
+        sel = page.evaluate('getComputedStyle(document.body).userSelect')
         check(sel == 'none', f'body user-select is none ({sel})')
         btn_text = page.evaluate("[...document.querySelectorAll('.icon-btn')].map(b => b.textContent.trim()).join('')")
         check(btn_text == '', 'icon buttons contain no text')
 
-        # canvas is not blank
-        page.wait_for_timeout(300)
-        png = page.screenshot()
-        if SHOT_DIR:
-            SHOT_DIR.mkdir(parents=True, exist_ok=True)
-            (SHOT_DIR / 'garage.png').write_bytes(png)
-        from io import BytesIO
-        from PIL import Image
-        img = Image.open(BytesIO(png)).convert('RGB').resize((64, 32))
-        distinct = len({(r >> 4, g >> 4, b >> 4) for r, g, b in img.getdata()})
-        check(distinct > 6, f'screen has varied pixels ({distinct} colours)')
-
-        # portrait should also boot cleanly
+        # portrait still boots cleanly in the garage
+        page.click('#btn-play', force=True)
         page.set_viewport_size({'width': 390, 'height': 844})
-        page.wait_for_timeout(300)
-        check(page.evaluate('window.__voxelRacers.frames') > 10, 'still rendering in portrait')
+        page.wait_for_timeout(400)
+        check(page.evaluate('window.__voxelRacers.frames') > 20, 'still rendering after rotating')
 
         check(not errors, 'no console errors' + (f': {errors[:3]}' if errors else ''))
         browser.close()

@@ -1,10 +1,10 @@
-# Voxel Racers
+# Voxel Monsters
 Voxel based monster truck racing. Plain HTML + Three.js (bundled in `lib/`, no CDN), served by GitHub Pages from the root of `main`.
 
 Play: https://achallakiran.github.io/voxel-racers/
 
 ## Status
-Phase 0 (foundation): logo splash, six voxel monster trucks in a garage preview, icon-only controls, repaint, saved choice.
+Phase 0.5: rotate-phone prompt, tap to start, ADA Studios intro, title screen, and a garage with 8 animated voxel monster trucks (smoke, pistons, jaw, plow, crane, dump bed...). Hold the screen to rev the engine; drag to rotate.
 See [PLAN.md](PLAN.md) for the roadmap.
 
 ## Run locally
