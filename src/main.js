@@ -11,6 +11,7 @@ import { createFlow, SCREENS, needsRotate } from './core/flow.js';
 import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
+import { createWorld } from './world/scenes.js';
 import { emissionRate, takeSpawns, makeParticle, QUALITY_SCALE } from './fx/emit.js';
 
 const $ = (id) => document.getElementById(id);
@@ -48,68 +49,6 @@ function webglAvailable() {
   }
 }
 
-function makeGroundTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 16;
-  const g = c.getContext('2d');
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      const base = ((x >> 2) + (y >> 2)) & 1 ? [214, 160, 96] : [204, 150, 88];
-      const n = ((x * 7 + y * 13) % 5) * 3;
-      g.fillStyle = `rgb(${base[0] + n},${base[1] + n},${base[2] + n})`;
-      g.fillRect(x, y, 1, 1);
-    }
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestFilter;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(40, 40);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-function addScenery(scene) {
-  const box = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-  const rockMat = new THREE.MeshLambertMaterial({ color: '#b5651d' });
-  const cactusMat = new THREE.MeshLambertMaterial({ color: '#3a9d4a' });
-  const rocks = [];
-  const cacti = [];
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 26; i++) {
-    const a = rnd() * Math.PI * 2;
-    const d = 5.5 + rnd() * 14;
-    const x = Math.cos(a) * d;
-    const z = Math.sin(a) * d;
-    if (rnd() < 0.55) {
-      const w = 3 + Math.floor(rnd() * 4);
-      for (let dx = 0; dx < w; dx++)
-        for (let dz = 0; dz < w; dz++) {
-          const h = Math.max(1, Math.round(w - Math.abs(dx - w / 2) - Math.abs(dz - w / 2)));
-          for (let dy = 0; dy < h; dy++) rocks.push([x + dx * 0.1, 0.05 + dy * 0.1, z + dz * 0.1]);
-        }
-    } else {
-      const h = 8 + Math.floor(rnd() * 8);
-      for (let dy = 0; dy < h; dy++) cacti.push([x, 0.05 + dy * 0.1, z]);
-      const ay = 0.05 + (3 + Math.floor(rnd() * 3)) * 0.1;
-      for (let k = 1; k <= 3; k++) cacti.push([x + k * 0.1, ay, z]);
-      for (let k = 0; k < 3; k++) cacti.push([x + 0.3, ay + (k + 1) * 0.1, z]);
-    }
-  }
-  const make = (list, mat) => {
-    const mesh = new THREE.InstancedMesh(box, mat, list.length);
-    const m = new THREE.Matrix4();
-    list.forEach((p, i) => { m.setPosition(p[0], p[1], p[2]); mesh.setMatrixAt(i, m); });
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-  };
-  make(rocks, rockMat);
-  make(cacti, cactusMat);
-  return { rocks: rocks.length, cacti: cacti.length };
-}
-
 function start() {
   if (!webglAvailable()) {
     fatal('WebGL is not available on this device or browser.');
@@ -128,27 +67,22 @@ function start() {
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#8fd3ff');
-  scene.fog = new THREE.Fog('#8fd3ff', 14, 45);
-
-  scene.add(new THREE.HemisphereLight('#cfeaff', '#b98a55', 1.25));
-  const sun = new THREE.DirectionalLight('#fff1d6', 2.2);
-  sun.position.set(6, 10, 5);
+  const hemi = new THREE.HemisphereLight('#ffd2a0', '#8a4b2a', 1.35);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight('#ffb877', 2.5);
+  sun.position.set(8, 6, 5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
   Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, near: 1, far: 30 });
   scene.add(sun);
+  const spot = new THREE.SpotLight('#fff1d0', 2.6, 0, 0.7, 0.6, 0);
+  spot.position.set(0, 6, 1.5);
+  spot.target.position.set(0, 0, 0);
+  scene.add(spot, spot.target);
 
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(80, 80),
-    new THREE.MeshLambertMaterial({ map: makeGroundTexture() })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
-
-  const scenery = addScenery(scene);
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+  const world = createWorld(scene, { hemi, sun, spot });
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 220);
+  const camBase = { x: 0, y: 0, z: 0, ly: 0 };
 
   // particles (smoke / flame)
   const pool = new ParticlePool(700);
@@ -168,13 +102,15 @@ function start() {
   let clock = 0;
   let frames = 0;
   let drawn = 0;          // frames actually rendered (the scene is skipped behind opaque screens)
-  let truckX = 0;         // title shifts the truck right to make room for the logo
+  let truckX = 0;
+  let truckY = 0;         // garage lifts the truck onto the turntable         // title shifts the truck right to make room for the logo
   const worldPos = new THREE.Vector3();
   const worldDir = new THREE.Vector3();
 
   // ---- flow / screens
   const flow = createFlow((state) => {
     for (const id of SCREENS) $(id).classList.toggle('on', id === state);
+    world.setMode(state === 'garage' ? 'garage' : 'outdoor');
     if (state === 'intro') {
       const intro = $('intro');
       intro.classList.remove('play');
@@ -222,8 +158,9 @@ function start() {
     const aspect = camera.aspect;
     let dist = Math.max(5.2, len * 1.5, h * 3.0);
     if (aspect < 1) dist = dist / aspect * 0.62;
-    camera.position.set(0, dist * 0.42, dist);
-    camera.lookAt(0, Math.max(0.9, h * 0.52), 0);
+    Object.assign(camBase, { x: 0, y: dist * 0.42, z: dist, ly: Math.max(0.9, h * 0.52) });
+    camera.position.set(0, camBase.y, camBase.z);
+    camera.lookAt(0, camBase.ly, 0);
     camera.updateProjectionMatrix();
   }
 
@@ -329,8 +266,16 @@ function start() {
     // title shifts the truck right to make room for the logo (landscape only)
     const wantX = flow.state === 'title' && camera.aspect > 1.2 ? 1.25 : 0;
     truckX += (wantX - truckX) * (1 - Math.exp(-dt * 4));
-    truckMesh.position.x = truckX;
+    const wantY = flow.state === 'garage' ? 0.1 : 0;
+    truckY += (wantY - truckY) * (1 - Math.exp(-dt * 6));
+    truckMesh.position.set(truckX, truckY, 0);
     truckMesh.rotation.y = spin;
+
+    // gentle camera sway on the title, steady in the garage
+    const sway = flow.state === 'garage' ? 0 : Math.sin(clock * 0.35) * 0.9;
+    camera.position.x += (sway - camera.position.x) * (1 - Math.exp(-dt * 3));
+    camera.lookAt(0, camBase.ly, 0);
+    world.update(dt, clock, spin);
 
     animateTruck(truckMesh, dt, rev, clock);
     emitExhaust(dt);
@@ -356,7 +301,8 @@ function start() {
   window.__voxelRacers = {
     ready: true,
     trucks: TRUCKS.length,
-    scenery,
+    world: world.stats,
+    get worldMode() { return world.mode; },
     flow,
     get frames() { return frames; },
     get drawn() { return drawn; },

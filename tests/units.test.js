@@ -271,3 +271,30 @@ test('storage round-trips and survives bad data / throwing stores', () => {
 test('an old saved truck id (from before the roster change) falls back safely', () => {
   assert.equal(getTruck('some-removed-truck').id, TRUCKS[0].id);
 });
+
+// ---------- world layout (title stadium + garage)
+import * as L from '../src/world/layout.js';
+
+test('layout is deterministic', () => {
+  assert.deepEqual(L.standsLayout(), L.standsLayout());
+  assert.deepEqual(L.mesasLayout(), L.mesasLayout());
+  assert.deepEqual(L.dustLayout(), L.dustLayout());
+});
+
+test('layout: arena counts', () => {
+  assert.equal(L.tireWallLayout().length, 144);
+  assert.equal(L.towersLayout().length, 4);
+  assert.equal(L.mesasLayout().length, 10);
+  assert.ok(L.standsLayout().people.length > 250, 'crowd is big enough');
+  assert.equal(L.standsLayout().tiers.length, 4);
+});
+
+test('layout: nothing sits on the truck, tire wall and crowd on their rings', () => {
+  for (const t of L.tireWallLayout()) assert.ok(Math.abs(Math.hypot(t.x, t.z) - L.ARENA.wallRadius) < 1e-6);
+  for (const p of L.standsLayout().people) assert.ok(Math.hypot(p.x, p.z) >= L.ARENA.standInner - 1e-6);
+  const r = L.rampLayout().at;
+  assert.ok(Math.hypot(r.x, r.z) > L.ARENA.truckClear + 1.5, 'ramp clear of truck');
+  for (const c of L.carPileLayout()) assert.ok(Math.hypot(c.x, c.z) > L.ARENA.truckClear);
+  for (const d of L.dustLayout()) assert.ok(d.y > 0 && d.v > 0);
+  for (const c of L.cloudsLayout()) assert.ok(c.cubes.length >= 7);
+});

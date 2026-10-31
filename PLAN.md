@@ -42,7 +42,8 @@ Repo skeleton, bundled Three.js, game loop, Pages-ready `index.html`, test runne
 
 **Phase 0.5 — Start flow + truck variety** 
 Rotate prompt, tap-to-start, ADA Studios intro, title screen, 8 animated trucks (pistons, crank pulley, plow, jaw, crane, dump bed, stop sign, flag), pooled smoke/flame particles that follow the revs.
-Tests: flow state machine, animation maths, particle pool, emission rules, model integrity (no overlapping voxels, parts present).
+Title backdrop: voxel stadium at sunset (tire wall, crowd stands, floodlights, ramp, crushed cars, mesas, sun, drifting clouds/dust). Garage: its own brick workshop with roller door, shelves, workbench, lamps and a hazard-striped turntable.
+Tests: world layout, flow state machine, animation maths, particle pool, emission rules, model integrity (no overlapping voxels, parts present).
 
 **Phase 1 — Truck + physics sandbox**
 Voxel truck model (~30x18x36 voxels, big wheels, cage, stacks, light bar). Flat test arena with ramps. Arcade physics with wheel springs. Joystick + 2 buttons (touch, keyboard, gamepad). Camera icon with 4 views.

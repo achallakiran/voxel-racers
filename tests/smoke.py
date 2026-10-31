@@ -133,6 +133,9 @@ def main():
         check('VOXEL' in logo and 'MONSTERS' in logo, 'title logo says Voxel Monsters')
         check(page.title() == 'Voxel Monsters', 'page title is Voxel Monsters')
         page.wait_for_timeout(1200)
+        check(page.evaluate('window.__voxelRacers.worldMode') == 'outdoor', 'title uses the sunset stadium')
+        ws = page.evaluate('window.__voxelRacers.world')
+        check(ws['tires'] == 144 and ws['crowd'] > 250 and ws['towers'] == 4, f'stadium built ({ws})')
         shot(page, '03-title')
 
         # skipping the intro by tap also works (reload path)
@@ -150,6 +153,7 @@ def main():
         check(visible(page, '#controls'), 'garage controls visible')
         page.wait_for_function('window.__voxelRacers.drawn > 5', timeout=20000)
         check(True, 'garage renders the 3D scene')
+        check(page.evaluate('window.__voxelRacers.worldMode') == 'garage', 'garage has its own environment')
 
         # ---------------- cycle all trucks
         n = page.evaluate('window.__voxelRacers.trucks')
@@ -192,6 +196,7 @@ def main():
         # ---------------- back to title
         page.click('#btn-back')
         check(page.evaluate('window.__voxelRacers.flow.state') == 'title', 'home icon returns to title')
+        check(page.evaluate('window.__voxelRacers.worldMode') == 'outdoor', 'home returns to the stadium')
 
         # ---------------- icon-only and unselectable
         sel = page.evaluate('getComputedStyle(document.body).userSelect')
