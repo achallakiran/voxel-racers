@@ -1,0 +1,12 @@
+{
+  "name": "voxel-racers",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Voxel monster truck racing, plain HTML + Three.js",
+  "scripts": {
+    "test": "node --test tests/units.test.js",
+    "test:smoke": "python3 tests/smoke.py",
+    "test:all": "node --test tests/units.test.js && python3 tests/smoke.py"
+  }
+}
