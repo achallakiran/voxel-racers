@@ -17,7 +17,7 @@ import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import { TRACKS, getTrackById, validTrack } from './world/tracks.js';
 import { createRace, formatTime, wrapDelta } from './core/race.js';
 import { resolveCollisions } from './physics/collide.js';
-import { createDriver, driverInput } from './ai/driver.js';
+import { createDriver, driverInput, DIFFICULTIES } from './ai/driver.js';
 import { createBrawler, brawlerInput } from './ai/brawler.js';
 import { ramDamage, applyDamage, blastTrucks } from './physics/damage.js';
 import { createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
@@ -232,6 +232,15 @@ function start() {
     audio.click();
   }
   $('btn-sus').addEventListener('click', cycleSus);
+  // rival difficulty (easy / normal / hard), shown as 1-3 dots on a gauge icon
+  const diffNow = () => (DIFFICULTIES.includes(save.difficulty) ? save.difficulty : 'normal');
+  function showDiff() { $('btn-diff').dataset.mode = diffNow(); }
+  $('btn-diff').addEventListener('click', () => {
+    save.difficulty = DIFFICULTIES[(DIFFICULTIES.indexOf(diffNow()) + 1) % DIFFICULTIES.length];
+    storage.save(save); showDiff(); audio.click();
+  });
+  showDiff();
+
   $('btn-paint').addEventListener('click', cyclePaint);
 
   canvas.addEventListener('pointerdown', (e) => { if (flow.state === 'drive') return; dragging = true; held = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
@@ -456,7 +465,7 @@ function start() {
     playerLat = TR.nearest(vehicle.x, vehicle.z).d;
     const phase = race ? race.phase : 'countdown';
     for (const r of rivals) {
-      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, pickups: courseTerrain.pickups, playerAcc, myAcc: r.acc, gapAhead: (r.acc - playerAcc) * TR.LENGTH, playerLat: playerLat }, dt);
+      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, difficulty: save.difficulty, props: courseTerrain.props, pickups: courseTerrain.pickups, playerAcc, myAcc: r.acc, gapAhead: (r.acc - playerAcc) * TR.LENGTH, playerLat: playerLat }, dt);
       handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
       r.pitT = inPit(r.v) ? (r.pitT || 0) + dt : 0;
       if (r.pitT > 1.2) {
@@ -558,7 +567,7 @@ function start() {
   }
   function allTrucks() { return [vehicle, ...rivals.map((r) => r.v)]; }
 
-  function explode(ex) {
+  function explode(ex, ownerIdx = -1) {
     const y = courseTerrain.heightAt(ex.x, ex.z) + 0.6;
     fire(ex.x, y, ex.z, ex.type === 'fuel' ? 70 : 46, ex.type === 'fuel' ? 7 : 4.5);
     boomT = 0.5;
@@ -566,14 +575,14 @@ function start() {
     const d = Math.hypot(ex.x - vehicle.x, ex.z - vehicle.z);
     shake = Math.max(shake, Math.max(0.2, 1.2 - d / 45));
     const trucks = allTrucks();
-    for (const h of blastTrucks(trucks, ex.x, ex.z, ex.radius, ex.power)) { if (h.wrecked) wreck(h.index); }
+    for (const h of blastTrucks(trucks, ex.x, ex.z, ex.radius, ex.power, ownerIdx)) { if (h.wrecked) wreck(h.index); }
   }
   function destroyProp(prop, byX, byZ, byPlayer) {
     if (!courseTerrain.props || !courseTerrain.props.includes(prop)) return;
     if (prop.tier === 'blast') {
       const res = detonate(courseTerrain, prop);
       for (const q of res.destroyed) shatter(q, prop.x, prop.z);
-      for (const ex of res.explosions) explode(ex);
+      for (const ex of res.explosions) explode(ex, byPlayer ? 0 : -1);
       if (byPlayer && match) { const g = match.award(res.score); if (g) audio.chime(); }
       return;
     }
@@ -653,10 +662,11 @@ function start() {
       handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
     });
     const live = trucks.map((v, i) => ({ v, i })).filter((q) => !q.v.wrecked);
+    const pre = live.map((q) => ({ vx: q.v.vx, vz: q.v.vz }));
     for (const h of resolveCollisions(live.map((q) => q.v))) {
       const ia = live[h.a].i; const ib = live[h.b].i;
       const a = trucks[ia]; const b = trucks[ib];
-      const dmg = ramDamage(a, b, h.power);
+      const dmg = ramDamage(a, b, h.power, { a: pre[h.a], b: pre[h.b] });
       if (applyDamage(a, dmg.a)) wreck(ia);
       if (applyDamage(b, dmg.b)) wreck(ib);
       if (ia === 0 || ib === 0) { shake = Math.max(shake, Math.min(0.8, h.power / 14)); audio.thump(h.power * 0.9); if (h.power > 4) zap(vehicle); }
@@ -1000,7 +1010,7 @@ function start() {
     sun.intensity += flash - flashApplied; flashApplied = flash;
 
     // camera
-    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null }, camState);
+    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null, loopTh: v.loop ? v.loop.th : 0, loopLat: v.loop ? v.loop.lat : 0 }, camState);
     const kp = v.loop ? 6 : camMode === 'iso-fixed' ? 7 : (camMode === 'chase' ? 6 : 5);
     camPos.lerp(tmp.set(g.pos.x, g.pos.y, g.pos.z), 1 - Math.exp(-kp * dt));
     camLook.lerp(tmp.set(g.look.x, g.look.y, g.look.z), 1 - Math.exp(-(kp + 2) * dt));

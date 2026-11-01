@@ -123,7 +123,7 @@ Order: 6a -> 6b -> 6c -> 6d -> 6e. Each step ends with tests, a push to main and
 - Rivals choose gap or detour by style and speed; one shortcut per track that needs nitro.
 - Tests: forks rejoin with correct progress and checkpoints, trench jump clears at normal speed and nitro, a miss respawns correctly, detour lane completable by every truck, AI never stuck, minimap draws both routes.
 
-**Phase 7 — Fix pass, difficulty, football, and very different stages** (PLAN, awaiting your go-ahead; replaces 5f's football and goes before 5d)
+**Phase 7 — Fix pass, difficulty, football, and very different stages** (7a and 7b DONE, rest planned; goes before 5d)
 Your feedback: still overpowered, loop pillars and side view, easy to drive round obstacles, arena hits, football missing, stages too alike.
 
 **7a — Race fixes + difficulty setting**
@@ -156,12 +156,22 @@ Your feedback: still overpowered, loop pillars and side view, easy to drive roun
 - Dragon's Spine: a very steep stage with switchback hairpins, climbs up to about 35 degrees and long drops; strong gravity along the slope, downhill speed to manage, uphill needs nitro; ramps off the crest. Track tools get a higher grade limit for this stage only.
 - Tests: grade limits per stage, wind force, drop respawn, every truck can finish the climb.
 
-**7g — Neon Night City + Moon Crater**
-- Neon Night City: rain, wet asphalt, neon signs, crossing traffic cars as moving obstacles, a drift section, headlights on.
-- Moon Crater: low gravity (huge jumps, floaty landings), crater bowls, dust, Earth in the sky, boost craters.
-- Tests: gravity value respected, traffic cars collide and respawn, all trucks finish.
+**7g — Moon Crater (astronomical)**
+- Black sky full of stars with a faint Milky Way band, the Sun as a hard white light with long sharp shadows (no haze, no fog), a big Earth hanging in the sky (blue oceans, white clouds, brown land, a lit and a dark side).
+- Grey regolith ground in voxels with footprints and tyre tracks left behind, crater bowls of all sizes with raised rims and ejecta rays, boulder fields, a lander and a flag as landmarks, dust that flies in clean arcs and falls slowly (no air).
+- Physics: gravity about one sixth (huge floaty jumps, long landings, slower fall), less grip, wheels spin in the air; crater bowls are big dips you can use for speed, boost craters.
+- Engine and sound: muffled thumps and a low hum instead of roar (no air outside), radio crackle; nitro flames are short and bright.
 
-Order: 7a -> 7b -> 7c -> 7d -> 7e -> 7f -> 7g. Each ends with tests, a push to main and your test.
+**7h — Saturn's Rings**
+- You race ON the rings: the track is a broad band of ice and rock chunks in a flat ring plane, Saturn filling the sky with its banded gold-cream-brown globe, its shadow cutting across the rings, and the ring plane stretching off like a disc. Dark space and stars all round, moons in the distance.
+- Ring bands as track zones: bright icy A ring, dark gap (the Cassini Division) crossed by a jump, denser B ring with chunky boulder fields to weave through, the faint C ring with loose dusty sections; the road is formed by drifting ice slabs you ride from one to the next.
+- Physics: very low gravity, slick ice (low grip), chunks that you can bounce off and big floating boulders as obstacles; sunlight low and warm from one side with a deep blue shadow on the other.
+- Look target: from the garage you should recognise Saturn at once - banded globe with soft stripes, a thin bright ring set at the right tilt, a shadow of the globe on the rings - in the voxel style of the rest of the game.
+
+**7i — Neon Night City** (after the space stages)
+- Rain, wet asphalt, neon signs, crossing traffic cars as moving obstacles, a drift section, headlights on.
+
+Order: 7a -> 7b -> 7c -> 7d -> 7e -> 7f -> 7g -> 7h -> 7i. Each ends with tests, a push to main and your test.
 
 **Phase 5d — Big arena + squash**
 Bigger multi-level stadium, rows of parked cars on the ground that FLATTEN (squash height, tyres pop) when driven over, ramps, a crusher pit; squash score.

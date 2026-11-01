@@ -10,12 +10,31 @@ export function facing(v, px, pz) {
   return (Math.sin(v.heading) * dx + Math.cos(v.heading) * dz) / d;
 }
 
+// Who attacked? The truck driving harder AT the other (its speed along the line between them, measured before the
+// collision pushed them apart). If one is clearly the attacker, only the victim takes damage; if both drive at each
+// other (head-on) both do. Without velocities both take damage as before.
+export const ATTACK_RATIO = 1.3;
+export function attacker(a, b, pre) {
+  if (!pre) return 'both';
+  const dx = b.x - a.x; const dz = b.z - a.z; const d = Math.hypot(dx, dz) || 1;
+  const ux = dx / d; const uz = dz / d;
+  const ap = Math.max(0, pre.a.vx * ux + pre.a.vz * uz);          // a closing on b
+  const bp = Math.max(0, -(pre.b.vx * ux + pre.b.vz * uz));       // b closing on a
+  if (ap > bp * ATTACK_RATIO) return 'a';
+  if (bp > ap * ATTACK_RATIO) return 'b';
+  return 'both';
+}
+
 // damage each of two colliding trucks takes for a closing speed `power`
-export function ramDamage(a, b, power) {
+export function ramDamage(a, b, power, pre) {
   if (power < RAM_MIN_POWER) return { a: 0, b: 0 };
   const base = (power - RAM_MIN_POWER) * 1.4 + 2;
   const exposure = (v, other) => 1 - 0.4 * facing(v, other.x, other.z);   // 0.6 head-on .. 1.4 from behind
-  return { a: base * exposure(a, b), b: base * exposure(b, a) };
+  const out = { a: base * exposure(a, b), b: base * exposure(b, a) };
+  const who = attacker(a, b, pre);
+  if (who === 'a') out.a = 0;           // a rammed b: only b is hurt
+  else if (who === 'b') out.b = 0;
+  return out;
 }
 
 export function applyDamage(v, dmg) {
@@ -26,7 +45,7 @@ export function applyDamage(v, dmg) {
 }
 
 // Blast: damages and launches trucks within `radius` (falls off with distance).
-export function blastTrucks(trucks, x, z, radius, power) {
+export function blastTrucks(trucks, x, z, radius, power, ownerIndex = -1) {
   const out = [];
   trucks.forEach((v, index) => {
     if (v.wrecked) return;
@@ -37,7 +56,7 @@ export function blastTrucks(trucks, x, z, radius, power) {
     const nx = d < 1e-4 ? 0 : dx / d; const nz = d < 1e-4 ? 1 : dz / d;
     const dmg = power * f * f + power * 0.15 * f;
     v.vx += nx * 16 * f; v.vz += nz * 16 * f; v.vy += 9 * f; v.grounded = false;
-    const wrecked = applyDamage(v, dmg);
+    const wrecked = index === ownerIndex ? false : applyDamage(v, dmg);       // your own blast shoves you but never hurts you
     out.push({ index, dmg, wrecked });
   });
   return out;

@@ -4,6 +4,7 @@
 export const DEFAULTS = {
   version: 1,
   truckId: 'crusher',
+  difficulty: 'normal',  // rival strength: 'easy' | 'normal' | 'hard'
   sus: {},               // per-truck suspension mode: { [truckId]: 'soft' | 'normal' | 'stiff' }
   paints: {},            // per-truck colour overrides: { [truckId]: {body, accent, rim} }
   camera: 'iso-follow',

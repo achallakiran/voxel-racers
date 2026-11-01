@@ -210,6 +210,9 @@ img { -webkit-user-drag: none; pointer-events: none; }
 .icon-btn { position: relative; }
 .icon-btn .pips { position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; pointer-events: none; }
 .icon-btn .pips i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.3); }
+#btn-diff[data-mode="easy"] .pips i:nth-child(1),
+#btn-diff[data-mode="normal"] .pips i:nth-child(-n+2),
+#btn-diff[data-mode="hard"] .pips i,
 #btn-sus[data-mode="soft"] .pips i:nth-child(1),
 #btn-sus[data-mode="normal"] .pips i:nth-child(-n+2),
 #btn-sus[data-mode="stiff"] .pips i { background: var(--accent); }

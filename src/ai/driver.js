@@ -19,13 +19,23 @@ export const STYLES = {
   defensive: { fast: false, skillAdd: 0.01, nitroAt: 0.6, boostMul: 0.9, corner: 1, wobble: 0.5, block: true },
 };
 
+// Difficulty: how much faster the pack drives, how hard it catches up on a player who is ahead (up) or eases off
+// when it leads (down), and a nitro top-up (per second) when it is far behind. Easy is the original behaviour.
+export const DIFFICULTY = {
+  easy: { skill: 0, gain: 3, up: 1.12, down: 0.88, free: 0, wobble: 1 },
+  normal: { skill: 0.05, gain: 4, up: 1.2, down: 0.9, free: 0.04, wobble: 0.85 },
+  hard: { skill: 0.1, gain: 5, up: 1.3, down: 0.93, free: 0.08, wobble: 0.6 },
+};
+export const DIFFICULTIES = Object.keys(DIFFICULTY);
+
 export function createDriver({ skill = 0.95, lane = 0, phase = 0, boostEvery = 9, style = 'steady' } = {}) {
   return { skill, lane, phase, boostEvery, style: STYLES[style] ? style : 'steady', stuckT: 0, reverseT: 0, reverseSteer: 1, nextBoost: boostEvery * 0.6 };
 }
 
 // Rubber band: trailing the player speeds you up a little, leading slows you a little.
-export function rubberBand(playerAcc, myAcc) {
-  return clamp(1 + (playerAcc - myAcc) * 3, 0.88, 1.12);
+export function rubberBand(playerAcc, myAcc, level = 'easy') {
+  const D = DIFFICULTY[level] || DIFFICULTY.easy;
+  return clamp(1 + (playerAcc - myAcc) * D.gain, D.down, D.up);
 }
 
 export function driverInput(d, v, tune, track, ctx, dt) {
@@ -33,7 +43,7 @@ export function driverInput(d, v, tune, track, ctx, dt) {
   const speed = Math.max(0, v.f);
   // personal lane drifts a little so the pack does not move in a line
   const st = STYLES[d.style] || STYLES.steady;
-  const wobble = Math.sin(n.s * Math.PI * 2 * 7 + d.phase) * 1.6 * st.wobble;
+  const wobble = Math.sin(n.s * Math.PI * 2 * 7 + d.phase) * 1.6 * st.wobble * (DIFFICULTY[ctx.difficulty] || DIFFICULTY.easy).wobble;
   const look = 9 + speed * 0.55;
   // wall passages narrow the lane the AI may use; slaloms and islands tell it which side to take
   const lane = track.laneAt ? track.laneAt(n.s + (look * 0.8) / track.length, st.fast && tune.maxSpeed >= 28 ? 'fast' : 'safe') : { limit: track.roadHalf - 2, off: null };
@@ -55,6 +65,24 @@ export function driverInput(d, v, tune, track, ctx, dt) {
     }
     if (best) off = clamp(track.nearest(best.x, best.z).d, -lane.limit, lane.limit);
   }
+  // solid props that this truck is too slow to smash: swing round them (keeps the line inside the lane limit)
+  if (ctx.props && lane.off === null) {
+    const fx = Math.sin(v.heading); const fz = Math.cos(v.heading);
+    let worst = null; let wd = 1e9;
+    for (const k of ctx.props) {
+      if (k.gone || !k.breakAt || k.tier === 'blast' || k.breakAt <= speed * 0.92) continue;
+      const dx = k.x - v.x; const dz = k.z - v.z;
+      const ahead = dx * fx + dz * fz;
+      if (ahead < 1.5 || ahead > 16 + speed * 0.8) continue;
+      const kl = track.nearest(k.x, k.z).d;
+      if (Math.abs(kl - off) > k.r + 2.4) continue;
+      if (ahead < wd) { wd = ahead; worst = kl; }
+    }
+    if (worst !== null) {
+      const right = clamp(worst + 3.0, -lane.limit, lane.limit); const left = clamp(worst - 3.0, -lane.limit, lane.limit);
+      off = Math.abs(right - worst) >= Math.abs(left - worst) ? right : left;
+    }
+  }
   const p = track.sampleAt(n.s + look / track.length);
   const tx = p.x + p.tz * off;
   const tz = p.z - p.tx * off;
@@ -66,8 +94,10 @@ export function driverInput(d, v, tune, track, ctx, dt) {
   const a = track.sampleAt(n.s + 8 / track.length);
   const b = track.sampleAt(n.s + (24 + speed) / track.length);
   const sev = Math.abs(wrap(Math.atan2(b.tx, b.tz) - Math.atan2(a.tx, a.tz)));
-  const rb = rubberBand(ctx.playerAcc ?? 0, ctx.myAcc ?? 0);
-  const target = tune.maxSpeed * (d.skill + st.skillAdd) * rb * (1 - clamp(sev * 1.5 * st.corner, 0, 0.55));
+  const DF = DIFFICULTY[ctx.difficulty] || DIFFICULTY.easy;
+  const rb = rubberBand(ctx.playerAcc ?? 0, ctx.myAcc ?? 0, ctx.difficulty);
+  if (DF.free && ctx.phase === 'racing' && (ctx.playerAcc ?? 0) - (ctx.myAcc ?? 0) > 0.03) v.nitro = Math.min(1, v.nitro + DF.free * dt);   // far behind: a little help
+  const target = tune.maxSpeed * (d.skill + st.skillAdd + DF.skill) * rb * (1 - clamp(sev * 1.5 * st.corner, 0, 0.55));
 
   let gas = 0; let brake = 0; let boost = false;
   if (ctx.phase !== 'racing') return { steer: 0, gas: 0, brake: 0, boost: false, hold: true };

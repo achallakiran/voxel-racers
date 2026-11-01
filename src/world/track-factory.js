@@ -11,6 +11,8 @@ import { DEFS as PROP_DEFS } from './props.js';
 export const ROAD_HALF = 7;       // road is 14 wide
 export const SHOULDER = 7;        // strip between road edge and barrier
 export const BARRIER = ROAD_HALF + SHOULDER;
+// in a race, loose props only give way to a truck that hits them fast (or on nitro); slower and they stop you
+export const RACE_BREAK = { crate: 20, barrel: 18 };
 const SPACING = 2;
 const CELL = 30;
 const smooth = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
@@ -262,7 +264,19 @@ export function makeTrack(def) {
   const PROPS = [];
   const LANES = [];     // { from, to (lap fractions), limit (max |offset| for AI), off (forced offset or null) }
   let propId = 0;
-  const wallAt = (x, z, rot, kind, h = 3.0) => WALLS.push({ type: 'wall', kind, x, z, r: 1.05, h, rot });
+  const wallAt = (x, z, rot, kind, h = 3.0, r = 1.05, fill = false) => WALLS.push({ type: 'wall', kind, x, z, r, h, rot, fill });
+  // solid fill from `edge` out to the barrier on one side (side = +1 right, -1 left) so there is no way round a wall
+  // passage along the shoulder. Fat blocks keep the piece count low.
+  const FILL_R = 1.9;
+  const fillSide = (sp, len, edge, side, kind, h = 3.0) => {
+    const offs = [];
+    for (let o = edge + FILL_R; o < BARRIER - 0.6; o += FILL_R * 1.7) offs.push(o);
+    offs.push(BARRIER - 0.6);
+    for (const o of offs) for (let d = 0; d <= len; d += FILL_R * 1.7) {
+      const p = sampleAt(sp + d / LENGTH);
+      wallAt(p.x + p.tz * side * o, p.z - p.tx * side * o, Math.atan2(p.tx, p.tz), kind, h, FILL_R, true);
+    }
+  };
   const wallLine = (s, len, off, kind) => {          // a straight wall along the road at lateral offset `off`
     for (let d = 0; d <= len; d += 1.5) { const p = sampleAt(s + d / LENGTH); wallAt(p.x + p.tz * off, p.z - p.tx * off, Math.atan2(p.tx, p.tz), kind); }
   };
@@ -289,13 +303,14 @@ export function makeTrack(def) {
       W.pickup(at(46), fo);
       // safe lane
       W.goo(at(4), so, 16, 4.6); W.oil(at(22), so, 9, 4.6); W.goo(at(34), so, 14, 4.6);
-      W.pickup(at(33), so); W.crates(at(40), so, 2);
+      W.pickup(at(33), so);
       LANES.push({ from: at(-30), to: at(len + 4), limit: 1.4, off: fo, route: 'fast' });
       LANES.push({ from: at(-30), to: at(len + 4), limit: 1.4, off: so, route: 'safe' });
     },
     // two walls squeezing the road to `gap` wide for `len` units
     corridor(s, len, gap, kind = 'brick') {
       wallLine(s, len, gap / 2 + 1, kind); wallLine(s, len, -(gap / 2 + 1), kind);
+      fillSide(s, len, gap / 2 + 1.05, 1, kind); fillSide(s, len, gap / 2 + 1.05, -1, kind);
       LANES.push({ from: s - 6 / LENGTH, to: s + (len + 4) / LENGTH, limit: Math.max(0.6, gap / 2 - 1.9), off: null });
     },
     // a wall down the middle splitting the road into two lanes (one lane can be shut by a smashable gate)
@@ -304,6 +319,7 @@ export function makeTrack(def) {
       LANES.push({ from: s - 6 / LENGTH, to: s + (len + 4) / LENGTH, limit: 2.2, off: gateSide ? -gateSide * 3.6 : 3.6 });
       if (gateSide) {                                    // gate across the lane on `gateSide` (+ right)
         const p = sampleAt(s - 3 / LENGTH);
+        fillSide(s - 3 / LENGTH - 1.6 / LENGTH, 3.2, 5.2 + PROP_DEFS.wall.r, gateSide, kind);
         for (const o of [gateSide * 2.4, gateSide * 5.2]) PROPS.push({ id: propId++, type: 'wall', tier: 'break', ...lateral(s - 3 / LENGTH, o, {}), r: PROP_DEFS.wall.r, h: PROP_DEFS.wall.h, hp: PROP_DEFS.wall.hp, rot: Math.atan2(p.tx, p.tz) + Math.PI / 2, color: '#a9553a' });
       }
     },
@@ -313,13 +329,14 @@ export function makeTrack(def) {
         const side = i % 2 === 0 ? 1 : -1;
         const sp = s + (i * spacing) / LENGTH;
         const p = sampleAt(sp);
-        for (const o of [4.2, 5.8, 7.4]) wallAt(p.x + p.tz * side * o - 0, p.z - p.tx * side * o, Math.atan2(p.tx, p.tz), kind, 2.6);
-        LANES.push({ from: sp - 7 / LENGTH, to: sp + 7 / LENGTH, limit: 3.2, off: -side * 2.6 });
+        for (const o of [1.2, 2.8, 4.4, 6.0, 7.6]) wallAt(p.x + p.tz * side * o, p.z - p.tx * side * o, Math.atan2(p.tx, p.tz), kind, 2.6);
+        fillSide(sp - 1.6 / LENGTH, 3.2, 7.6 + 1.05, side, kind, 2.6);
+        LANES.push({ from: sp - 7 / LENGTH, to: sp + 7 / LENGTH, limit: 2.2, off: -side * 4.2 });
       }
     },
     // loose smashables on the road
-    crates(s, off, n = 3) { for (let i = 0; i < n; i++) PROPS.push({ id: propId++, type: 'crate', tier: 'smash', ...lateral(s + (i * 2.4) / LENGTH, off + (i % 2 ? 1.1 : -1.1), {}), r: 0.8, h: 0.8, hp: 1, breakAt: PROP_DEFS.crate.breakAt, rot: i, color: PROP_DEFS.crate.colors[i % 3] }); },
-    barrels(s, off, n = 3) { for (let i = 0; i < n; i++) PROPS.push({ id: propId++, type: 'barrel', tier: 'smash', ...lateral(s + (i * 2.2) / LENGTH, off + (i % 2 ? 0.9 : -0.9), {}), r: 0.6, h: 1.0, hp: 1, breakAt: PROP_DEFS.barrel.breakAt, rot: i, color: PROP_DEFS.barrel.colors[i % 3] }); },
+    crates(s, off, n = 3) { for (let i = 0; i < n; i++) PROPS.push({ id: propId++, type: 'crate', tier: 'smash', ...lateral(s + (i * 2.4) / LENGTH, off + (i % 2 ? 1.1 : -1.1), {}), r: 0.8, h: 0.8, hp: 1, breakAt: RACE_BREAK.crate, rot: i, color: PROP_DEFS.crate.colors[i % 3] }); },
+    barrels(s, off, n = 3) { for (let i = 0; i < n; i++) PROPS.push({ id: propId++, type: 'barrel', tier: 'smash', ...lateral(s + (i * 2.2) / LENGTH, off + (i % 2 ? 0.9 : -0.9), {}), r: 0.6, h: 1.0, hp: 1, breakAt: RACE_BREAK.barrel, rot: i, color: PROP_DEFS.barrel.colors[i % 3] }); },
     tnt(s, off) { PROPS.push({ id: propId++, type: 'tnt', tier: 'blast', ...lateral(s, off, {}), r: 0.8, h: 0.9, hp: 1, breakAt: PROP_DEFS.tnt.breakAt, rot: 0, color: '#d62828' }); },
   };
   if (def.walls) def.walls({ ...T, W });

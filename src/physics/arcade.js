@@ -220,6 +220,7 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       const spd = Math.hypot(v.vx, v.vz);
       if (o.breakAt && spd >= o.breakAt && -vn0 > 0.25 * spd) {
         // fragile prop: plow straight through it, losing a little speed
+        o.gone = true;
         events.push({ type: 'smash', obj: o, power: spd });
         const sm = 0.78 + 0.17 * Math.min(1, (spd - o.breakAt) / 12) + (v.boostT > 0 ? 0.03 : 0);
         v.vx *= sm; v.vz *= sm;

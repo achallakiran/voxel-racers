@@ -608,13 +608,13 @@ function buildTrack(group, T) {
     const base = wallBase[w.kind] || wallBase.brick;
     const shade = 0.86 + ((Math.round(w.x * 3) + Math.round(w.z * 5)) & 7) * 0.03;
     const col = new THREE.Color(base[0] * shade, base[1] * shade, base[2] * shade);
-    wallBoxes.push({ x: w.x, y: w.y0 + w.h / 2 - 0.1, z: w.z, sx: 1.7, sy: w.h, sz: 1.6, rot: w.rot, color: col });
-    wallBoxes.push({ x: w.x, y: w.y0 + w.h + 0.12, z: w.z, sx: 1.9, sy: 0.28, sz: 1.8, rot: w.rot, color: col.clone().multiplyScalar(1.18) });
+    wallBoxes.push({ x: w.x, y: w.y0 + w.h / 2 - 0.1, z: w.z, sx: 1.62 * (w.r || 1.05), sy: w.h, sz: 1.52 * (w.r || 1.05), rot: w.rot, color: col });
+    wallBoxes.push({ x: w.x, y: w.y0 + w.h + 0.12, z: w.z, sx: 1.81 * (w.r || 1.05), sy: 0.28, sz: 1.71 * (w.r || 1.05), rot: w.rot, color: col.clone().multiplyScalar(1.18) });
   }
   instanced(group, wallBoxes, new THREE.MeshLambertMaterial(), { cast: true });
 
-  // loops: a ribbon ring with striped rails, support pylons and a boost pad on the approach
-  const ring = []; const rails = []; const pylons = []; const pads = [];
+  // loops: a ribbon ring with striped rails and a boost pad on the approach
+  const ring = []; const rails = []; const pads = [];
   T.LOOPS.forEach((L) => {
     const hd = Math.atan2(L.tx, L.tz);
     const seg = 64;
@@ -632,20 +632,11 @@ function buildTrack(group, T) {
         rails.push({ x: r.x, y: r.y, z: r.z, sx: 0.5, sy: 1.3, sz: len, rx: -ph, ry: hd, color: (i >> 1) & 1 ? '#ffd60a' : '#1d1d22' });
       }
     }
-    for (const th of [Math.PI * 0.5, Math.PI, Math.PI * 1.5]) {
-      const pt = loopWorld(L, th, 0);
-      for (const side of [-1, 1]) {
-        const x = pt.x + L.tz * side * (L.halfW + 1.3); const z = pt.z - L.tx * side * (L.halfW + 1.3);
-        const h = pt.y - L.y0 - 0.6;
-        pylons.push({ x, y: L.y0 + h / 2, z, sx: 1.1, sy: h, sz: 1.1, rot: hd, color: '#8b8d95' });
-      }
-    }
     for (let k = 0; k < 4; k++) pads.push({ x: L.x - L.tx * (3 + k * 2.2) + L.tz * L.c0, y: L.y0 + 0.06, z: L.z - L.tz * (3 + k * 2.2) - L.tx * L.c0, sx: L.halfW * 2 - 1, sy: 0.12, sz: 1.1, rot: hd, color: k % 2 ? '#ffd60a' : '#ff8a00' });
   });
   const ringMat = new THREE.MeshLambertMaterial();
   instanced(group, ring, ringMat, { cast: true, receive: true });
   instanced(group, rails, new THREE.MeshLambertMaterial(), { cast: true });
-  instanced(group, pylons, new THREE.MeshLambertMaterial(), { cast: true });
   instanced(group, pads, new THREE.MeshLambertMaterial({ emissive: new THREE.Color('#553300') }), { receive: true });
 
   // gates: start/finish arch + three checkpoint arches

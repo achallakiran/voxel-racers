@@ -203,6 +203,15 @@ def main():
         page.click('#btn-sus'); page.click('#btn-sus')
         check(page.evaluate("document.getElementById('btn-sus').dataset.mode") == 'normal', 'suspension cycles back to normal')
 
+        # ---------------- rival difficulty (garage gauge icon): normal -> hard -> easy -> normal, saved
+        d0 = page.evaluate("document.getElementById('btn-diff').dataset.mode")
+        page.click('#btn-diff')
+        d1 = page.evaluate("document.getElementById('btn-diff').dataset.mode")
+        saved = page.evaluate("JSON.parse(localStorage.getItem('voxel-racers:save'))")
+        check(d0 == 'normal' and d1 == 'hard' and saved['difficulty'] == 'hard', 'difficulty button cycles and is saved')
+        page.click('#btn-diff'); page.click('#btn-diff')
+        check(page.evaluate("document.getElementById('btn-diff').dataset.mode") == 'normal', 'difficulty cycles back to normal')
+
         # ---------------- drive (Phase 1): joystick + 2 buttons, nitro, 4 cameras
         page.evaluate('window.__voxelRacers.arenaFoes = 0')      # practice round: no rivals while testing the controls
         page.click('#btn-arena', force=True)

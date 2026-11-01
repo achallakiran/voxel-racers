@@ -1,3 +1,4 @@
+import { loopWorld } from '../physics/loop.js';
 // Four camera views, cycled by one icon. Pure: returns where the camera wants to be; main.js smooths it.
 
 export const CAMERA_MODES = ['iso-follow', 'iso-fixed', 'chase', 'top'];
@@ -18,18 +19,22 @@ export function newCameraState(t) {
 
 const ISO = { x: 0.62, y: 0.78, z: 0.62 };
 
-// While riding a loop every view switches to a side-on view of the ring (the ring, its blocks and pylons would otherwise
-// sit between the camera and the truck). t.loop = the loop definition L the truck is on.
+// While riding a loop every view becomes a chase view that rides the ring: the camera sits on the inside of the circle,
+// a little behind the truck, and looks along the ring ahead, so you see the road curve up and over you (like Hot Wheels
+// games). The world stays upright. t.loop = the loop definition L, t.loopTh / t.loopLat = angle on the ring and lane.
 export function loopCameraGoal(L, t) {
-  const mid = Math.PI * L.k;                                // forward middle of the ring
-  const cx = L.x + L.tx * mid; const cz = L.z + L.tz * mid;
-  const D = 30;
-  const sx = L.tz; const sz = -L.tx;                        // right-hand side of travel
-  const cy = L.y0 + L.R;
+  const th = t.loopTh ?? 0; const lat = t.loopLat ?? 0;
+  const inward = (pt, d) => {
+    const nf = -Math.sin(pt.phi); const ny = Math.cos(pt.phi);
+    return { f: nf * d, y: ny * d };
+  };
+  const back = loopWorld(L, Math.max(-0.3, th - 0.55), lat);
+  const ahead = loopWorld(L, th + 0.4, lat);
+  const bi = inward(back, 3.6); const ai = inward(ahead, 1.2);
   return {
-    pos: { x: cx + sx * D, y: cy + 1, z: cz + sz * D },
-    look: { x: t.x * 0.65 + cx * 0.35, y: t.y * 0.65 + cy * 0.35, z: t.z * 0.65 + cz * 0.35 },
-    fov: 58,
+    pos: { x: back.x + L.tx * bi.f, y: back.y + bi.y, z: back.z + L.tz * bi.f },
+    look: { x: ahead.x + L.tx * ai.f, y: ahead.y + ai.y, z: ahead.z + L.tz * ai.f },
+    fov: 68,
   };
 }
 

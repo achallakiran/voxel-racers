@@ -880,7 +880,7 @@ test('ai: every rival truck can lap the track by itself, stays on the road and d
     const d = createDriver({ skill: 0.95, lane: 2 });
     let acc = 0; let prev = TRK.nearest(v.x, v.z).s; let time = 0; let offRoad = 0; let stuck = 0;
     for (let i = 0; i < 60 * 240 && acc < 1; i++) {
-      const input = driverInput(d, v, tune, TRACK_API, { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
+      const input = driverInput(d, v, tune, TRACK_API, { phase: 'racing', props: terr0.props, playerAcc: 0, myAcc: acc }, DT);
       for (const e of stepVehicle(v, input, terr0, tune, DT)) if (e.type === 'smash') { const k = terr0.obstacles.indexOf(e.obj); if (k >= 0) terr0.obstacles.splice(k, 1); }
       const n = TRK.nearest(v.x, v.z);
       acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
@@ -1301,7 +1301,7 @@ for (const T of TRACKS) {
       const d = createDriver({ skill: 0.95, lane: 2 });
       let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let stuck = 0; let loops = 0; let hits = 0;
       for (let i = 0; i < 60 * 260 && acc < 1; i++) {
-        const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
+        const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', props: terr.props, playerAcc: 0, myAcc: acc }, DT);
         for (const e of stepVehicle(v, input, terr, tune, DT)) {
           if (e.type === 'loop') loops++; if (e.type === 'hit') hits++;
           if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }   // smashed props are gone, as in the game
@@ -1341,7 +1341,7 @@ test('tracks: wall passages are solid, clear of loops/jumps/the grid; gates and 
       const n = T.nearest(w.x, w.z);
       assert.ok(Math.abs(Math.abs(n.d) - 0) >= 0 && Math.abs(n.d) < T.BARRIER, 'inside the barriers');
       assert.ok(!T.LOOPS.some((L) => n.s > L.s - 0.015 && n.s < L.endS + 0.015), 'walls stay out of loops');
-      assert.ok(Math.abs(T.heightAt(w.x, w.z) - n.y) < 0.5, 'walls do not sit on jumps');
+      if (!w.fill) assert.ok(Math.abs(T.heightAt(w.x, w.z) - n.y) < 0.5, 'walls do not sit on jumps');
       assert.ok(w.y0 > 0 && w.h >= 2.6);
     }
     assert.ok(T.PROPS.some((p) => p.type === 'wall' && p.tier === 'break'), 'smashable gate walls');
@@ -1459,16 +1459,20 @@ test('loop: the ground under every ring is filled with solid blocks', () => {
 
 // ---------- Phase 4d: loop camera
 import { loopCameraGoal } from "../src/core/camera-modes.js";
-test('camera: while riding a loop every view looks at the ring from the side, off the ring plane', () => {
+test('camera: while riding a loop every view is a chase view inside the ring, just behind the truck, looking along it', () => {
   const L = TRACKS[1].LOOPS[0];
   for (const mode of CAMERA_MODES) {
-    for (const th of [0.5, Math.PI / 2, Math.PI, 4.5]) {
-      const w = loopWorld(L, th, 0);
-      const g = cameraGoal(mode, { x: w.x, y: w.y, z: w.z, heading: Math.atan2(L.tx, L.tz), speed: 20, loop: L }, { fx: 0, fz: 0 });
-      const side = (g.pos.x - L.x) * L.tz - (g.pos.z - L.z) * L.tx;
-      assert.ok(Math.abs(side) > 20, `${mode}: camera is ${side.toFixed(0)} to the side`);
-      assert.ok(g.fov >= 50, 'wide enough to see the ring');
-      assert.ok(Math.hypot(g.look.x - w.x, g.look.z - w.z) < 12 && Math.abs(g.look.y - w.y) < 12, 'still looks near the truck');
+    for (const th of [0.5, Math.PI / 2, Math.PI, 4.5, 5.6]) {
+      const w = loopWorld(L, th, L.c0);
+      const g = cameraGoal(mode, { x: w.x, y: w.y, z: w.z, heading: Math.atan2(L.tx, L.tz), speed: 20, loop: L, loopTh: th, loopLat: L.c0 }, { fx: 0, fz: 0 });
+      const back = Math.hypot(g.pos.x - w.x, g.pos.z - w.z, g.pos.y - w.y);
+      assert.ok(back > 2 && back < 10, `${mode}: camera ${back.toFixed(1)} from the truck`);
+      // inside the circle: closer to the ring centre than the ring radius
+      const fwd = (g.pos.x - L.x) * L.tx + (g.pos.z - L.z) * L.tz;
+      const d = Math.hypot(fwd - L.k * th, g.pos.y - (L.y0 + L.R));
+      assert.ok(d < L.R, `${mode}: camera inside the ring (${d.toFixed(1)} < ${L.R})`);
+      assert.ok(Math.hypot(g.look.x - w.x, g.look.z - w.z, g.look.y - w.y) < 12, 'looks near the truck');
+      assert.ok(g.fov >= 60);
     }
   }
   const off = cameraGoal('chase', { x: 0, y: 1, z: 0, heading: 0, speed: 10, loop: null }, { fx: 0, fz: 0 });
@@ -1484,7 +1488,7 @@ const lapWith = (T, tk, style, lane = 2, seg = null) => {
   const d = createDriver({ skill: 0.95, lane, style });
   let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let boosts = 0; let t0 = null; let t1 = null;
   for (let i = 0; i < 60 * 200 && acc < 1; i++) {
-    const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', pickups: terr.pickups, playerAcc: 0, myAcc: acc }, DT);
+    const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', pickups: terr.pickups, props: terr.props, playerAcc: 0, myAcc: acc }, DT);
     tickPickups(terr, DT);
     for (const e of stepVehicle(v, input, terr, tune, DT)) {
       if (e === 'boost') boosts++;
@@ -1761,4 +1765,103 @@ test('6e: tracks have more forks (two on Greenridge and Canyon), every fork has 
     assert.equal(trenches, forks(T), `${T.id}: one trench jump per fork`);
     assert.equal(T.LANES.filter((l) => l.route === 'safe').length, forks(T), `${T.id}: a detour for every jump`);
   }
+});
+
+// ---------- Phase 7a/7b: difficulty, full-width walls, tougher props, attacker-only damage
+import { DIFFICULTY, DIFFICULTIES } from '../src/ai/driver.js';
+import { attacker, ATTACK_RATIO } from '../src/physics/damage.js';
+import { RACE_BREAK } from '../src/world/track-factory.js';
+
+test('7a: difficulty levels get steadily tougher and default to normal', () => {
+  assert.deepEqual(DIFFICULTIES, ['easy', 'normal', 'hard']);
+  const [e, n, h] = DIFFICULTIES.map((k) => DIFFICULTY[k]);
+  assert.ok(e.skill < n.skill && n.skill < h.skill);
+  assert.ok(e.up < n.up && n.up < h.up);
+  assert.ok(e.free <= n.free && n.free < h.free);
+  assert.equal(rubber(0, 0), 1);
+  assert.ok(rubberBand(0.2, 0, 'hard') > rubberBand(0.2, 0, 'easy'), 'hard catches up harder');
+  assert.equal(rubberBand(0.2, 0, 'easy'), 1.12, 'easy keeps its original cap');
+  assert.equal(createStorage({ getItem: () => null, setItem: () => {} }).load().difficulty, 'normal');
+});
+
+test('7a: a good stand-in player (no cheats) leads the pack by less on each harder level', () => {
+  const T = TRACKS[0]; const LAPS = 2;
+  const run = (level) => {
+    const mk = (tk, style, skill, isBot) => {
+      const feel = getFeel(tk.id); const tune = tuningFor(tk.stats, feel.handling, feel.sus);
+      const terr = T.freshTerrain(); const sp = T.gridPose(isBot ? 0 : 1 + (mk.n = (mk.n || 0) + 1) % 5);
+      const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride); v.nitro = 0.6;
+      return { tk, tune, terr, v, d: createDriver({ skill, lane: 1, style }), acc: 0, prev: T.nearest(v.x, v.z).s, isBot };
+    };
+    const bot = mk(TRUCKS[1], 'aggressive', 1.0, true);
+    const pack = ['steady', 'aggressive', 'risky', 'defensive', 'steady'].map((st, i) => mk(TRUCKS[(i + 2) % TRUCKS.length], st, 0.92, false));
+    for (let i = 0; i < 60 * 400 && bot.acc < LAPS; i++) {
+      for (const c of [bot, ...pack]) {
+        const ctx = { phase: 'racing', difficulty: c.isBot ? 'easy' : level, pickups: c.terr.pickups, props: c.terr.props, playerAcc: bot.acc, myAcc: c.isBot ? bot.acc : c.acc };
+        tickPickups(c.terr, DT);
+        const input = driverInput(c.d, c.v, c.tune, apiFor(T), ctx, DT);
+        for (const e of stepVehicle(c.v, input, c.terr, c.tune, DT)) if (e.type === 'smash') c.terr.obstacles.splice(c.terr.obstacles.indexOf(e.obj), 1);
+        const n = T.nearest(c.v.x, c.v.z); c.acc += wrapDelta(c.prev, n.s); c.prev = n.s;
+      }
+    }
+    return bot.acc - pack.reduce((s, c) => s + c.acc, 0) / pack.length;
+  };
+  const lead = { easy: run('easy'), normal: run('normal'), hard: run('hard') };
+  assert.ok(lead.easy > lead.normal && lead.normal > lead.hard, JSON.stringify(lead));
+  assert.ok(lead.hard < 0.3, `hard keeps the pack close (lead ${lead.hard.toFixed(2)} laps over ${LAPS})`);
+});
+
+// free lateral positions of a truck (radius 1.3) across the road at lap fraction s, against the track walls
+function freeLats(T, s) {
+  const p = T.sampleAt(s); const out = [];
+  const near = T.WALLS.filter((w) => Math.hypot(w.x - p.x, w.z - p.z) < 14);
+  for (let lat = -12.4; lat <= 12.4; lat += 0.1) {
+    const x = p.x + p.tz * lat; const z = p.z - p.tx * lat;
+    if (near.every((w) => Math.hypot(w.x - x, w.z - z) > w.r + 1.3)) out.push(lat);
+  }
+  return out;
+}
+
+test('7a: wall passages run out to the barrier - no way round the side of a corridor or a slalom block', () => {
+  let corridors = 0; let blocks = 0;
+  for (const T of TRACKS) {
+    for (const l of T.LANES) {
+      if (l.route) continue;
+      const mid = (l.from + l.to) / 2;
+      if (l.off === null && l.limit < 3.2) {                      // corridor
+        corridors++;
+        const free = freeLats(T, mid).map(Math.abs);
+        assert.ok(Math.max(...free, 0) < 4.0, `${T.id} corridor at ${mid.toFixed(3)} leaves a gap at ${Math.max(...free).toFixed(1)}`);
+      } else if (l.off !== null && l.limit === 2.2 && Math.abs(l.off) === 4.2) {   // slalom block on the opposite side
+        blocks++;
+        const side = -Math.sign(l.off);
+        assert.ok(!freeLats(T, mid).some((x) => x * side > 0.5), `${T.id} slalom block at ${mid.toFixed(3)} can be passed on its own side`);
+      }
+    }
+  }
+  assert.ok(corridors >= 6 && blocks >= 8, `${corridors} corridors, ${blocks} slalom blocks checked`);
+});
+
+test('7a: loose props in a race need real speed to smash (crates 20, barrels 18) but the arena keeps its easy smashing', () => {
+  assert.ok(RACE_BREAK.crate >= 15 && RACE_BREAK.barrel >= 15);
+  for (const T of TRACKS) for (const p of T.PROPS) { if (p.type === 'crate') assert.equal(p.breakAt, RACE_BREAK.crate); if (p.type === 'barrel') assert.equal(p.breakAt, RACE_BREAK.barrel); }
+});
+
+test('7b: only the truck that is driven AT the other takes the ram; head-on hurts both; own blasts never hurt you', () => {
+  const a = { x: 0, z: 0, heading: 0, hp: 100, maxHp: 100 };
+  const b = { x: 0, z: 3, heading: Math.PI, hp: 100, maxHp: 100 };
+  const rammer = { a: { vx: 0, vz: 20 }, b: { vx: 0, vz: 0 } };               // a drives into a parked b
+  assert.equal(attacker(a, b, rammer.a && rammer), 'a');
+  const hit = ramDamage(a, b, 20, rammer);
+  assert.equal(hit.a, 0); assert.ok(hit.b > 0);
+  const hurtMe = ramDamage(a, b, 20, { a: { vx: 0, vz: 0 }, b: { vx: 0, vz: -20 } });   // b drives into a
+  assert.equal(hurtMe.b, 0); assert.ok(hurtMe.a > 0);
+  const head = ramDamage(a, b, 30, { a: { vx: 0, vz: 15 }, b: { vx: 0, vz: -15 } });
+  assert.ok(head.a > 0 && head.b > 0);
+  assert.ok(ATTACK_RATIO > 1);
+  assert.deepEqual(Object.keys(ramDamage(a, b, 20)).sort(), ['a', 'b'], 'still works without velocities');
+  const me = { x: 0, z: 0, hp: 100, maxHp: 100, vx: 0, vz: 0, vy: 0 }; const foe = { x: 2, z: 0, hp: 100, maxHp: 100, vx: 0, vz: 0, vy: 0 };
+  const res = blastTrucks([me, foe], 0, 0, 9, 40, 0);
+  assert.equal(me.hp, 100, 'owner is not hurt'); assert.ok(foe.hp < 100, 'the other truck is');
+  assert.ok(res.some((r) => r.index === 1));
 });

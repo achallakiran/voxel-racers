@@ -177,7 +177,7 @@ const FORTRESS_DEF = {
     W.island(0.63, 34, 'stone', 1);
     W.slalom(0.735, 5, 12, 'stone');
     W.corridor(0.88, 36, 7.6, 'stone');
-    W.crates(0.43, 1, 3); W.barrels(0.5, -2, 3); W.tnt(0.935, 2);
+    W.crates(0.43, 1, 3); W.barrels(0.275, -1, 3); W.tnt(0.935, 2);
     W.fork(0.52, 52, 1, 'stone');
     for (const [a, o, l] of [[0.12, 0, 8], [0.415, 0, 8], [0.855, 0, 8], [0.96, 0, 8]]) W.pad(a, o, l, 5.5);
     W.goo(0.11, 3, 10, 5); W.oil(0.70, -3, 10, 5);
