@@ -289,7 +289,7 @@ export function makeTrack(def) {
     // a FORK: a median wall splits the road in two lanes with different risk and reward.
     //   fast lane: crate gate, accelerator pads, a jump over a trench, a nitro canister at the end
     //   safe lane: goo and oil patches, a nitro canister, a few crates
-    fork(s, len = 52, fastSide = 1, kind = 'brick') {
+    fork(s, len = 52, fastSide = 1, kind = 'brick', gooK = 1) {
       const at = (m) => s + m / LENGTH;
       wallLine(s, len, 0, kind);
       const fo = fastSide * 3.7; const so = -fastSide * 3.7;
@@ -302,7 +302,7 @@ export function makeTrack(def) {
       W.pad(at(41), fo, 6, 4.6); W.pad(at(48), fo, 6, 4.6);
       W.pickup(at(46), fo);
       // safe lane
-      W.goo(at(4), so, 16, 4.6); W.oil(at(22), so, 9, 4.6); W.goo(at(34), so, 14, 4.6);
+      W.goo(at(4), so, 16 * gooK, 4.6); W.oil(at(22), so, 9, 4.6); W.goo(at(34), so, 14 * gooK, 4.6);
       W.pickup(at(33), so);
       LANES.push({ from: at(-30), to: at(len + 4), limit: 1.4, off: fo, route: 'fast' });
       LANES.push({ from: at(-30), to: at(len + 4), limit: 1.4, off: so, route: 'safe' });

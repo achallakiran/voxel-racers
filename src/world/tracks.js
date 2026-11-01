@@ -212,22 +212,22 @@ const HIMALAYA_DEF = {
   },
   elevation: (s) => 4.2 + 1.5 * Math.sin(2 * Math.PI * s + 0.4) + 0.8 * Math.sin(2 * Math.PI * 3 * s + 1.2) + 0.4 * Math.sin(2 * Math.PI * 7 * s),
   sections: [
-    { from: 0.0, to: 0.34, surf: 'snow' }, { from: 0.34, to: 0.42, surf: 'asphalt' }, { from: 0.42, to: 0.5, surf: 'planks' },
+    { from: 0.0, to: 0.12, surf: 'asphalt' }, { from: 0.12, to: 0.34, surf: 'snow' }, { from: 0.34, to: 0.42, surf: 'asphalt' }, { from: 0.42, to: 0.5, surf: 'planks' },
     { from: 0.5, to: 0.6, surf: 'snow' }, { from: 0.6, to: 0.72, surf: 'asphalt' }, { from: 0.72, to: 0.79, surf: 'snow' },
     { from: 0.79, to: 0.85, surf: 'ice' }, { from: 0.85, to: 0.9, surf: 'snow' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
   ],
   loops: ({ straightNear }) => [{ s: straightNear(0.615, 16, 0.02) }],
   features(T) {
     const { JUMP, feat } = T;
-    return [...JUMP(0.08, 2.4, 9), feat(0.875, 'whoops', { kind: 'whoops', len: 28, w: 11, amp: 0.55, wave: 4.2 })];
+    return [...JUMP(0.915, 2.4, 9), feat(0.875, 'whoops', { kind: 'whoops', len: 28, w: 11, amp: 0.55, wave: 4.2 })];
   },
   walls({ W }) {
-    W.fork(0.135, 52, 1, 'stone');
+    W.fork(0.135, 52, 1, 'stone', 0.55);
     W.corridor(0.245, 30, 8.2, 'stone');
     W.island(0.70, 32, 'stone', 1);
-    W.barrels(0.475, -1, 3); W.crates(0.945, 1, 3); W.tnt(0.778, 2);
+    W.barrels(0.375, -1, 3); W.crates(0.945, 1, 3); W.tnt(0.778, 2);
     for (const [a, o, l] of [[0.04, 0, 8], [0.30, 0, 8], [0.965, 0, 8]]) W.pad(a, o, l, 5.5);
-    W.goo(0.41, 3, 9, 5); W.oil(0.55, -3, 10, 5);
+    W.goo(0.41, 3, 9, 5); W.oil(0.52, -3, 10, 5);
     for (const [a, o] of [[0.03, 0], [0.10, 0], [0.22, 0], [0.31, 0], [0.43, 0], [0.52, 0], [0.60, 0], [0.69, 0], [0.76, 0], [0.91, 0]]) W.pickup(a, o);
   },
   hazards({ sampleAt, LENGTH, add }) {

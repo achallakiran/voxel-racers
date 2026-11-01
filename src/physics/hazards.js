@@ -4,7 +4,7 @@
 //   yak        a slow animal walking back and forth across the road (a moving solid obstacle, see tickHazards)
 // A hazard sits on the road frame of its stage: (x,z) centre, (tx,tz) direction of travel, `len` along, `w` across.
 
-export const AVALANCHE_PUSH = 22;        // sideways acceleration inside the wave
+export const AVALANCHE_PUSH = 40;        // sideways acceleration inside the wave
 export const AVALANCHE_SLOW = 0.55;      // top-speed squeeze inside the wave (per second factor)
 
 // phase of a periodic hazard: 0..1 through its active window, or -1 when idle. A warning (negative) leads the window.

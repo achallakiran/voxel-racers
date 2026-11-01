@@ -21,9 +21,9 @@ export const SURFACES = {
   goo: { grip: 0.5, drag: 2.2, maxMul: 0.4 },      // sticky slow patch
   oil: { grip: 0.16, drag: 0.05, maxMul: 1.0 },     // slippery patch
   pad: { grip: 1.2, drag: 0, maxMul: 1.0 },         // accelerator strip (kick handled in stepVehicle)
-  snow: { grip: 0.85, drag: 0.25, maxMul: 0.95 },     // packed snow road
-  ice: { grip: 0.32, drag: 0.03, maxMul: 1.0 },     // very slippery
-  planks: { grip: 0.95, drag: 0.1, maxMul: 0.98 },  // wooden bridge
+  snow: { grip: 0.9, drag: 0.2, maxMul: 0.96 },     // packed snow road
+  ice: { grip: 0.45, drag: 0.03, maxMul: 1.0 },     // very slippery
+  planks: { grip: 1.0, drag: 0.1, maxMul: 0.98 },  // wooden bridge
 };
 export const PAD_KICK = 9;
 export const PAD_TIME = 1.3;

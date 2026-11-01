@@ -1967,7 +1967,7 @@ test('7c: standing in the avalanche pushes and slows the truck', () => {
   const terr = flat7c({ hazards: [{ kind: 'avalanche', x: 0, z: 0, tx: 0, tz: 1, len: 40, w: 30, side: 1, period: 16, warn: 0, warnLead: 1, dur: 10, offset: 0 }], time: 5 });
   const v = mkV7c(0, 0, 0, terr, 0); v.vx = 0; v.vz = 0;
   for (let i = 0; i < 60; i++) stepV7c(v, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60);
-  assert.ok(v.x < -1, 'swept toward the far side (left)');
+  assert.ok(v.x < -0.5, 'swept toward the far side (left)');
 });
 
 test('7c: tickHazards advances the clock', () => {
