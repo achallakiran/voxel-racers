@@ -1,10 +1,18 @@
 // Loop-the-loop: while a truck is "on the loop" it rides a scripted curve through the vertical plane of the track
 // (a circle of radius R drifting forward by k per radian, so the exit is ahead of the entry). Pure maths.
 //
-// Loop definition (built by the track): { x, z, tx, tz, y0, R, k, halfW, vmin, gl }
-//   (x,z) entry point on the centre line, (tx,tz) track direction, y0 road height, halfW half width of the ring,
+// Loop definition (built by the track): { x, z, tx, tz, y0, R, k, c0, c1, halfW, vmin, gl }
+//   (x,z) entry point on the centre line, (tx,tz) track direction, y0 road height, halfW half width of the ring (one lane), c0/c1 entry/exit lane centres (+ right),
 //   vmin minimum entry speed (the boost pad at the entry guarantees it), gl effective gravity on the ring.
 export const TWO_PI = Math.PI * 2;
+
+// Side-to-side loop: the truck enters on lane centre c0, rides the ring and exits on lane centre c1 (= -c0), so the
+// ring never crosses itself. The sideways shift happens over the top of the ring; the ground part stays in its lane.
+export function latShift(L, th) {
+  const c0 = L.c0 || 0; const c1 = L.c1 ?? c0;
+  const u = Math.min(1, Math.max(0, (th - 0.6) / (TWO_PI - 1.2)));
+  return c0 + (c1 - c0) * u * u * (3 - 2 * u);
+}
 
 export function loopPoint(L, th) {
   const fwd = L.R * Math.sin(th) + L.k * th;
@@ -18,9 +26,10 @@ export function loopPoint(L, th) {
 
 export const loopLength = (L) => TWO_PI * L.k;
 
-// world position for a point on the ring at angle th and lateral offset lat (+ = right of travel)
-export function loopWorld(L, th, lat) {
+// world position for a point on the ring at angle th and lateral offset off from the lane centre (+ = right of travel)
+export function loopWorld(L, th, off) {
   const p = loopPoint(L, th);
+  const lat = latShift(L, th) + off;
   return { x: L.x + L.tx * p.fwd + L.tz * lat, z: L.z + L.tz * p.fwd - L.tx * lat, y: L.y0 + p.y, phi: p.phi, ds: p.ds };
 }
 
@@ -28,8 +37,8 @@ export function loopWorld(L, th, lat) {
 export function atEntry(L, v) {
   const dx = v.x - L.x; const dz = v.z - L.z;
   const along = dx * L.tx + dz * L.tz;
-  const lat = dx * L.tz - dz * L.tx;
-  if (along < -0.5 || along > 3.2 || Math.abs(lat) > L.halfW) return false;
+  const lat = dx * L.tz - dz * L.tx - (L.c0 || 0);
+  if (along < -0.5 || along > 4.2 || Math.abs(lat) > L.halfW) return false;
   const align = Math.sin(v.heading) * L.tx + Math.cos(v.heading) * L.tz;
   const f = v.vx * Math.sin(v.heading) + v.vz * Math.cos(v.heading);
   return align > 0.55 && f > 3;
@@ -37,7 +46,7 @@ export function atEntry(L, v) {
 
 export function startLoop(v, L) {
   const dx = v.x - L.x; const dz = v.z - L.z;
-  const lat = dx * L.tz - dz * L.tx;
+  const lat = Math.max(-(L.halfW - 1.8), Math.min(L.halfW - 1.8, dx * L.tz - dz * L.tx - (L.c0 || 0)));
   const f = Math.max(0, v.vx * Math.sin(v.heading) + v.vz * Math.cos(v.heading));
   v.loop = { L, th: 0, lat, entryV: Math.max(f, L.vmin), sp: Math.max(f, L.vmin) };
 }

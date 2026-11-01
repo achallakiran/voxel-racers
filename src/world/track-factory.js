@@ -75,14 +75,17 @@ export function makeTrack(def) {
   // ---- loops (vertical rings on straight stretches)
   const LOOPS = [];
   for (const spec of (def.loops ? def.loops({ straightNear, LENGTH }) : [])) {
-    const R = spec.R ?? 9; const k = spec.k ?? 2.4;
+    const R = spec.R ?? 9; const k = spec.k ?? 1.7;
     const len = 2 * Math.PI * k;
     const s0 = spec.s;
     const a = rawAt(s0); const b = rawAt(s0 + len / LENGTH);
     const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    // side-to-side loop: enter on one lane (default left), ride the ring, exit on the other lane
+    const rw = (ROAD_HALF - 0.8) / 2;
+    const c0 = (spec.side ?? -1) * (rw + 0.1);
     LOOPS.push({
       s: s0, endS: s0 + len / LENGTH, len, R, k, x: a.x, z: a.z, tx: (b.x - a.x) / l, tz: (b.z - a.z) / l,
-      y0: def.elevation(s0), halfW: ROAD_HALF - 0.6, vmin: spec.vmin ?? 22, gl: 9,
+      y0: def.elevation(s0), halfW: rw, c0, c1: -c0, vmin: spec.vmin ?? 22, gl: 9,
     });
   }
   // the road is level under and around each loop so the ring and the road agree
@@ -275,9 +278,35 @@ export function makeTrack(def) {
   };
   if (def.walls) def.walls({ ...T, W });
 
+  // the ground under each ring is filled with solid stone blocks that follow the underside of the ring, so the only way
+  // through is to ride the loop: in on the entry lane, out on the other one
+  const BLOCKS = [];
+  for (const L of LOOPS) {
+    const ringFwd = (th) => L.R * Math.sin(th) + L.k * th;
+    const ringAt = (target) => { let lo = 0; let hi = 1.76; for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (ringFwd(mid) < target) lo = mid; else hi = mid; } return L.R * (1 - Math.cos(lo)); };
+    const hd = Math.atan2(L.tx, L.tz);
+    for (let f = 1.6; f <= L.len - 1.0; f += 1.5) {
+      for (const lane of [0, 1]) {
+        const c = lane ? L.c1 : L.c0;
+        const ry = lane ? ringAt(L.len - f) : ringAt(f);      // exit lane sits under the descending arc
+        const h = Math.min(4.2, ry - 1.2);
+        if (h < 0.8) { if (!lane) for (const lat of [-0.95, 0.95]) BLOCKS.push({ type: 'wall', kind: 'plinth', x: L.x + L.tx * f + L.tz * lat, z: L.z + L.tz * f - L.tx * lat, r: 1.05, h: 2.2, rot: hd }); continue; }
+        for (let i = 0; i < 4; i++) {
+          const lat = c - L.halfW + 0.85 + (i * (L.halfW * 2 - 1.7)) / 3;
+          BLOCKS.push({ type: 'wall', kind: 'plinth', x: L.x + L.tx * f + L.tz * lat, z: L.z + L.tz * f - L.tx * lat, r: 1.05, h, rot: hd });
+        }
+      }
+    }
+  }
+
+  for (const L of LOOPS) {
+    LANES.push({ from: L.s - 22 / LENGTH, to: L.endS - 1 / LENGTH, limit: 1.4, off: L.c0 });
+    LANES.push({ from: L.endS - 1 / LENGTH, to: L.endS + 10 / LENGTH, limit: 3.2, off: L.c1 });
+  }
+
   const OBSTACLES = def.obstacles ? def.obstacles({ ...T, ROAD_HALF, SHOULDER }) : [];
   // obstacle heights are measured from the ground they stand on
-  for (const o of [...OBSTACLES, ...WALLS, ...PROPS]) o.y0 = heightAt(o.x, o.z);
+  for (const o of [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS]) o.y0 = heightAt(o.x, o.z);
 
   // AI lane guidance: the allowed lateral offset (and a forced offset in slaloms / islands) at a lap fraction
   function laneAt(s) {
@@ -330,16 +359,16 @@ export function makeTrack(def) {
     return { x: p.x + p.tz * lane, z: p.z - p.tx * lane, heading: Math.atan2(p.tx, p.tz), s: START_S - (row * 9) / LENGTH };
   };
 
-  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...PROPS], props: PROPS, loops: LOOPS, radius: 1e9 };
+  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, loops: LOOPS, radius: 1e9 };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {
     const props = PROPS.map((p) => ({ ...p }));
-    return { ...terrain, obstacles: [...OBSTACLES, ...WALLS, ...props], props };
+    return { ...terrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...props], props };
   }
 
   return {
     id: def.id, name: def.name, theme: def.theme, ROAD_HALF, SHOULDER, BARRIER,
-    LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, PROPS, LOOPS, LANES,
+    LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, LOOPS, LANES,
     nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear,
     sceneryLayout, barrierLayout, startPose, gridPose, terrain, freshTerrain, featureHeightAt: featureHeight,
     TRACK: { name: def.name, length: LENGTH, halfWidth: ROAD_HALF, barrier: BARRIER, samples: SAMPLES, checkpoints: CHECKPOINTS },

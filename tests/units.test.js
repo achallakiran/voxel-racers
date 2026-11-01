@@ -1301,7 +1301,10 @@ for (const T of TRACKS) {
       let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let stuck = 0; let loops = 0; let hits = 0;
       for (let i = 0; i < 60 * 260 && acc < 1; i++) {
         const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
-        for (const e of stepVehicle(v, input, terr, tune, DT)) { if (e.type === 'loop') loops++; if (e.type === 'hit') hits++; }
+        for (const e of stepVehicle(v, input, terr, tune, DT)) {
+          if (e.type === 'loop') loops++; if (e.type === 'hit') hits++;
+          if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }   // smashed props are gone, as in the game
+        }
         const n = T.nearest(v.x, v.z);
         acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
         if ((v.grounded || v.loop) && Math.abs(v.f) < 0.5) stuck += DT;
@@ -1403,4 +1406,52 @@ test('every truck has a distinct nitro style with a valid flame tint', async () 
   }
   const sigs = new Set(Object.values(FEEL).map((f) => `${f.nitro.tint}/${f.nitro.nozzles.length}`));
   assert.ok(sigs.size >= 5);
+});
+
+// ---------- side-to-side loops with a filled underside
+test('loop: enters on one lane and exits on the other - the ring never crosses itself', () => {
+  const L = { ...LOOP, k: 1.7, c0: -3.2, c1: 3.2, halfW: 3.1 };
+  const a = loopWorld(L, 0, 0); const e = loopWorld(L, TWO_PI, 0);
+  assert.ok(Math.abs((a.x - L.x) * L.tz - (a.z - L.z) * L.tx + 3.2) < 1e-6, 'starts on the entry lane');
+  assert.ok(Math.abs(e.x - 3.2) < 1e-6 || Math.abs(e.x + 3.2) < 1e-6);
+  assert.ok(Math.sign(a.x) !== Math.sign(e.x), 'exit lane is the opposite side');
+  // the up-going and down-going parts of the ring are always at least a lane apart in the places they overlap in height
+  for (let t1 = 0.2; t1 < 1.7; t1 += 0.1) {
+    const p = loopWorld(L, t1, 0);
+    for (let t2 = TWO_PI - 1.7; t2 < TWO_PI; t2 += 0.1) {
+      const q = loopWorld(L, t2, 0);
+      const near = Math.hypot(p.z - q.z, p.y - q.y) < 1.2;
+      if (near) assert.ok(Math.abs(p.x - q.x) > 4.5, `ring parts ${t1.toFixed(1)}/${t2.toFixed(1)} clear each other`);
+    }
+  }
+});
+
+test('loop: a truck in the entry lane rides the loop and comes out in the other lane; the right lane is blocked', () => {
+  const T = TRACKS[2]; const L = T.LOOPS[0];
+  const feel = getFeel('crusher'); const tune = tuningFor(TRUCKS[0].stats, feel.handling, feel.sus);
+  const side = (v) => (v.x - L.x) * L.tz - (v.z - L.z) * L.tx;
+  // entry lane
+  let terr = T.freshTerrain();
+  let v = createVehicle(L.x - L.tx * 6 + L.tz * L.c0, L.z - L.tz * 6 - L.tx * L.c0, Math.atan2(L.tx, L.tz), terr, tune.ride);
+  v.vx = L.tx * 18; v.vz = L.tz * 18;
+  let entered = false; let exited = false;
+  for (let i = 0; i < 60 * 8 && !exited; i++) for (const e of stepVehicle(v, { gas: 1 }, terr, tune, DT)) { if (e.type === 'loop') entered = true; if (e.type === 'loopExit') exited = true; }
+  assert.ok(entered && exited, 'rode the loop');
+  assert.ok(side(v) > 1.5, `exited in the opposite lane (${side(v).toFixed(1)})`);
+  // the other lane is a dead end: solid block
+  terr = T.freshTerrain();
+  v = createVehicle(L.x - L.tx * 6 - L.tz * L.c0, L.z - L.tz * 6 + L.tx * L.c0, Math.atan2(L.tx, L.tz), terr, tune.ride);
+  v.vx = L.tx * 18; v.vz = L.tz * 18;
+  let loops = 0; let hits = 0;
+  for (let i = 0; i < 60 * 4; i++) for (const e of stepVehicle(v, { gas: 1 }, terr, tune, DT)) { if (e.type === 'loop') loops++; if (e.type === 'hit') hits++; }
+  const along = (v.x - L.x) * L.tx + (v.z - L.z) * L.tz;
+  assert.equal(loops, 0, 'wrong lane does not enter the loop');
+  assert.ok(hits > 0 && along < 4, `stopped by the block (${along.toFixed(1)})`);
+});
+
+test('loop: the ground under every ring is filled with solid blocks', () => {
+  for (const T of TRACKS.slice(1)) {
+    assert.ok(T.BLOCKS.length >= 12 * T.LOOPS.length, `${T.id} blocks ${T.BLOCKS.length}`);
+    for (const b of T.BLOCKS) assert.ok(b.kind === 'plinth' && b.y0 > 0 && b.h >= 0.8 && T.terrain.obstacles.includes(b));
+  }
 });

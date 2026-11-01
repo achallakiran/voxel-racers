@@ -597,8 +597,8 @@ function buildTrack(group, T) {
 
   // wall passages: solid brick / stone blocks in lines
   const wallBoxes = [];
-  const wallBase = { brick: [0.66, 0.33, 0.24], stone: [0.55, 0.55, 0.58] };
-  for (const w of T.WALLS) {
+  const wallBase = { brick: [0.66, 0.33, 0.24], stone: [0.55, 0.55, 0.58], plinth: [0.4, 0.4, 0.45] };
+  for (const w of [...T.WALLS, ...(T.BLOCKS || [])]) {
     const base = wallBase[w.kind] || wallBase.brick;
     const shade = 0.86 + ((Math.round(w.x * 3) + Math.round(w.z * 5)) & 7) * 0.03;
     const col = new THREE.Color(base[0] * shade, base[1] * shade, base[2] * shade);
@@ -634,7 +634,7 @@ function buildTrack(group, T) {
         pylons.push({ x, y: L.y0 + h / 2, z, sx: 1.1, sy: h, sz: 1.1, rot: hd, color: '#8b8d95' });
       }
     }
-    for (let k = 0; k < 4; k++) pads.push({ x: L.x - L.tx * (3 + k * 2.2), y: L.y0 + 0.06, z: L.z - L.tz * (3 + k * 2.2), sx: L.halfW * 2 - 1, sy: 0.12, sz: 1.1, rot: hd, color: k % 2 ? '#ffd60a' : '#ff8a00' });
+    for (let k = 0; k < 4; k++) pads.push({ x: L.x - L.tx * (3 + k * 2.2) + L.tz * L.c0, y: L.y0 + 0.06, z: L.z - L.tz * (3 + k * 2.2) - L.tx * L.c0, sx: L.halfW * 2 - 1, sy: 0.12, sz: 1.1, rot: hd, color: k % 2 ? '#ffd60a' : '#ff8a00' });
   });
   const ringMat = new THREE.MeshLambertMaterial();
   instanced(group, ring, ringMat, { cast: true, receive: true });

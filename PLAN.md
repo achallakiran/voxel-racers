@@ -64,7 +64,7 @@ Tests: track geometry (closed, curvature, clearance, grade), barrier containment
 
 **Phase 3 — More tracks, loops, wall passages, nitro rework** (DONE, awaiting your test)
 - 3 tracks via a track factory: Greenridge Run (unchanged), Canyon Loop (desert, 2 loops, corridors, slalom, island with gate, TNT) and Fortress Run (stone, 1 loop, walled passages). Pick with the track icon on the garage screen.
-- Loop-the-loop: scripted ring that guarantees entry speed; AI bots complete every track with all 8 trucks (unit tested).
+- Loop-the-loop: side-to-side ring (enter on the left lane, loop over the top, exit on the right lane, so it never crosses itself) with the ground underneath filled by solid stone blocks so you have to ride it; scripted ring that guarantees entry speed; AI bots complete every track with all 8 trucks (unit tested).
 - Wall passages: narrow corridors, islands with gates, slaloms of crates/barrels; walls are solid and the tougher ones break at speed.
 - Nitro: ONE tap, drains the meter for the length it burns (4.5 s, costs 15% to start), much stronger boost, each truck has its own flame colour, nozzle count, ignition burst, shake and FOV punch.
 - Bug fix: cars no longer roll backwards during the 1-2-3 countdown (hold input).
