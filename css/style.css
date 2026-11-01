@@ -56,49 +56,52 @@ img { -webkit-user-drag: none; pointer-events: none; }
   z-index: 25;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle at 50% 45%, #1b2760, var(--night) 72%);
+  background: #000;
+  overflow: hidden;
 }
 #intro > * { grid-area: 1 / 1; }
 
-/* ---------- intro: logo, then ADA Studios presents (each fades in and out) ---------- */
-#intro .emblem {
-  width: min(52vmin, 300px);
-  border-radius: 50%;
-  box-shadow: 0 0 60px rgba(120, 255, 190, 0.35);
-  opacity: 0;
-}
-#intro .studio {
-  display: grid;
-  justify-items: center;
-  gap: 1.8vmin;
-  font-family: "Courier New", ui-monospace, monospace;
-  font-weight: 900;
-  text-transform: uppercase;
-  color: #f4f1ea;
-  text-shadow: 0 0.6vmin 0 #2a3a99, 0 1.2vmin 0 #151d55;
-  opacity: 0;
-}
-#intro .studio span {
-  display: block;
+/* ---------- intro: code text, then the ADA logo, then an electric reveal ---------- */
+#intro .code {
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, "Courier New", monospace;
+  font-weight: 700;
+  font-size: clamp(16px, 5.2vmin, 40px);
+  letter-spacing: 0.14em;
+  color: #8dffb4;
+  text-shadow: 0 0 10px rgba(80, 255, 150, 0.55), 0 0 28px rgba(40, 200, 120, 0.35);
   white-space: nowrap;
+  opacity: 0;
+  transition: opacity 1.1s ease;
 }
-#intro .line1 { font-size: clamp(22px, 8vmin, 64px); letter-spacing: 0.18em; }
-#intro .line2 { font-size: clamp(14px, 4.4vmin, 34px); letter-spacing: 0.5em; color: #ffd60a; text-shadow: 0 0.4vmin 0 #8a5a00; }
-
-/* timeline (seconds): logo 0-3.0, studio line 3.2-6.2, title after 6.6 */
-#intro.on.play .emblem { animation: logo-show 3s ease-in-out 0.2s forwards; }
-#intro.on.play .studio { animation: studio-show 3s ease-in-out 3.2s forwards; }
-@keyframes logo-show {
-  0% { opacity: 0; transform: scale(0.82); }
-  25% { opacity: 1; transform: scale(1); }
-  75% { opacity: 1; transform: scale(1.03); }
-  100% { opacity: 0; transform: scale(1.08); }
+#intro .code .prompt { color: #7df9ff; margin-right: 0.3em; }
+#intro .code .cursor { margin-left: 0.15em; animation: blink 0.9s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+#intro.t-text .code { opacity: 1; }
+#intro .emblem {
+  width: min(78vmin, 430px);
+  border-radius: 50%;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 1.2s ease, transform 3.4s ease-out;
+  box-shadow: 0 0 70px rgba(90, 160, 255, 0.28);
 }
-@keyframes studio-show {
-  0% { opacity: 0; transform: scale(0.82); }
-  25% { opacity: 1; transform: scale(1); }
-  75% { opacity: 1; transform: scale(1.03); }
-  100% { opacity: 0; transform: scale(1.08); }
+#intro.t-logo .emblem { opacity: 1; transform: scale(1); }
+#intro #zap { width: 100%; height: 100%; pointer-events: none; }
+#intro .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity 0.22s ease-in; }
+#intro.t-flash .flash { opacity: 1; }
+/* the electric effect: the logo shakes, strobes and bleeds cyan while bolts crackle over it */
+#intro.zap .emblem { animation: electric 1.1s steps(1) forwards; }
+@keyframes electric {
+  0% { filter: brightness(2.2) contrast(1.3) drop-shadow(0 0 18px #7df9ff); transform: translate(-6px, 2px) scale(1.01); }
+  8% { filter: brightness(0.6); transform: translate(5px, -3px) scale(1); }
+  16% { filter: brightness(2.6) hue-rotate(40deg) drop-shadow(0 0 26px #fff); transform: translate(-3px, 4px) scale(1.02); }
+  26% { filter: brightness(1.1); transform: translate(7px, 0) scale(1); }
+  36% { filter: brightness(3) saturate(0.2) drop-shadow(0 0 30px #7df9ff); transform: translate(-8px, -2px) scale(1.03); }
+  46% { filter: brightness(0.5) hue-rotate(-30deg); transform: translate(3px, 3px) scale(0.99); }
+  58% { filter: brightness(2.4) drop-shadow(0 0 24px #b6ecff); transform: translate(-5px, 1px) scale(1.02); }
+  70% { filter: brightness(0.8) contrast(1.4); transform: translate(6px, -4px) scale(1); }
+  82% { filter: brightness(3.4) saturate(0) drop-shadow(0 0 40px #fff); transform: translate(-2px, 2px) scale(1.04); }
+  100% { filter: brightness(4) saturate(0); transform: translate(0, 0) scale(1.05); opacity: 0.6; }
 }
 
 /* ---------- title ---------- */
@@ -179,14 +182,33 @@ img { -webkit-user-drag: none; pointer-events: none; }
 .stat .pip { width: 9px; height: 14px; background: rgba(255, 255, 255, 0.18); border-radius: 2px; }
 .stat .pip.on { background: var(--accent); }
 
+/* garage layout (landscape): top = home / name / track picker; sides = truck carousel; bottom = stats | customise | play */
 #controls {
   position: absolute;
-  bottom: calc(var(--safe-b) + 18px);
+  bottom: calc(var(--safe-b) + 16px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 16px;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(11, 16, 38, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
 }
+#garage .icon-btn.carousel {
+  position: absolute;
+  top: 50%;
+  margin-top: -32px;
+  width: 58px; height: 58px;
+  background: rgba(11, 16, 38, 0.42);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+#garage .icon-btn.carousel.left { left: calc(var(--safe-l) + 16px); }
+#garage .icon-btn.carousel.right { right: calc(var(--safe-r, 0px) + 16px); }
+#garage .icon-btn.carousel svg { width: 46%; height: 46%; stroke-width: 3; }
 
 /* ---------- buttons (icons only) ---------- */
 .icon-btn {
@@ -273,11 +295,11 @@ img { -webkit-user-drag: none; pointer-events: none; }
 /* ---------- garage: mode buttons ---------- */
 #modes {
   position: absolute;
-  right: calc(var(--safe-r, 0px) + 22px);
-  bottom: calc(var(--safe-b) + 18px);
+  right: calc(var(--safe-r, 0px) + 18px);
+  bottom: calc(var(--safe-b) + 16px);
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 #modes .icon-btn { pointer-events: auto; }
 
@@ -486,7 +508,7 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #drive.arena #combo { display: block; }
 
 /* ---- track picker (garage) */
-#trackpick { display: flex; align-items: center; gap: 6px; pointer-events: auto; position: absolute; right: 0; bottom: 100%; margin-bottom: 10px; }
+#trackpick { display: flex; align-items: center; gap: 6px; pointer-events: auto; position: absolute; top: calc(var(--safe-t) + 10px); right: calc(var(--safe-r, 0px) + 12px); }
 #trackpick .icon-btn.small { width: 40px; height: 40px; }
 #trackpick .icon-btn svg { fill: none; stroke: var(--ink); stroke-width: 2.6; }
 #trk-thumb { width: clamp(96px, 22vmin, 132px); height: auto; border-radius: 12px; background: rgba(11, 16, 38, 0.55); border: 2px solid rgba(255, 255, 255, 0.45); }

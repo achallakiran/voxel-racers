@@ -1865,3 +1865,60 @@ test('7b: only the truck that is driven AT the other takes the ram; head-on hurt
   assert.equal(me.hp, 100, 'owner is not hurt'); assert.ok(foe.hp < 100, 'the other truck is');
   assert.ok(res.some((r) => r.index === 1));
 });
+
+// ---------- intro: code text, ADA logo, electric reveal
+import { INTRO_TIMES, bolt2d, zapFrame, createIntro } from '../src/ui/intro.js';
+
+test('intro: timeline runs text in/out, logo in, zap, then hands over, in order', () => {
+  const t = INTRO_TIMES;
+  assert.ok(t.textIn < t.textOut && t.textOut < t.logoIn && t.logoIn < t.zap && t.zap < t.done);
+  assert.ok(t.logoIn - t.textOut >= 0.3, 'a clear gap between the text and the logo');
+  assert.ok(t.done - t.zap >= 0.8 && t.done - t.zap <= 2, 'the electric effect is short');
+});
+
+test('intro: bolts are jagged paths that keep their end points, stay bounded and are repeatable', () => {
+  let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const b = bolt2d(0, 0, 400, 0, rnd, 12, 30);
+  assert.equal(b.length, 13);
+  assert.deepEqual(b[0], { x: 0, y: 0 }); assert.deepEqual(b[12], { x: 400, y: 0 });
+  assert.ok(b.every((p) => Math.abs(p.y) <= 30.0001), 'jitter bounded');
+  assert.ok(b.some((p) => Math.abs(p.y) > 1), 'actually jagged');
+  seed = 7; const again = bolt2d(0, 0, 400, 0, rnd, 12, 30);
+  assert.deepEqual(again, b);
+  const f1 = zapFrame(800, 400, 0.2, rnd); const f2 = zapFrame(800, 400, 1, rnd);
+  assert.ok(f2.length >= f1.length && f1.length >= 1, 'stronger frames carry more bolts');
+});
+
+test('intro: runs its phases on a timer, hands over once, and skip finishes at once without double calls', () => {
+  const log = []; let done = 0;
+  const el = { classList: { _s: new Set(), toggle(c, on = true) { if (on) this._s.add(c); else this._s.delete(c); }, contains(c) { return this._s.has(c); } }, className: '' };
+  const audio = { introText: () => log.push('text'), introLogo: () => log.push('logo'), introZap: () => log.push('zap'), introStop: () => log.push('stop') };
+  const realST = globalThis.setTimeout; const realCT = globalThis.clearTimeout; const realRAF = globalThis.requestAnimationFrame; const realCAF = globalThis.cancelAnimationFrame;
+  const timers = []; let clock = 0;
+  globalThis.setTimeout = (fn, ms) => { const id = timers.length; timers.push({ fn, at: clock + ms, id, live: true }); return id; };
+  globalThis.clearTimeout = (id) => { if (timers[id]) timers[id].live = false; };
+  globalThis.requestAnimationFrame = () => 0; globalThis.cancelAnimationFrame = () => {};
+  try {
+    const intro = createIntro({ el, canvas: { getContext: () => null }, audio, onDone: () => { done++; }, now: () => clock });
+    intro.start();
+    const run = (to) => { for (const t of timers.filter((x) => x.live && x.at <= to).sort((a, b) => a.at - b.at)) { t.live = false; clock = t.at; t.fn(); } clock = to; };
+    run(INTRO_TIMES.textIn * 1000 + 1); assert.ok(el.classList.contains('t-text'));
+    run(INTRO_TIMES.textOut * 1000 + 1); assert.ok(!el.classList.contains('t-text'));
+    run(INTRO_TIMES.logoIn * 1000 + 1); assert.ok(el.classList.contains('t-logo'));
+    run(INTRO_TIMES.zap * 1000 + 1); assert.ok(el.classList.contains('zap'));
+    assert.equal(done, 0);
+    run(INTRO_TIMES.done * 1000 + 1); assert.equal(done, 1); assert.deepEqual(log.filter((x) => x !== 'stop'), ['text', 'logo', 'zap']);
+    intro.skip(); assert.equal(done, 1, 'skip after the end does nothing');
+    intro.start(); intro.skip(); assert.equal(done, 2, 'skip ends a fresh run at once, once'); intro.skip(); assert.equal(done, 2);
+  } finally {
+    globalThis.setTimeout = realST; globalThis.clearTimeout = realCT; globalThis.requestAnimationFrame = realRAF; globalThis.cancelAnimationFrame = realCAF;
+  }
+});
+
+test('intro: the audio has intro and title sounds and every one is a safe no-op before sound is unlocked', async () => {
+  const { createAudio } = await import('../src/audio/sfx.js');
+  const a = createAudio();
+  for (const k of ['introText', 'introLogo', 'introZap', 'introStop', 'grungeHit']) { assert.equal(typeof a[k], 'function', k); a[k](); }
+  assert.equal(a.titleBed(true), false, 'no sound yet, so no bed');
+  assert.equal(a.titleBed(false), false);
+});

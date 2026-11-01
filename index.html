@@ -13,13 +13,12 @@
 <body>
   <canvas id="game" aria-label="Voxel Monsters"></canvas>
 
-  <!-- Intro: logo fades in/out, then ADA STUDIOS PRESENTS fades in/out (plays automatically) -->
+  <!-- Intro: ADA STUDIO PRESENTS in a code font fades in/out, the ADA logo fades in, then an electric effect reveals the title -->
   <div id="intro" class="screen">
-    <img class="emblem" src="assets/logo.jpeg" alt="">
-    <div class="studio">
-      <span class="line1">ADA STUDIOS</span>
-      <span class="line2">PRESENTS</span>
-    </div>
+    <div class="code"><span class="prompt">&gt;</span> <span class="txt">ADA STUDIO PRESENTS</span><span class="cursor">_</span></div>
+    <img class="emblem" src="assets/ada-logo.jpg" alt="">
+    <canvas id="zap"></canvas>
+    <div class="flash"></div>
   </div>
 
   <!-- Title -->
@@ -38,36 +37,36 @@
     <div id="truck-name"></div>
     <div id="truck-blurb"></div>
     <div id="truck-stats"></div>
-    <div id="modes">
-      <button id="btn-arena" class="icon-btn" aria-label="arena">
-        <svg viewBox="0 0 24 24"><path d="M3 18c2-6 4.5-9 9-9s7 3 9 9"/><path d="M3 18h18"/><path d="m12 3 1.2 2.4 2.6.4-1.9 1.8.5 2.6L12 9l-2.4 1.2.5-2.6-1.9-1.8 2.6-.4z"/></svg>
-      </button>
-      <button id="btn-diff" class="icon-btn" data-mode="normal" aria-label="difficulty">
-        <svg viewBox="0 0 24 24"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M12 17l4-5"/></svg>
-        <span class="pips"><i></i><i></i><i></i></span>
-      </button>
-      <div id="trackpick">
+    <div id="trackpick">
         <button id="trk-prev" class="icon-btn small" aria-label="previous track"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg></button>
         <canvas id="trk-thumb" width="132" height="80"></canvas>
         <button id="trk-next" class="icon-btn small" aria-label="next track"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
       </div>
+    <div id="modes">
+      <button id="btn-diff" class="icon-btn" data-mode="normal" aria-label="difficulty">
+        <svg viewBox="0 0 24 24"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M12 17l4-5"/></svg>
+        <span class="pips"><i></i><i></i><i></i></span>
+      </button>
+      <button id="btn-arena" class="icon-btn" aria-label="arena">
+        <svg viewBox="0 0 24 24"><path d="M3 18c2-6 4.5-9 9-9s7 3 9 9"/><path d="M3 18h18"/><path d="m12 3 1.2 2.4 2.6.4-1.9 1.8.5 2.6L12 9l-2.4 1.2.5-2.6-1.9-1.8 2.6-.4z"/></svg>
+      </button>
       <button id="btn-race" class="icon-btn huge" aria-label="race">
         <svg viewBox="0 0 24 24"><path d="M5 21V3"/><path d="M5 4h14l-2.5 4L19 12H5"/><path d="M9 4v8M13 4v8" /></svg>
       </button>
     </div>
+    <button id="btn-prev" class="icon-btn carousel left" aria-label="previous truck">
+      <svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg>
+    </button>
+    <button id="btn-next" class="icon-btn carousel right" aria-label="next truck">
+      <svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg>
+    </button>
     <div id="controls">
-      <button id="btn-prev" class="icon-btn" aria-label="previous truck">
-        <svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" /></svg>
-      </button>
       <button id="btn-paint" class="icon-btn" aria-label="change colour">
         <svg viewBox="0 0 24 24"><path d="M12 3C7 3 3 7 3 12s4 9 9 9c1.7 0 2-1.2 1.3-2.2-.8-1.2 0-2.8 1.5-2.8H18c1.7 0 3-1.3 3-3 0-4.4-4-9-9-9Z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg>
       </button>
       <button id="btn-sus" class="icon-btn" data-mode="normal" aria-label="suspension">
         <svg viewBox="0 0 24 24"><path d="M12 2v3M12 19v3M8 5h8l-8 4h8l-8 4h8l-8 4h8"/></svg>
         <span class="pips"><i></i><i></i><i></i></span>
-      </button>
-      <button id="btn-next" class="icon-btn" aria-label="next truck">
-        <svg viewBox="0 0 24 24"><path d="m9 4 8 8-8 8" /></svg>
       </button>
     </div>
   </div>

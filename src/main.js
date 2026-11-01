@@ -18,6 +18,7 @@ import { TRACKS, getTrackById, validTrack } from './world/tracks.js';
 import { createRace, formatTime, wrapDelta } from './core/race.js';
 import { resolveCollisions } from './physics/collide.js';
 import { createDriver, driverInput, DIFFICULTIES } from './ai/driver.js';
+import { createIntro } from './ui/intro.js';
 import { createBrawler, brawlerInput } from './ai/brawler.js';
 import { ramDamage, applyDamage, blastTrucks } from './physics/damage.js';
 import { createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
@@ -139,16 +140,14 @@ function start() {
     if (state === 'drive') enterDrive();
     else if (prev === 'drive') exitDrive();
     if (state === 'intro') {
-      const intro = $('intro');
-      intro.classList.remove('play');
-      void intro.offsetWidth; // restart CSS animation
-      intro.classList.add('play');
-      introTimer = setTimeout(() => flow.send('done'), 6700);
+      intro.start();
     } else {
-      clearTimeout(introTimer);
+      intro.stop();
     }
+    // title bed: a grungy drone while the title is up (needs sound unlocked by a tap)
+    if (state === 'title') audio.titleBed(true); else audio.titleBed(false);
   });
-  let introTimer = 0;
+  const intro = createIntro({ el: $('intro'), canvas: $('zap'), audio, onDone: () => flow.send('done') });
 
   function tryLandscape() {
     // fullscreen + orientation lock only on touch devices that support it (Android Chrome etc.)
@@ -162,8 +161,14 @@ function start() {
   }
 
   // A tap is the first chance to unlock sound / fullscreen (browsers require a gesture).
-  $('intro').addEventListener('pointerdown', () => { audio.unlock(); flow.send('skip'); });
-  $('btn-play').addEventListener('click', () => { audio.unlock(); tryLandscape(); audio.rev(); flow.send('play'); });
+  // First tap on the intro only unlocks sound (and starts it from the current moment); a tap after that skips.
+  $('intro').addEventListener('pointerdown', () => {
+    const was = audio.ready; audio.unlock();
+    if (!was && audio.ready) intro.resumeAudio(); else { intro.skip(); flow.send('skip'); }
+  });
+  // any tap on the title unlocks sound and starts the title bed
+  document.addEventListener('pointerdown', () => { audio.unlock(); if (flow.state === 'title') audio.titleBed(true); }, { passive: true });
+  $('btn-play').addEventListener('click', () => { audio.unlock(); tryLandscape(); audio.grungeHit(); audio.rev(); flow.send('play'); });
   $('btn-back').addEventListener('click', () => { audio.click(); flow.send('back'); });
 
   // ---- trucks

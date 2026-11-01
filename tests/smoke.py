@@ -106,22 +106,28 @@ def main():
         def op(sel):
             return page.evaluate("(s) => parseFloat(getComputedStyle(document.querySelector(s)).opacity)", sel)
 
-        # logo shows first (studio text not yet visible)
-        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .emblem')).opacity) > 0.9", timeout=4000)
-        check(op('#intro .studio') < 0.1, 'logo is shown first, studio text not yet')
-        shot(page, '02a-intro-logo')
-        # logo fades away
-        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .emblem')).opacity) < 0.05", timeout=5000)
-        check(True, 'logo fades out')
-        # then ADA STUDIOS PRESENTS appears and shows in full
-        page.wait_for_function(
-            "['.line1', '.line2'].every(s => { const e = document.querySelector('#intro ' + s); return e.clientWidth > 0 && e.clientWidth >= e.scrollWidth - 1; })",
-            timeout=6000)
-        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .studio')).opacity) > 0.8", timeout=4000)
-        check(op('#intro .studio') > 0.8 and op('#intro .emblem') < 0.05, 'studio text shows after the logo has faded')
-        studio = page.evaluate("document.querySelector('#intro .line1').textContent + ' ' + document.querySelector('#intro .line2').textContent")
-        check(studio == 'ADA STUDIOS PRESENTS', f'intro text reads "{studio}"')
-        shot(page, '02b-intro-studio')
+        # the code-font line comes first: ADA STUDIO PRESENTS (logo not yet visible)
+        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .code')).opacity) > 0.9", timeout=5000)
+        check(op('#intro .emblem') < 0.1, 'code text shows first, logo not yet')
+        txt = page.evaluate("document.querySelector('#intro .code .txt').textContent")
+        check(txt == 'ADA STUDIO PRESENTS', f'intro text reads "{txt}"')
+        mono = page.evaluate("getComputedStyle(document.querySelector('#intro .code')).fontFamily.toLowerCase()")
+        check('mono' in mono or 'courier' in mono or 'consolas' in mono, f'intro text uses a code font ({mono[:40]})')
+        check(page.evaluate("(() => { const e = document.querySelector('#intro .code'); return e.clientWidth > 0 && e.getBoundingClientRect().right <= innerWidth; })()"), 'intro text fits the screen')
+        shot(page, '02a-intro-code')
+        # text fades out, then the ADA logo fades in
+        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .code')).opacity) < 0.05", timeout=5000)
+        check(True, 'code text fades out')
+        page.wait_for_function("parseFloat(getComputedStyle(document.querySelector('#intro .emblem')).opacity) > 0.9", timeout=5000)
+        check(op('#intro .code') < 0.1, 'ADA logo shows after the text has faded')
+        check(page.evaluate("document.querySelector('#intro .emblem').getAttribute('src')") == 'assets/ada-logo.jpg', 'intro shows the ADA logo')
+        shot(page, '02b-intro-logo')
+        # the electric effect: bolts + flash, then the title
+        page.wait_for_function("document.getElementById('intro').classList.contains('zap')", timeout=6000)
+        page.wait_for_timeout(300)
+        lit = page.evaluate("(() => { const c = document.getElementById('zap'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++; return n; })()")
+        check(lit > 50, f'electric bolts are drawn over the logo ({lit} lit pixels)')
+        shot(page, '02c-intro-zap')
         page.wait_for_function("window.__voxelRacers.flow.state === 'title'", timeout=9000)
         check(True, 'intro auto-advances to title')
 
@@ -143,8 +149,10 @@ def main():
         page2 = browser.new_page(viewport={'width': 844, 'height': 390})
         page2.goto(url)
         page2.wait_for_function("window.__voxelRacers && window.__voxelRacers.flow.state === 'intro'")
+        page2.mouse.click(400, 200)      # first tap unlocks sound and lets the intro play on
+        check(page2.evaluate('window.__voxelRacers.flow.state') == 'intro', 'the first tap unlocks sound without skipping')
         page2.mouse.click(400, 200)
-        check(page2.evaluate('window.__voxelRacers.flow.state') == 'title', 'tapping the intro skips it')
+        check(page2.evaluate('window.__voxelRacers.flow.state') == 'title', 'tapping the intro again skips it')
         page2.close()
 
         # ---------------- title -> garage
