@@ -93,7 +93,37 @@ When riding a loop the ring, the blocks and the pylons sit between the camera an
 
 Order: 4d (small bug) -> 4a (pace) -> 4b (track elements and forks) -> 4c (Volt). Each ends with tests, a push to main and your test.
 
-**Phase 5d — Big arena + squash** (NEXT)
+**Phase 6 — Challenge pass (races)** (PLAN, awaiting your go-ahead; goes before 5d)
+Your feedback: more challenging, rivals should use boosts, meter filled only by powers, more speed and acceleration, suspension modes, real obstacle penalty, more routes and gaps.
+Order: 6a -> 6b -> 6c -> 6d -> 6e. Each step ends with tests, a push to main and your test.
+
+**6a — Nitro economy + rivals chase powers**
+- Remove the passive nitro refill (NITRO_REGEN) for everyone. The meter fills only from canisters (+0.4), pads (small top-up), checkpoints (+0.12) and a skill bonus for clean landings.
+- Rivals steer toward canisters within reach and pads on their route; they share the same canisters, so you can take them first. Rivals use the same meter and no free refill. Start tank: half.
+- More canisters per track (placed on risky lines and after hazards) so the meter is a route decision.
+- Tests: no regen in a stationary truck, meter only rises through the listed sources, rival takes a canister placed near its line, rival never exceeds its meter, every truck still finishes every track.
+
+**6b — Pace**
+- Top speed and acceleration up about 15% for all trucks (formula in arcade.js tuningFor); nitro ratio stays near 1.3x.
+- Re-check loop entry speed, jump distances, landings and corner braking for every track and truck; adjust ramps or the scripted loop entry if needed.
+- Tests: lap-time window per truck and track, loop clears at the lowest speed truck, jump distances land on the intended ramp, rival lap times stay within the window.
+
+**6c — Obstacle and wall penalties** (same rules for rivals)
+- Solid obstacle head-on: lose about 45% speed (was 25%), graze about 10%; walls about 35% (was 20%); smash props cost speed that falls as your speed rises (plough through at speed or nitro for little loss).
+- Heavy hits give a short stall (about 0.4 s of reduced throttle), spark and shake feedback, and dent hit points (races show it as a sputter, no HUD text).
+- Tests: head-on versus graze loss, smash prop cost versus speed, stall ends, rivals get the same penalty, nothing makes a truck unrecoverable.
+
+**6d — Suspension modes (garage only)**
+- Soft, Normal, Stiff, chosen on the garage screen with an icon button next to paint; saved per truck.
+- Soft: better on mud, sand and bumps, more bounce on landings. Stiff: sharper steering, higher top speed on tarmac, slower on rough ground. Maps onto the existing sus params (k, bounce) plus grip and soft-ground multipliers.
+- Tests: three modes give different tuning, saved and restored per truck, surface effects differ as stated, rivals pick a mode at random, all trucks finish all tracks in every mode.
+
+**6e — More routes and gaps**
+- Each track gets 2 to 3 forks (fast risky or safe), plus at least one real jump gap (trench) with a slow detour lane around it; missing the gap drops you in, then respawns you at the lip with a few seconds lost.
+- Rivals choose gap or detour by style and speed; one shortcut per track that needs nitro.
+- Tests: forks rejoin with correct progress and checkpoints, trench jump clears at normal speed and nitro, a miss respawns correctly, detour lane completable by every truck, AI never stuck, minimap draws both routes.
+
+**Phase 5d — Big arena + squash**
 Bigger multi-level stadium, rows of parked cars on the ground that FLATTEN (squash height, tyres pop) when driven over, ramps, a crusher pit; squash score.
 **Phase 5e — Ram + Block** (block shares the brake button; parry window, Batman-style counter cinematic, finisher).
 **Phase 5f — Match formats**: last man standing, group (teams) match, and football group match (big ball, goals, truck teams).
