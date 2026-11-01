@@ -37,9 +37,24 @@ export function driverInput(d, v, tune, track, ctx, dt) {
   const look = 9 + speed * 0.55;
   // wall passages narrow the lane the AI may use; slaloms and islands tell it which side to take
   const lane = track.laneAt ? track.laneAt(n.s + (look * 0.8) / track.length, st.fast && tune.maxSpeed >= 28 ? 'fast' : 'safe') : { limit: track.roadHalf - 2, off: null };
-  let off = lane.off !== null ? lane.off : clamp(d.lane + wobble, -lane.limit, lane.limit);
+  const narrow = clamp(lane.limit / Math.max(1, track.roadHalf - 2), 0.15, 1);   // squeezed lanes: no weaving, no personal drift
+  let off = lane.off !== null ? lane.off : clamp((d.lane + wobble) * narrow, -lane.limit, lane.limit);
   // defensive drivers close the door on a player right behind them
   if (st.block && lane.off === null && ctx.gapAhead > 4 && ctx.gapAhead < 30 && ctx.playerLat !== undefined) off = clamp(ctx.playerLat, -lane.limit, lane.limit);
+  // nitro is a route resource: head for a canister that is close ahead and not yet taken
+  if (lane.off === null && ctx.pickups && v.nitro < 0.9) {
+    let best = null; let bd = 1e9;
+    const fx = Math.sin(v.heading); const fz = Math.cos(v.heading);
+    for (const k of ctx.pickups) {
+      if (k.taken) continue;
+      const dx = k.x - v.x; const dz = k.z - v.z;
+      const ahead = dx * fx + dz * fz;
+      if (ahead < 4 || ahead > 40 + speed) continue;
+      if (Math.abs(dx * fz - dz * fx) > 7) continue;
+      if (ahead < bd) { bd = ahead; best = k; }
+    }
+    if (best) off = clamp(track.nearest(best.x, best.z).d, -lane.limit, lane.limit);
+  }
   const p = track.sampleAt(n.s + look / track.length);
   const tx = p.x + p.tz * off;
   const tz = p.z - p.tx * off;

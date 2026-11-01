@@ -194,6 +194,15 @@ def main():
         cur = page.evaluate('window.__voxelRacers.truckId')
         check(saved['truckId'] == cur and cur in saved['paints'], 'truck + paint saved to localStorage')
 
+        # ---------------- suspension mode (garage only): soft -> stiff -> normal... saved per truck
+        m0 = page.evaluate("document.getElementById('btn-sus').dataset.mode")
+        page.click('#btn-sus')
+        m1 = page.evaluate("document.getElementById('btn-sus').dataset.mode")
+        saved = page.evaluate("JSON.parse(localStorage.getItem('voxel-racers:save'))")
+        check(m0 == 'normal' and m1 == 'stiff' and saved['sus'][cur] == 'stiff', 'suspension button cycles and is saved per truck')
+        page.click('#btn-sus'); page.click('#btn-sus')
+        check(page.evaluate("document.getElementById('btn-sus').dataset.mode") == 'normal', 'suspension cycles back to normal')
+
         # ---------------- drive (Phase 1): joystick + 2 buttons, nitro, 4 cameras
         page.evaluate('window.__voxelRacers.arenaFoes = 0')      # practice round: no rivals while testing the controls
         page.click('#btn-arena', force=True)

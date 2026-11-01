@@ -207,6 +207,12 @@ img { -webkit-user-drag: none; pointer-events: none; }
 .icon-btn.huge { width: clamp(84px, 20vmin, 130px); height: clamp(84px, 20vmin, 130px); border-width: 4px; background: rgba(255, 183, 3, 0.25); }
 .icon-btn:active { transform: scale(0.92); background: rgba(255, 183, 3, 0.35); }
 .icon-btn svg { width: 50%; height: 50%; fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.icon-btn { position: relative; }
+.icon-btn .pips { position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; pointer-events: none; }
+.icon-btn .pips i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.3); }
+#btn-sus[data-mode="soft"] .pips i:nth-child(1),
+#btn-sus[data-mode="normal"] .pips i:nth-child(-n+2),
+#btn-sus[data-mode="stiff"] .pips i { background: var(--accent); }
 .icon-btn.huge svg { fill: var(--ink); stroke: none; }
 
 /* ---------- rotate prompt (portrait only) ---------- */

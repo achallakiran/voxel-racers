@@ -12,7 +12,7 @@ import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
 import { createWorld } from './world/scenes.js';
-import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST } from './physics/arcade.js';
+import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST, RACE_START_NITRO, SUS_MODES } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import { TRACKS, getTrackById, validTrack } from './world/tracks.js';
 import { createRace, formatTime, wrapDelta } from './core/race.js';
@@ -204,6 +204,7 @@ function start() {
     frameCamera();
     save.truckId = truck.id;
     storage.save(save);
+    showSus();
   }
 
   function cyclePaint() {
@@ -219,6 +220,18 @@ function start() {
 
   $('btn-prev').addEventListener('click', () => { audio.click(); showTruck(truckIdx - 1); });
   $('btn-next').addEventListener('click', () => { audio.click(); showTruck(truckIdx + 1); });
+  // suspension mode is a garage choice, saved per truck (soft / normal / stiff)
+  function susMode(truck) { const m = save.sus && save.sus[truck.id]; return SUS_MODES.includes(m) ? m : 'normal'; }
+  function showSus() { $('btn-sus').dataset.mode = susMode(TRUCKS[truckIdx]); }
+  function cycleSus() {
+    const truck = TRUCKS[truckIdx];
+    const next = SUS_MODES[(SUS_MODES.indexOf(susMode(truck)) + 1) % SUS_MODES.length];
+    save.sus = { ...(save.sus || {}), [truck.id]: next };
+    storage.save(save);
+    showSus();
+    audio.click();
+  }
+  $('btn-sus').addEventListener('click', cycleSus);
   $('btn-paint').addEventListener('click', cyclePaint);
 
   canvas.addEventListener('pointerdown', (e) => { if (flow.state === 'drive') return; dragging = true; held = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
@@ -320,7 +333,7 @@ function start() {
   let shake = 0;
   let dustCarry = 0;
   let flameCarry = 0;
-  let nitroPunch = 0;
+  let nitroPunch = 0; let pitT = 0;
   const scaleNow = () => QUALITY_SCALE[save.particles] ?? 1;
   const tmp = new THREE.Vector3();
 
@@ -336,7 +349,7 @@ function start() {
   function enterDrive() {
     const truck = TRUCKS[truckIdx];
     feel = getFeel(truck.id);
-    tune = tuningFor(truck.stats, feel.handling, feel.sus);
+    tune = tuningFor(truck.stats, feel.handling, feel.sus, susMode(truck));
     Object.assign(susp, createSuspension());
     prevVy = 0; prevF = 0;
     const racing = driveMode === 'race';
@@ -348,6 +361,7 @@ function start() {
     if (!racing) { arenaT = createArenaTerrain(); courseTerrain = arenaT; world.props.set(arenaT.props); }
     const s = racing ? TR.gridPose(4) : SANDBOX.start;
     vehicle = createVehicle(s.x, s.z, s.heading, courseTerrain, tune.ride);
+    if (racing) vehicle.nitro = RACE_START_NITRO;
     if (racing) spawnRivals(); else { spawnBrawlers(); match = createMatch({ foes: rivals.length }); }
     $('drive').classList.toggle('arena', !racing);
     playerAcc = racing ? wrapDelta(TR.START_S, TR.nearest(s.x, s.z).s) : 0;
@@ -423,9 +437,10 @@ function start() {
     const slots = [0, 1, 2, 3, 5];
     rivals = others.slice(0, 5).map((t, i) => {
       const f = getFeel(t.id);
-      const rt = tuningFor(t.stats, f.handling, f.sus);
+      const rt = tuningFor(t.stats, f.handling, f.sus, SUS_MODES[Math.floor(rand() * 3)]);
       const sp = TR.gridPose(slots[i]);
       const v = createVehicle(sp.x, sp.z, sp.heading, courseTerrain, rt.ride);
+      v.nitro = RACE_START_NITRO;
       const mesh = createTruckMesh(t);
       mesh.rotation.order = 'YXZ';
       scene.add(mesh);
@@ -441,8 +456,14 @@ function start() {
     playerLat = TR.nearest(vehicle.x, vehicle.z).d;
     const phase = race ? race.phase : 'countdown';
     for (const r of rivals) {
-      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, playerAcc, myAcc: r.acc, gapAhead: (r.acc - playerAcc) * TR.LENGTH, playerLat: playerLat }, dt);
+      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, pickups: courseTerrain.pickups, playerAcc, myAcc: r.acc, gapAhead: (r.acc - playerAcc) * TR.LENGTH, playerLat: playerLat }, dt);
       handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
+      r.pitT = inPit(r.v) ? (r.pitT || 0) + dt : 0;
+      if (r.pitT > 1.2) {
+        const p = safePose(TR.nearest(r.v.x, r.v.z).s, 10);
+        const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, r.tune.ride);
+        nv.nitro = r.v.nitro; Object.assign(r.v, nv); r.pitT = 0;
+      }
     }
     const all = [vehicle, ...rivals.map((r) => r.v)];
     for (const h of resolveCollisions(all)) {
@@ -669,11 +690,20 @@ function start() {
     });
   }
 
+  // dropped into a trench: the truck is put back on the safe lane a few metres before the lip
+  const inPit = (v) => !v.loop && v.grounded && courseTerrain.heightAt(v.x, v.z) < TR.sampleAt(TR.nearest(v.x, v.z).s).y - 2;
+  function safePose(s, back) {
+    const q = s - back / TR.LENGTH;
+    const p = TR.sampleAt(q);
+    const lane = TR.laneAt ? TR.laneAt(q, 'safe') : { off: null };
+    const off = lane.off === null ? 0 : lane.off;
+    return { x: p.x + p.tz * off, z: p.z - p.tx * off, heading: Math.atan2(p.tx, p.tz) };
+  }
   function respawn() {
     if (!race || !vehicle || race.phase !== 'racing') return;
     const n = TR.nearest(vehicle.x, vehicle.z);
-    const p = TR.sampleAt(n.s);
-    const nv = createVehicle(p.x, p.z, Math.atan2(p.tx, p.tz), courseTerrain, tune.ride);
+    const p = safePose(n.s, inPit(vehicle) ? 10 : 0);
+    const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, tune.ride);
     nv.nitro = vehicle.nitro;
     Object.assign(vehicle, nv);
     stuckT = 0;
@@ -907,7 +937,8 @@ function start() {
       if (race.phase === 'racing') {
         const wedged = input.gas > 0.5 && v.grounded && !v.loop && Math.abs(v.f) < 1.0;
         stuckT = wedged ? stuckT + dt : Math.max(0, stuckT - dt * 2);
-        if (!v.loop && (stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2)) respawn();
+        pitT = inPit(v) ? pitT + dt : 0;
+        if (!v.loop && (pitT > 1.2 || stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2)) respawn();
       }
       for (const e of race.drainEvents()) {
         if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }

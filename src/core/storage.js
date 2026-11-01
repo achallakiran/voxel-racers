@@ -4,6 +4,7 @@
 export const DEFAULTS = {
   version: 1,
   truckId: 'crusher',
+  sus: {},               // per-truck suspension mode: { [truckId]: 'soft' | 'normal' | 'stiff' }
   paints: {},            // per-truck colour overrides: { [truckId]: {body, accent, rim} }
   camera: 'iso-follow',
   track: 'greenridge',
@@ -30,7 +31,7 @@ export function createStorage(backing) {
       if (!raw) return { ...DEFAULTS };
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object') return { ...DEFAULTS };
-      return { ...DEFAULTS, ...parsed, paints: { ...(parsed.paints || {}) } };
+      return { ...DEFAULTS, ...parsed, paints: { ...(parsed.paints || {}) }, sus: { ...(parsed.sus || {}) } };
     } catch {
       return { ...DEFAULTS };
     }

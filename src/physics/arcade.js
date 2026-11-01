@@ -17,14 +17,26 @@ export const SURFACES = {
   grass: { grip: 0.65, drag: 0.5, maxMul: 0.82 },
   sand: { grip: 0.55, drag: 0.8, maxMul: 0.7 },
   mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
-  goo: { grip: 0.55, drag: 1.6, maxMul: 0.5 },      // sticky slow patch
+  goo: { grip: 0.5, drag: 2.2, maxMul: 0.4 },      // sticky slow patch
   oil: { grip: 0.16, drag: 0.05, maxMul: 1.0 },     // slippery patch
   pad: { grip: 1.2, drag: 0, maxMul: 1.0 },         // accelerator strip (kick handled in stepVehicle)
 };
-export const PAD_KICK = 7;
+export const PAD_KICK = 9;
 export const PAD_TIME = 1.3;
 export const PICKUP_NITRO = 0.4;
 export const PICKUP_RESPAWN = 12;
+export const PAD_NITRO = 0.05;       // a pad tops the tank up a little
+export const LAND_NITRO = 0.04;      // a clean landing (not a crash) pays a little nitro
+export const RACE_START_NITRO = 0.6;
+export const STALL_TIME = 0.4;       // a hard hit cuts the engine for a moment
+export const SUS_MODES = ['soft', 'normal', 'stiff'];
+// suspension modes: kMul (spring), steer, top speed, roughMul (how much soft ground costs), restMul (bounce)
+const SUS_TUNE = {
+  soft: { kMul: 0.8, steer: 0.95, speed: 0.98, roughMul: 0.55, restMul: 1.25 },
+  normal: { kMul: 1, steer: 1, speed: 1, roughMul: 1, restMul: 1 },
+  stiff: { kMul: 1.3, steer: 1.08, speed: 1.04, roughMul: 1.5, restMul: 0.8 },
+};
+export const PACE = 1.15;
 
 // pickups come back after a while; called once per frame by whoever owns the terrain
 export function tickPickups(terrain, dt) {
@@ -37,19 +49,21 @@ export const NITRO_REGEN = 0.09;
 const TRUCK_RADIUS = 1.3;
 
 // stats are 1..10 (see truck-stats.js)
-export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }, sus = { k: 55, bounce: 1 }) {
-  const K = 7.5 * sus.k;
+export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }, sus = { k: 55, bounce: 1 }, mode = 'normal') {
+  const M = SUS_TUNE[mode] || SUS_TUNE.normal;
+  const K = 7.5 * sus.k * M.kMul;
   return {
     suspK: K,
     suspC: 0.5 * Math.sqrt(K),
     ride: SPRING_REST - GRAVITY / K,        // resting chassis height above the ground
-    restitution: 0.5 + 0.2 * (sus.bounce - 1),
-    maxSpeed: 16 + stats.speed * 2.1,
-    accel: 14 + stats.speed * 1.2 - stats.weight * 0.35,
+    restitution: (0.5 + 0.2 * (sus.bounce - 1)) * M.restMul,
+    roughMul: M.roughMul,
+    maxSpeed: (16 + stats.speed * 2.1) * PACE * M.speed,
+    accel: (14 + stats.speed * 1.2 - stats.weight * 0.35) * PACE,
     brake: 34,
     reverseMax: 7,
     rollDrag: 0.9,
-    steerRate: 2.2 * handling.steer,
+    steerRate: 2.2 * handling.steer * M.steer,
     grip: (2.2 + stats.grip * 0.85) * handling.grip,
     boostMul: 1 + 2.4 * handling.boost,
     boostMax: 1.32,
@@ -63,7 +77,7 @@ export function createVehicle(x, z, heading, terrain, ride = 0.25) {
     yawRate: 0, grounded: true,
     pitch: 0, roll: 0,
     f: 0, l: 0,               // forward / lateral speed (for HUD, wheels, dust)
-    nitro: 1, boostT: 0, loop: null, hp: 100, maxHp: 100, wrecked: false,
+    nitro: 1, stallT: 0, boostT: 0, loop: null, hp: 100, maxHp: 100, wrecked: false,
     fallV: 0, surface: 'dirt', rise: 0, padT: 0,
     steerVis: 0,
   };
@@ -129,10 +143,10 @@ export function stepVehicle(v, input, terrain, tune, dt) {
     v.boostT = Math.max(0, v.boostT - dt);
     v.nitro = Math.max(0, v.nitro - dt / BOOST_TIME);
     if (v.nitro <= 0) v.boostT = 0;
-  } else v.nitro = Math.min(1, v.nitro + NITRO_REGEN * dt);
+  } else if (!terrain.noRegen) v.nitro = Math.min(1, v.nitro + NITRO_REGEN * dt);
   v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
   if (v.surface === 'pad' && v.grounded) {
-    if (v.padT < 0.3) { f += PAD_KICK; events.push({ type: 'pad' }); }
+    if (v.padT < 0.3) { f += PAD_KICK; v.nitro = Math.min(1, v.nitro + PAD_NITRO); events.push({ type: 'pad' }); }
     v.padT = PAD_TIME;
   }
   if (v.padT > 0) v.padT = Math.max(0, v.padT - dt);
@@ -140,10 +154,12 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   const surf = SURFACES[(terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt'] || SURFACES.dirt;
   v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
   // nitro punches through soft ground: mud and sand slow you far less while it burns
-  const maxF = tune.maxSpeed * (boosting ? tune.boostMax : 1) * (boosting ? Math.max(surf.maxMul, 0.92) : surf.maxMul);
+  const rough = (m) => 1 - (1 - m) * (tune.roughMul || 1);
+  const maxF = tune.maxSpeed * (boosting ? tune.boostMax : 1) * (boosting ? Math.max(rough(surf.maxMul), 0.92) : rough(surf.maxMul));
 
   if (v.grounded) {
-    const gas = input.gas || 0;
+    if (v.stallT > 0) v.stallT = Math.max(0, v.stallT - dt);
+    const gas = (input.gas || 0) * (v.stallT > 0 ? 0.25 : 1);
     const brake = input.brake || 0;
     if (gas > 0) {
       if (f < 0) f += tune.brake * dt;
@@ -205,7 +221,8 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       if (o.breakAt && spd >= o.breakAt && -vn0 > 0.25 * spd) {
         // fragile prop: plow straight through it, losing a little speed
         events.push({ type: 'smash', obj: o, power: spd });
-        v.vx *= 0.9; v.vz *= 0.9;
+        const sm = 0.78 + 0.17 * Math.min(1, (spd - o.breakAt) / 12) + (v.boostT > 0 ? 0.03 : 0);
+        v.vx *= sm; v.vz *= sm;
         continue;
       }
       nx = o.x + ux * minD;
@@ -213,7 +230,8 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       const vn = vn0;
       if (vn < 0) {
         v.vx -= 1.25 * vn * ux; v.vz -= 1.25 * vn * uz;
-        const keep = 1 - 0.25 * Math.min(1, -vn / 6);      // a graze keeps its speed, a head-on loses a quarter
+        const keep = 1 - (0.06 + 0.40 * Math.min(1, -vn / 6));   // a graze loses a little, a head-on about 45%
+        if (-vn > 4) { v.stallT = STALL_TIME; events.push({ type: 'stall', power: -vn }); }
         v.vx *= keep; v.vz *= keep;
         events.push({ type: 'hit', power: -vn, obj: o });
       }
@@ -226,7 +244,9 @@ export function stepVehicle(v, input, terrain, tune, dt) {
     const vn = v.vx * wall.nx + v.vz * wall.nz;     // wall.n points out of the playable area
     if (vn > 0) {
       v.vx -= 1.4 * vn * wall.nx; v.vz -= 1.4 * vn * wall.nz;
-      v.vx *= 0.8; v.vz *= 0.8;
+      const wk = 0.8 - 0.15 * Math.min(1, vn / 6);
+      v.vx *= wk; v.vz *= wk;
+      if (vn > 5) v.stallT = STALL_TIME;
       events.push({ type: 'wall', power: vn });
     }
   }
@@ -263,7 +283,10 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   v.grounded = h < SPRING_REST + 0.12;
   if (v.grounded && !wasGrounded) {
     const impact = Math.max(-v.fallV, slam);
-    if (impact > 4) events.push({ type: 'land', power: impact });
+    if (impact > 4) {
+      events.push({ type: 'land', power: impact });
+      if (terrain.noRegen && impact < 14) v.nitro = Math.min(1, v.nitro + LAND_NITRO);
+    }
     v.fallV = 0;
   } else if (v.grounded) {
     v.fallV = 0;

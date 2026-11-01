@@ -93,7 +93,7 @@ When riding a loop the ring, the blocks and the pylons sit between the camera an
 
 Order: 4d (small bug) -> 4a (pace) -> 4b (track elements and forks) -> 4c (Volt). Each ends with tests, a push to main and your test.
 
-**Phase 6 — Challenge pass (races)** (PLAN, awaiting your go-ahead; goes before 5d)
+**Phase 6 — Challenge pass (races)** (DONE, awaiting your test; note: Fortress has one fork, its corridors leave no room for a second)
 Your feedback: more challenging, rivals should use boosts, meter filled only by powers, more speed and acceleration, suspension modes, real obstacle penalty, more routes and gaps.
 Order: 6a -> 6b -> 6c -> 6d -> 6e. Each step ends with tests, a push to main and your test.
 

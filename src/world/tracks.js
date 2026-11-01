@@ -50,6 +50,7 @@ const GREENRIDGE_DEF = {
   },
   walls({ W }) {
     W.fork(0.368, 52, 1, 'brick');                         // split road: risky pads + gap, or sticky goo
+    W.fork(0.66, 52, 1, 'brick');
     for (const [a, o, l] of [[0.03, 0, 8], [0.455, 0, 8], [0.945, -2, 8]]) W.pad(a, o, l, 5.5);
     W.goo(0.2, 3, 10, 5); W.oil(0.16, -3, 10, 5);
     for (const [a, o] of [[0.02, 0], [0.12, 3], [0.25, -3], [0.45, 0], [0.7, 2], [0.84, 0], [0.95, 3]]) W.pickup(a, o);
@@ -122,9 +123,10 @@ const CANYON_DEF = {
     W.barrels(0.135, 3, 3);
     W.tnt(0.95, 0);
     W.fork(0.352, 52, 1, 'brick');
-    for (const [a, o, l] of [[0.03, 0, 8], [0.64, 0, 8], [0.97, 0, 8]]) W.pad(a, o, l, 5.5);
-    W.goo(0.62, 3, 10, 5); W.oil(0.965, 2, 9, 5);
-    for (const [a, o] of [[0.04, 0], [0.12, 2], [0.5, 0], [0.66, 0], [0.76, 0], [0.84, 3], [0.96, -3]]) W.pickup(a, o);
+    W.fork(0.63, 52, 1, 'brick');
+    for (const [a, o, l] of [[0.03, 0, 8], [0.54, 0, 8], [0.97, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.53, 3, 10, 5); W.oil(0.965, 2, 9, 5);
+    for (const [a, o] of [[0.04, 0], [0.12, 2], [0.5, 0], [0.51, 0], [0.76, 0], [0.84, 3], [0.96, -3]]) W.pickup(a, o);
   },
   obstacles(T) {
     const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
@@ -171,7 +173,7 @@ const FORTRESS_DEF = {
     W.slalom(0.165, 4, 12, 'stone');
     W.island(0.24, 36, 'stone', -1);             // gate shuts the left lane
     W.corridor(0.30, 26, 7.4, 'stone');
-    W.corridor(0.45, 40, 8.2, 'stone');
+    W.corridor(0.405, 38, 8.2, 'stone');
     W.island(0.63, 34, 'stone', 1);
     W.slalom(0.735, 5, 12, 'stone');
     W.corridor(0.88, 36, 7.6, 'stone');

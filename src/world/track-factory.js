@@ -280,18 +280,18 @@ export function makeTrack(def) {
       wallLine(s, len, 0, kind);
       const fo = fastSide * 3.7; const so = -fastSide * 3.7;
       // fast lane
-      W.crates(at(-3), fo, 3);
-      W.pad(at(5), fo, 7, 4.6); W.pad(at(14), fo, 7, 4.6);
+      W.pad(at(3), fo, 6, 4.6); W.pad(at(10), fo, 6, 4.6); W.pad(at(17), fo, 6, 4.6);
       const pa = sampleAt(at(23)); const rot = Math.atan2(pa.tx, pa.tz);
       FEATURES.push({ type: 'ramp', kind: 'ramp', ...lateral(at(23), fo, {}), rot, w: 5.2, profile: kicker(5, 1.9) });
       FEATURES.push({ type: 'trench', kind: 'pit', ...lateral(at(28.4), fo, {}), rot, len: 7, w: 5.6, depth: 3.5 });
       FEATURES.push({ type: 'ramp', kind: 'ramp', ...lateral(at(35.4), fo, {}), rot, w: 5.2, profile: landing(10, 1.0) });
+      W.pad(at(41), fo, 6, 4.6); W.pad(at(48), fo, 6, 4.6);
       W.pickup(at(46), fo);
       // safe lane
-      W.goo(at(6), so, 9, 4.6); W.oil(at(20), so, 9, 4.6);
+      W.goo(at(4), so, 16, 4.6); W.oil(at(22), so, 9, 4.6); W.goo(at(34), so, 14, 4.6);
       W.pickup(at(33), so); W.crates(at(40), so, 2);
-      LANES.push({ from: at(-45), to: at(len + 4), limit: 1.4, off: fo, route: 'fast' });
-      LANES.push({ from: at(-45), to: at(len + 4), limit: 1.4, off: so, route: 'safe' });
+      LANES.push({ from: at(-30), to: at(len + 4), limit: 1.4, off: fo, route: 'fast' });
+      LANES.push({ from: at(-30), to: at(len + 4), limit: 1.4, off: so, route: 'safe' });
     },
     // two walls squeezing the road to `gap` wide for `len` units
     corridor(s, len, gap, kind = 'brick') {
@@ -406,7 +406,7 @@ export function makeTrack(def) {
     return { x: p.x + p.tz * lane, z: p.z - p.tx * lane, heading: Math.atan2(p.tx, p.tz), s: START_S - (row * 9) / LENGTH };
   };
 
-  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9 };
+  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {
     const props = PROPS.map((p) => ({ ...p }));
