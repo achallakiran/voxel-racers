@@ -9,7 +9,7 @@ export function createBrawler({ aggression = 0.8, phase = 0 } = {}) {
 
 // others: array of {x,z,vx,vz,wrecked}. radius: arena radius.
 export function brawlerInput(b, v, others, radius, phase, dt) {
-  if (phase !== 'fight') return { steer: 0, gas: 0, brake: 1, boost: false };
+  if (phase !== 'fight') return { steer: 0, gas: 0, brake: 0, boost: false, hold: true };
   const speed = v.vx * Math.sin(v.heading) + v.vz * Math.cos(v.heading);
 
   if (b.reverseT > 0) {

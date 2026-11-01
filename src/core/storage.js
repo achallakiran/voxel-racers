@@ -6,6 +6,7 @@ export const DEFAULTS = {
   truckId: 'crusher',
   paints: {},            // per-truck colour overrides: { [truckId]: {body, accent, rim} }
   camera: 'iso-follow',
+  track: 'greenridge',
   physics: 'arcade',     // 'arcade' | 'realistic'
   autoGas: false,
   volume: 0.8,

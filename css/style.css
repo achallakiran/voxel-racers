@@ -475,3 +475,9 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #drive.arena #results.lost .skull { display: block; }
 #results .skull { width: 56px; height: 56px; margin: 0 auto 6px; fill: none; stroke: #ff8a80; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #drive.arena #combo { display: block; }
+
+/* ---- track picker (garage) */
+#trackpick { display: flex; align-items: center; gap: 6px; pointer-events: auto; position: absolute; right: 0; bottom: 100%; margin-bottom: 10px; }
+#trackpick .icon-btn.small { width: 40px; height: 40px; }
+#trackpick .icon-btn svg { fill: none; stroke: var(--ink); stroke-width: 2.6; }
+#trk-thumb { width: clamp(96px, 22vmin, 132px); height: auto; border-radius: 12px; background: rgba(11, 16, 38, 0.55); border: 2px solid rgba(255, 255, 255, 0.45); }

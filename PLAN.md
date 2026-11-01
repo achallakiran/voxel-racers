@@ -62,10 +62,17 @@ Giant tyres (wheels taller than the body), spring-suspension physics: bouncy lan
 750 m bounded loop with a road (asphalt, dirt, mud strip), grass shoulders, hills, 2 big jumps, whoops, rumble logs, barriers, trees, checkpoints, 3 laps, countdown, minimap, results. Race and Arena are separate garage buttons.
 Tests: track geometry (closed, curvature, clearance, grade), barrier containment, a bot drives a full lap, race rules (order, skipping, backwards), terrain mesh.
 
-**Phase 3 — More tracks + loop** (next)
-Loop-the-loop (with a stick-to-surface rule), then Pine Mud Run, Frozen Loop, Volcano Rim. Pick via a track icon.
-Spline track with banking, hills, jumps, a loop, rocks and cacti, bounded by cliffs and tire walls. Surface-stick rule for the loop. Lap and checkpoint logic, mini-map.
-Tests: spline sampling, lap counting, no-skip checkpoints, loop stick speed.
+**Phase 3 — More tracks, loops, wall passages, nitro rework** (DONE, awaiting your test)
+- 3 tracks via a track factory: Greenridge Run (unchanged), Canyon Loop (desert, 2 loops, corridors, slalom, island with gate, TNT) and Fortress Run (stone, 1 loop, walled passages). Pick with the track icon on the garage screen.
+- Loop-the-loop: scripted ring that guarantees entry speed; AI bots complete every track with all 8 trucks (unit tested).
+- Wall passages: narrow corridors, islands with gates, slaloms of crates/barrels; walls are solid and the tougher ones break at speed.
+- Nitro: ONE tap, drains the meter for the length it burns (4.5 s, costs 15% to start), much stronger boost, each truck has its own flame colour, nozzle count, ignition burst, shake and FOV punch.
+- Bug fix: cars no longer roll backwards during the 1-2-3 countdown (hold input).
+
+**Phase 5d — Big arena + squash** (NEXT)
+Bigger multi-level stadium, rows of parked cars on the ground that FLATTEN (squash height, tyres pop) when driven over, ramps, a crusher pit; squash score.
+**Phase 5e — Ram + Block** (block shares the brake button; parry window, Batman-style counter cinematic, finisher).
+**Phase 5f — Match formats**: last man standing, group (teams) match, and football group match (big ball, goals, truck teams).
 
 **Phase 2.5 — Rivals + richer track** (DONE)
 Flatter road with gentle shoulders (no cliffs to get trapped), sand section, rock garden, 5 potholes (one massive), crushed cars, tyre chicane, gentler jump landings, stronger nitro, closer cameras. 5 AI rivals with collisions, rubber-banding, stuck recovery; position HUD; respawn icon + auto-respawn.

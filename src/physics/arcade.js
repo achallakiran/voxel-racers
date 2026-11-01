@@ -2,6 +2,8 @@
 // The vehicle is a rigid "board" that follows the terrain height function, leaves the ground when
 // the terrain falls away faster than gravity (kickers, crests) and lands with a thump.
 //
+import { atEntry, startLoop, stepLoop, exitLoop } from './loop.js';
+
 // Heading convention: forward = (sin h, cos h). Steering input > 0 turns right (heading decreases).
 
 export const GRAVITY = 30;
@@ -16,8 +18,8 @@ export const SURFACES = {
   sand: { grip: 0.55, drag: 0.8, maxMul: 0.7 },
   mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
 };
-export const BOOST_COST = 0.4;
-export const BOOST_TIME = 4.5;   // one tap burns for 4.5 s
+export const BOOST_COST = 0.15;   // least tank needed to start a boost
+export const BOOST_TIME = 4.5;    // a full tank burns for 4.5 s; the meter drains as it burns
 export const NITRO_REGEN = 0.09;
 const TRUCK_RADIUS = 1.3;
 
@@ -36,8 +38,8 @@ export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }, sus
     rollDrag: 0.9,
     steerRate: 2.2 * handling.steer,
     grip: (2.2 + stats.grip * 0.85) * handling.grip,
-    boostMul: 1 + 2.4 * handling.boost,
-    boostMax: 1.7,
+    boostMul: 1 + 3.2 * handling.boost,
+    boostMax: 1.95,
   };
 }
 
@@ -48,7 +50,7 @@ export function createVehicle(x, z, heading, terrain, ride = 0.25) {
     yawRate: 0, grounded: true,
     pitch: 0, roll: 0,
     f: 0, l: 0,               // forward / lateral speed (for HUD, wheels, dust)
-    nitro: 1, boostT: 0, hp: 100, maxHp: 100, wrecked: false,
+    nitro: 1, boostT: 0, loop: null, hp: 100, maxHp: 100, wrecked: false,
     fallV: 0, surface: 'dirt', rise: 0,
     steerVis: 0,
   };
@@ -73,6 +75,19 @@ function slope(terrain, x, z) {
 // returns a list of events: 'boost' | {type:'land'|'hit'|'wall', power}
 export function stepVehicle(v, input, terrain, tune, dt) {
   const events = [];
+  if (input.hold) input = { steer: 0, gas: 0, brake: 0, boost: false, hold: true };   // countdown / finished: stand still, never reverse
+  // loops: ride the ring while on it, or hop on at the mouth
+  if (terrain.loops && !v.loop && v.grounded) {
+    for (const L of terrain.loops) {
+      if (atEntry(L, v)) { startLoop(v, L); events.push({ type: 'loop' }); break; }
+    }
+  }
+  if (v.loop) {
+    if (input.boost && v.boostT <= 0 && v.nitro >= BOOST_COST) { v.boostT = BOOST_TIME; events.push('boost'); }
+    if (v.boostT > 0) { v.boostT = Math.max(0, v.boostT - dt); v.nitro = Math.max(0, v.nitro - dt / BOOST_TIME); if (v.nitro <= 0) v.boostT = 0; }
+    if (stepLoop(v, { ...input, boost: v.boostT > 0 }, dt) === 'exit') { exitLoop(v, SPRING_REST); events.push({ type: 'loopExit' }); }
+    return events;
+  }
   // steering first: the heading turns but the velocity does not, so the tyres have to catch up (slide)
   const f0 = v.vx * Math.sin(v.heading) + v.vz * Math.cos(v.heading);
   const maxS = tune.maxSpeed;
@@ -91,15 +106,17 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   let f = v.vx * sinH + v.vz * cosH;
   let l = v.vx * cosH - v.vz * sinH;
 
-  // nitro
+  // nitro: one tap lights it, then it burns (draining the meter) until the tank is empty or 4.5 s are up
   if (input.boost && v.boostT <= 0 && v.nitro >= BOOST_COST) {
-    v.nitro -= BOOST_COST;
     v.boostT = BOOST_TIME;
-    if (v.grounded) f += 7;
+    if (v.grounded) f += 12;
     events.push('boost');
   }
-  if (v.boostT > 0) v.boostT = Math.max(0, v.boostT - dt);
-  else v.nitro = Math.min(1, v.nitro + NITRO_REGEN * dt);
+  if (v.boostT > 0) {
+    v.boostT = Math.max(0, v.boostT - dt);
+    v.nitro = Math.max(0, v.nitro - dt / BOOST_TIME);
+    if (v.nitro <= 0) v.boostT = 0;
+  } else v.nitro = Math.min(1, v.nitro + NITRO_REGEN * dt);
   const boosting = v.boostT > 0;
   const surf = SURFACES[(terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt'] || SURFACES.dirt;
   v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
@@ -119,6 +136,7 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       f *= Math.exp(-(tune.rollDrag + surf.drag * (boosting ? 0.3 : 1)) * dt);
       if (Math.abs(f) < 0.05) f = 0;
     }
+    if (input.hold) { f *= Math.exp(-10 * dt); l *= Math.exp(-10 * dt); if (Math.abs(f) < 0.05) f = 0; }
     if (gas > 0 && surf.drag > 0) f *= Math.exp(-surf.drag * 0.5 * dt);   // soft ground drags even under power
     if (f > maxF) f -= (f - maxF) * 1.5 * dt;
 
@@ -146,18 +164,20 @@ export function stepVehicle(v, input, terrain, tune, dt) {
 
   // solid obstacles (fly over them if you are high enough)
   for (const o of terrain.obstacles || []) {
-    if (v.y > o.h - 0.1) continue;
+    if (v.y > (o.y0 || 0) + o.h - 0.1) continue;    // high enough: fly over it (heights are measured from the ground it stands on)
     const dx = nx - o.x;
     const dz = nz - o.z;
-    const d = Math.hypot(dx, dz);
     const minD = o.r + TRUCK_RADIUS;
+    if (dx > minD || dx < -minD || dz > minD || dz < -minD) continue;
+    const d = Math.hypot(dx, dz);
     if (d < minD && d > 1e-6) {
       const ux = dx / d;
       const uz = dz / d;
       const vn0 = v.vx * ux + v.vz * uz;
-      if (o.breakAt && -vn0 >= o.breakAt) {
+      const spd = Math.hypot(v.vx, v.vz);
+      if (o.breakAt && spd >= o.breakAt && -vn0 > 0.25 * spd) {
         // fragile prop: plow straight through it, losing a little speed
-        events.push({ type: 'smash', obj: o, power: -vn0 });
+        events.push({ type: 'smash', obj: o, power: spd });
         v.vx *= 0.9; v.vz *= 0.9;
         continue;
       }
@@ -166,7 +186,8 @@ export function stepVehicle(v, input, terrain, tune, dt) {
       const vn = vn0;
       if (vn < 0) {
         v.vx -= 1.25 * vn * ux; v.vz -= 1.25 * vn * uz;
-        v.vx *= 0.75; v.vz *= 0.75;
+        const keep = 1 - 0.25 * Math.min(1, -vn / 6);      // a graze keeps its speed, a head-on loses a quarter
+        v.vx *= keep; v.vz *= keep;
         events.push({ type: 'hit', power: -vn, obj: o });
       }
     }

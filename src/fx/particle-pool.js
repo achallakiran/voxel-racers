@@ -1,7 +1,7 @@
 // Fixed-capacity particle pool (structure-of-arrays). Pure logic, no three.js,
 // so it is unit tested in Node and reused by the renderer adapter.
 
-export const TINTS = ['black', 'white', 'green', 'gray', 'fire', 'dust'];
+export const TINTS = ['black', 'white', 'green', 'gray', 'fire', 'dust', 'ice', 'acid', 'plasma', 'gold'];
 
 // colour ramps over particle life (t = 0..1), as [r,g,b] 0..255
 const RAMPS = {
@@ -10,6 +10,10 @@ const RAMPS = {
   green: [[190, 255, 120], [90, 200, 70], [40, 90, 50]],
   gray: [[190, 190, 195], [130, 130, 136], [80, 80, 86]],
   fire: [[255, 240, 130], [255, 140, 20], [150, 30, 10]],
+  ice: [[235, 255, 255], [90, 200, 255], [30, 70, 190]],
+  acid: [[230, 255, 150], [120, 255, 40], [20, 110, 40]],
+  plasma: [[255, 220, 255], [200, 80, 255], [70, 20, 160]],
+  gold: [[255, 250, 190], [255, 205, 40], [190, 90, 10]],
   dust: [[236, 204, 156], [205, 165, 112], [160, 124, 86]],
 };
 

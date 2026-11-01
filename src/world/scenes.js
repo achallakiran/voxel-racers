@@ -7,7 +7,7 @@ import * as THREE from '../../lib/three.module.js';
 import {
   SANDBOX, OBSTACLES, terrainColumns, wallRing, heightAt as ARENA_H,
 } from './arena-layout.js';
-import * as TR from './track.js';
+import { loopWorld } from '../physics/loop.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
 import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
@@ -49,7 +49,7 @@ function instanced(parent, list, material, opts = {}) {
   const s = new THREE.Vector3();
   const c = new THREE.Color();
   list.forEach((it, i) => {
-    e.set(0, it.rot || 0, 0);
+    e.set(it.rx || 0, it.ry ?? it.rot ?? 0, 0, 'YXZ');
     q.setFromEuler(e);
     p.set(it.x, it.y, it.z);
     s.set(it.sx, it.sy, it.sz);
@@ -444,12 +444,14 @@ function buildSandbox(group) {
 }
 
 // ------------------------------------------------------------------ race track
-function trackColor(x, z, h) {
-  const smp = TR.sample(x, z);
+function makeTrackColor(T) {
+  const th = T.theme;
+  return function trackColor(x, z, h) {
+  const smp = T.sample(x, z);
   const j = 0.94 + hash2(Math.round(x * 0.8), Math.round(z * 0.8)) * 0.1;
   let c;
   if (smp.onRoad) {
-    const sAlong = smp.s * TR.LENGTH;
+    const sAlong = smp.s * T.LENGTH;
     if (smp.feature) {
       const k = smp.featKind;
       if (k === 'log') c = [0.48, 0.32, 0.19];
@@ -460,28 +462,29 @@ function trackColor(x, z, h) {
     } else if (smp.surf === 'asphalt') {
       c = [0.27, 0.28, 0.31];
       if (Math.abs(smp.d) < 0.8 && Math.floor(sAlong / 5) % 2 === 0) c = [0.94, 0.9, 0.66];
-      else if (Math.abs(smp.ad - (TR.ROAD_HALF - 0.8)) < 0.7) c = [0.95, 0.95, 0.95];
+      else if (Math.abs(smp.ad - (T.ROAD_HALF - 0.8)) < 0.7) c = [0.95, 0.95, 0.95];
     } else if (smp.surf === 'mud') {
       c = [0.33, 0.22, 0.13];
     } else if (smp.surf === 'sand') {
-      c = [0.9, 0.78, 0.47];
-      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.6) c = [0.82, 0.69, 0.4];
+      c = th.sand;
+      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.6) c = th.sand.map((v) => v * 0.9);
     } else {
-      c = [0.72, 0.54, 0.33];
-      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.7) c = [0.62, 0.45, 0.27];   // tyre ruts
+      c = th.dirt;
+      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.7) c = th.rut;   // tyre ruts
     }
     // start / finish line
-    if (smp.s > 1 - 2.6 / TR.LENGTH || smp.s < 1.2 / TR.LENGTH) {
+    if (smp.s > 1 - 2.6 / T.LENGTH || smp.s < 1.2 / T.LENGTH) {
       c = (Math.floor((x + z) * 0.8) & 1) ? [0.95, 0.95, 0.95] : [0.08, 0.08, 0.1];
     }
   } else {
-    const nearRoad = smp.ad < TR.ROAD_HALF + 2.5;
-    c = (Math.floor(x / 2.5) + Math.floor(z / 2.5)) & 1 ? [0.33, 0.64, 0.26] : [0.29, 0.58, 0.24];
-    if (nearRoad) c = [0.55, 0.48, 0.3];                    // dusty road edge
-    if (smp.ad > TR.BARRIER + 4) c = [0.26, 0.5, 0.23];
+    const nearRoad = smp.ad < T.ROAD_HALF + 2.5;
+    c = (Math.floor(x / 2.5) + Math.floor(z / 2.5)) & 1 ? th.a : th.b;
+    if (nearRoad) c = th.edge;                    // dusty road edge
+    if (smp.ad > T.BARRIER + 4) c = th.far;
   }
   const k = j * (0.9 + Math.min(1, h * 0.012));
   return [c[0] * k, c[1] * k, c[2] * k];
+  };
 }
 
 function meshFrom(data, material) {
@@ -495,8 +498,9 @@ function meshFrom(data, material) {
   return m;
 }
 
-function buildTrack(group) {
-  const S = TR.SAMPLES;
+function buildTrack(group, T) {
+  const trackColor = makeTrackColor(T);
+  const S = T.SAMPLES;
   const minX = Math.min(...S.map((p) => p.x)); const maxX = Math.max(...S.map((p) => p.x));
   const minZ = Math.min(...S.map((p) => p.z)); const maxZ = Math.max(...S.map((p) => p.z));
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -505,7 +509,7 @@ function buildTrack(group) {
   const fx0 = Math.floor((minX - R) / fineCell) * fineCell; const fz0 = Math.floor((minZ - R) / fineCell) * fineCell;
   const fine = buildColumns({
     x0: fx0, z0: fz0, nx: Math.ceil((maxX + R - fx0) / fineCell), nz: Math.ceil((maxZ + R - fz0) / fineCell), cell: fineCell, quant: 0.25,
-    heightAt: TR.heightAt, colorAt: trackColor, include: (x, z) => TR.nearest(x, z).dist < R,
+    heightAt: T.heightAt, colorAt: trackColor, include: (x, z) => T.nearest(x, z).dist < R,
   });
   group.add(meshFrom(fine, mat));
   const far = 150;
@@ -513,22 +517,47 @@ function buildTrack(group) {
   const cx0 = Math.floor((minX - far) / cc) * cc; const cz0 = Math.floor((minZ - far) / cc) * cc;
   const coarse = buildColumns({
     x0: cx0, z0: cz0, nx: Math.ceil((maxX + far - cx0) / cc), nz: Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
-    heightAt: TR.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => TR.nearest(x, z).dist >= R - 4,
+    heightAt: T.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => T.nearest(x, z).dist >= R - 4,
   });
   group.add(meshFrom(coarse, mat));
 
   // barriers
-  const bar = TR.barrierLayout();
+  const bar = T.barrierLayout();
   instanced(group, bar.map((b) => ({ x: b.x, y: b.y + 0.45, z: b.z, sx: 0.6, sy: 0.9, sz: 1.62, rot: b.rot, color: b.c ? '#e63946' : '#f1f1f1' })),
     new THREE.MeshLambertMaterial(), { cast: false });
 
   // trees beyond the barriers
-  const trees = TR.sceneryLayout();
+  const trees = T.sceneryLayout();
   const trunks = []; const leaves = [];
   for (const t of trees) {
     const sc = t.scale;
-    trunks.push({ x: t.x, y: t.y + 0.7 * sc, z: t.z, sx: 0.55 * sc, sy: 1.4 * sc, sz: 0.55 * sc, color: '#6b4a2b' });
     const g = 0.75 + t.tint * 0.3;
+    if (t.type === 'cactus') {
+      const green = new THREE.Color('#4f9a45').multiplyScalar(g);
+      trunks.push({ x: t.x, y: t.y + 1.7 * sc, z: t.z, sx: 0.8 * sc, sy: 3.4 * sc, sz: 0.8 * sc, color: green });
+      trunks.push({ x: t.x + 0.9 * sc, y: t.y + 2.0 * sc, z: t.z, sx: 1.0 * sc, sy: 0.6 * sc, sz: 0.6 * sc, color: green });
+      trunks.push({ x: t.x + 1.3 * sc, y: t.y + 2.8 * sc, z: t.z, sx: 0.6 * sc, sy: 1.6 * sc, sz: 0.6 * sc, color: green });
+      trunks.push({ x: t.x - 0.9 * sc, y: t.y + 1.5 * sc, z: t.z, sx: 1.0 * sc, sy: 0.6 * sc, sz: 0.6 * sc, color: green });
+      trunks.push({ x: t.x - 1.3 * sc, y: t.y + 2.2 * sc, z: t.z, sx: 0.6 * sc, sy: 1.4 * sc, sz: 0.6 * sc, color: green });
+      continue;
+    }
+    if (t.type === 'mesa') {
+      const rock = new THREE.Color('#b8643a').multiplyScalar(g);
+      trunks.push({ x: t.x, y: t.y + 1.4 * sc, z: t.z, sx: 8 * sc, sy: 2.8 * sc, sz: 6 * sc, color: rock });
+      trunks.push({ x: t.x, y: t.y + 3.6 * sc, z: t.z, sx: 6 * sc, sy: 1.8 * sc, sz: 4.6 * sc, color: rock.clone().multiplyScalar(1.1) });
+      trunks.push({ x: t.x, y: t.y + 5.0 * sc, z: t.z, sx: 4 * sc, sy: 1.2 * sc, sz: 3.2 * sc, color: rock.clone().multiplyScalar(1.2) });
+      continue;
+    }
+    if (t.type === 'tower') {
+      const stone = new THREE.Color('#8e8f96').multiplyScalar(g);
+      trunks.push({ x: t.x, y: t.y + 4.5 * sc, z: t.z, sx: 2.6 * sc, sy: 9 * sc, sz: 2.6 * sc, color: stone });
+      trunks.push({ x: t.x, y: t.y + 9.4 * sc, z: t.z, sx: 3.4 * sc, sy: 1.0 * sc, sz: 3.4 * sc, color: stone.clone().multiplyScalar(0.85) });
+      for (const [ox, oz] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) trunks.push({ x: t.x + ox * sc, y: t.y + 10.2 * sc, z: t.z + oz * sc, sx: 0.8 * sc, sy: 0.8 * sc, sz: 0.8 * sc, color: stone });
+      leaves.push({ x: t.x, y: t.y + 11.4 * sc, z: t.z, sx: 0.2 * sc, sy: 1.8 * sc, sz: 0.2 * sc, color: '#222' });
+      leaves.push({ x: t.x + 0.6 * sc, y: t.y + 12 * sc, z: t.z, sx: 1.2 * sc, sy: 0.8 * sc, sz: 0.1 * sc, color: '#d62828' });
+      continue;
+    }
+    trunks.push({ x: t.x, y: t.y + 0.7 * sc, z: t.z, sx: 0.55 * sc, sy: 1.4 * sc, sz: 0.55 * sc, color: '#6b4a2b' });
     const green = new THREE.Color('#2f7d32').multiplyScalar(g);
     if (t.type === 'pine') {
       leaves.push({ x: t.x, y: t.y + 1.9 * sc, z: t.z, sx: 3.0 * sc, sy: 1.1 * sc, sz: 3.0 * sc, color: green });
@@ -543,8 +572,8 @@ function buildTrack(group) {
 
   // roadside rocks and tyre stacks (solid)
   const rocks = []; const stacks = []; const cars = [];
-  for (const o of TR.OBSTACLES) {
-    const y0 = TR.heightAt(o.x, o.z);
+  for (const o of T.OBSTACLES) {
+    const y0 = T.heightAt(o.x, o.z);
     if (o.type === 'boulder') {
       const cell = 0.42;
       const n = Math.ceil(o.r / cell);
@@ -566,14 +595,61 @@ function buildTrack(group) {
   instanced(group, stacks, new THREE.MeshLambertMaterial(), { cast: true });
   instanced(group, cars, new THREE.MeshLambertMaterial(), { cast: true });
 
+  // wall passages: solid brick / stone blocks in lines
+  const wallBoxes = [];
+  const wallBase = { brick: [0.66, 0.33, 0.24], stone: [0.55, 0.55, 0.58] };
+  for (const w of T.WALLS) {
+    const base = wallBase[w.kind] || wallBase.brick;
+    const shade = 0.86 + ((Math.round(w.x * 3) + Math.round(w.z * 5)) & 7) * 0.03;
+    const col = new THREE.Color(base[0] * shade, base[1] * shade, base[2] * shade);
+    wallBoxes.push({ x: w.x, y: w.y0 + w.h / 2 - 0.1, z: w.z, sx: 1.7, sy: w.h, sz: 1.6, rot: w.rot, color: col });
+    wallBoxes.push({ x: w.x, y: w.y0 + w.h + 0.12, z: w.z, sx: 1.9, sy: 0.28, sz: 1.8, rot: w.rot, color: col.clone().multiplyScalar(1.18) });
+  }
+  instanced(group, wallBoxes, new THREE.MeshLambertMaterial(), { cast: true });
+
+  // loops: a ribbon ring with striped rails, support pylons and a boost pad on the approach
+  const ring = []; const rails = []; const pylons = []; const pads = [];
+  T.LOOPS.forEach((L) => {
+    const hd = Math.atan2(L.tx, L.tz);
+    const seg = 64;
+    for (let i = 0; i < seg; i++) {
+      const th = ((i + 0.5) / seg) * Math.PI * 2;
+      const pt = loopWorld(L, th, 0);
+      const ph = pt.phi;
+      const nIn = { f: -Math.sin(ph), y: Math.cos(ph) };           // inward normal in the (forward, up) plane
+      const len = (pt.ds * Math.PI * 2 / seg) * 1.15;
+      const at = (off, lat) => ({ x: pt.x + L.tx * nIn.f * off + L.tz * lat, y: pt.y + nIn.y * off, z: pt.z + L.tz * nIn.f * off - L.tx * lat });
+      const c = at(-0.3, 0);
+      ring.push({ x: c.x, y: c.y, z: c.z, sx: L.halfW * 2 + 1.0, sy: 0.6, sz: len, rx: -ph, ry: hd, color: i % 2 ? '#2d2f36' : '#34363e' });
+      for (const side of [-1, 1]) {
+        const r = at(0.55, side * (L.halfW + 0.35));
+        rails.push({ x: r.x, y: r.y, z: r.z, sx: 0.5, sy: 1.3, sz: len, rx: -ph, ry: hd, color: (i >> 1) & 1 ? '#ffd60a' : '#1d1d22' });
+      }
+    }
+    for (const th of [Math.PI * 0.5, Math.PI, Math.PI * 1.5]) {
+      const pt = loopWorld(L, th, 0);
+      for (const side of [-1, 1]) {
+        const x = pt.x + L.tz * side * (L.halfW + 1.3); const z = pt.z - L.tx * side * (L.halfW + 1.3);
+        const h = pt.y - L.y0 - 0.6;
+        pylons.push({ x, y: L.y0 + h / 2, z, sx: 1.1, sy: h, sz: 1.1, rot: hd, color: '#8b8d95' });
+      }
+    }
+    for (let k = 0; k < 4; k++) pads.push({ x: L.x - L.tx * (3 + k * 2.2), y: L.y0 + 0.06, z: L.z - L.tz * (3 + k * 2.2), sx: L.halfW * 2 - 1, sy: 0.12, sz: 1.1, rot: hd, color: k % 2 ? '#ffd60a' : '#ff8a00' });
+  });
+  const ringMat = new THREE.MeshLambertMaterial();
+  instanced(group, ring, ringMat, { cast: true, receive: true });
+  instanced(group, rails, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, pylons, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, pads, new THREE.MeshLambertMaterial({ emissive: new THREE.Color('#553300') }), { receive: true });
+
   // gates: start/finish arch + three checkpoint arches
   const gateMat = (c) => lambert(c);
-  TR.CHECKPOINTS.forEach((cs, idx) => {
-    const p = TR.sampleAt(cs);
+  T.CHECKPOINTS.forEach((cs, idx) => {
+    const p = T.sampleAt(cs);
     const g = new THREE.Group();
     g.position.set(p.x, p.y, p.z);
     g.rotation.y = Math.atan2(p.tx, p.tz);
-    const w = TR.ROAD_HALF + 0.9;
+    const w = T.ROAD_HALF + 0.9;
     const col = idx === 0 ? '#f1f1f1' : '#4cc9f0';
     for (const side of [-1, 1]) {
       const post = new THREE.Mesh(UNIT, gateMat(idx === 0 ? '#222' : '#1d3557'));
@@ -645,7 +721,7 @@ function buildPropMeshes(group) {
       this.clear();
       for (const p of props) {
         const m = propMesh(p);
-        m.position.set(p.x, ARENA_H(p.x, p.z), p.z);
+        m.position.set(p.x, p.y0 !== undefined ? p.y0 : ARENA_H(p.x, p.z), p.z);
         m.rotation.y = p.rot || 0;
         group.add(m); byId.set(p.id, m);
       }
@@ -682,11 +758,10 @@ export function createWorld(scene, lights) {
   scene.add(sandbox);
   const sbStats = buildSandbox(sandbox);
   const propGroup = new THREE.Group();
-  sandbox.add(propGroup);
+  scene.add(propGroup);
   const propMeshes = buildPropMeshes(propGroup);
-  const trackGroup = new THREE.Group();
-  trackGroup.visible = false;
-  scene.add(trackGroup);
+  const trackGroups = new Map();     // track id -> { group, stats }
+  let activeTrack = null;
   let trackStats = null;
   let course = 'arena';
 
@@ -709,8 +784,8 @@ export function createWorld(scene, lights) {
     arena.cloudMat.color.set(racing ? '#ffffff' : '#ffd9e0');
     skyDay.visible = racing;
     sandbox.visible = d && course === 'arena';
-    trackGroup.visible = d && course === 'race';
-    groundMat.color.set(d ? (course === 'race' ? '#8db36a' : '#cfa57e') : '#ffd9b3');
+    for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
+    groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
     scene.background = new THREE.Color(g ? '#16161e' : (racing ? '#bfe3fb' : '#ffb35a'));
     scene.fog = g ? fogGar : (racing ? fogDay : fogOut);
@@ -728,9 +803,23 @@ export function createWorld(scene, lights) {
       spot.visible = false;
     }
   }
-  function setCourse(next) {
+  function groundFor(track) {
+    if (!track || track.id === 'greenridge') return '#8db36a';
+    const f = track.theme.far;
+    return `#${new THREE.Color(f[0] * 0.95, f[1] * 0.95, f[2] * 0.95).getHexString()}`;
+  }
+  function setCourse(next, track) {
     course = next === 'race' ? 'race' : 'arena';
-    if (course === 'race' && !trackStats) trackStats = buildTrack(trackGroup);
+    if (course === 'race' && track) {
+      activeTrack = track;
+      if (!trackGroups.has(track.id)) {
+        const group = new THREE.Group();
+        group.visible = false;
+        scene.add(group);
+        trackGroups.set(track.id, { group, stats: buildTrack(group, track) });
+      }
+      trackStats = trackGroups.get(track.id).stats;
+    }
     if (mode === 'drive') setMode('drive');
   }
   setMode('outdoor');

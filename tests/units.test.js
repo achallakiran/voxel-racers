@@ -390,8 +390,9 @@ test('physics: nitro boosts speed past the normal limit and uses energy', () => 
   run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 6);
   const events = stepVehicle(v, { steer: 0, gas: 1, brake: 0, boost: true }, FLAT, tune, DT);
   assert.ok(events.includes('boost'));
-  assert.ok(Math.abs(v.nitro - (1 - BOOST_COST)) < 0.02);
+  assert.ok(v.boostT > 4, 'one tap lights a long burn');
   run(v, { steer: 0, gas: 1, brake: 0 }, FLAT, 1.2);
+  assert.ok(v.nitro < 0.8 && v.nitro > 0.6, `meter drains while it burns (${v.nitro})`);
   assert.ok(v.f > tune.maxSpeed * 1.05, `boosted ${v.f}`);
   // not enough energy: no boost
   const w = createVehicle(0, 0, 0, FLAT);
@@ -899,7 +900,37 @@ test('ai: holds still during the countdown', () => {
   const v = createVehicle(sp.x, sp.z, sp.heading, TRK.terrain, tune.ride);
   const input = driverInput(d, v, tune, TRACK_API, { phase: 'countdown' }, DT);
   assert.equal(input.gas, 0);
-  assert.equal(input.brake, 1);
+  assert.equal(input.hold, true);
+});
+
+test('hold: standing still during a countdown - never rolls backwards (brake alone would reverse)', () => {
+  const tune = tuningFor(STATS);
+  const v = createVehicle(0, 0, 0, FLAT);
+  for (let i = 0; i < 180; i++) stepVehicle(v, { gas: 0, brake: 0, hold: true, steer: 1 }, FLAT, tune, DT);
+  assert.ok(Math.abs(v.f) < 0.1 && Math.abs(v.z) < 0.2, `moved to ${v.z}`);
+  const w = createVehicle(0, 0, 0, FLAT);
+  for (let i = 0; i < 180; i++) stepVehicle(w, { gas: 0, brake: 1 }, FLAT, tune, DT);
+  assert.ok(w.z < -1, 'plain brake from rest does reverse (the bug the hold flag fixes)');
+});
+
+test('nitro: the meter drains smoothly for the whole burn and ends when empty', () => {
+  const tune = tuningFor(STATS);
+  const v = createVehicle(0, 0, 0, FLAT);
+  v.nitro = 0.5;
+  stepVehicle(v, { gas: 1, boost: true }, FLAT, tune, DT);
+  let burn = 0;
+  for (let i = 0; i < 60 * 6; i++) { stepVehicle(v, { gas: 1 }, FLAT, tune, DT); if (v.boostT > 0) burn++; }
+  assert.ok(burn / 60 > 2 && burn / 60 < 2.5, `half a tank burns ~2.25 s (${burn / 60})`);
+  assert.ok(v.nitro < 0.5 + 0.09 * 4 + 0.05, 'and the meter was empty at the end');
+  // more powerful than before: top speed over 1.8x
+  const t = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => 'asphalt' };
+  const a = createVehicle(0, 0, 0, t);
+  run(a, { gas: 1 }, t, 8, tune);
+  const base = a.f;
+  stepVehicle(a, { gas: 1, boost: true }, t, tune, DT);
+  let peak = 0;
+  for (let i = 0; i < 240; i++) { stepVehicle(a, { gas: 1 }, t, tune, DT); peak = Math.max(peak, a.f); }
+  assert.ok(peak > base * 1.8, `boost peak ${peak} vs ${base}`);
 });
 
 test('track: grid slots are on the road, behind the line, in two columns', () => {
@@ -965,7 +996,7 @@ import { createBrawler, brawlerInput } from '../src/ai/brawler.js';
 import { DebrisPool, burst } from '../src/fx/debris.js';
 import { BOOST_TIME } from '../src/physics/arcade.js';
 
-test('nitro: a single tap burns for 4+ seconds and the tank still allows two taps', () => {
+test('nitro: a single tap burns for 4+ seconds', () => {
   assert.ok(BOOST_TIME >= 4);
   const tune = tuningFor(STATS);
   const t = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => 'asphalt' };
@@ -975,11 +1006,6 @@ test('nitro: a single tap burns for 4+ seconds and the tank still allows two tap
   let boosting = 0;
   for (let i = 0; i < 60 * 6; i++) { stepVehicle(v, { gas: 1 }, t, tune, DT); if (v.boostT > 0) boosting++; }
   assert.ok(boosting / 60 > 4, `burned for ${boosting / 60}s`);
-  const w = createVehicle(0, 0, 0, t);
-  stepVehicle(w, { gas: 1, boost: true }, t, tune, DT);
-  w.boostT = 0;
-  stepVehicle(w, { gas: 1, boost: true }, t, tune, DT);
-  assert.ok(w.boostT > 0, 'second tap works');
 });
 
 test('damage: bumps do nothing, hard rams hurt, head-on hurts less than being hit from behind', () => {
@@ -1178,4 +1204,203 @@ test('debris: chunks fly, land on the ground, settle and expire; the pool never 
   assert.equal(pool.alive, 0);
   burst(pool, { x: 0, y: 0, z: 0, colors: [1], count: 500 });
   assert.equal(pool.alive, 50, 'capped at capacity');
+});
+
+// ---------- Phase 3: loops
+import { loopPoint, loopWorld, atEntry, TWO_PI } from '../src/physics/loop.js';
+const LOOP = { x: 0, z: 10, tx: 0, tz: 1, y0: 0, R: 9, k: 2.4, halfW: 6, vmin: 22, gl: 9 };
+
+test('loop: the curve is a real loop - starts level, goes upside down at the top, returns level ahead', () => {
+  const a = loopPoint(LOOP, 0); const top = loopPoint(LOOP, Math.PI); const end = loopPoint(LOOP, TWO_PI);
+  assert.ok(Math.abs(a.y) < 1e-9 && Math.abs(a.phi) < 1e-9);
+  assert.ok(Math.abs(top.y - 18) < 1e-9, 'top is 2R up');
+  assert.ok(Math.abs(top.phi - Math.PI) < 1e-6, 'upside down at the top');
+  assert.ok(Math.abs(end.y) < 1e-9 && Math.abs(end.phi - TWO_PI) < 1e-6);
+  assert.ok(end.fwd > 14 && end.fwd < 16, 'exit is ahead of the entry');
+  let prev = 0;
+  for (let t = 0.01; t <= TWO_PI; t += 0.01) { const p = loopPoint(LOOP, t); assert.ok(Math.abs(p.phi - prev) < 0.2, 'tilt turns smoothly'); prev = p.phi; }
+});
+
+test('loop: a truck entering the mouth rides the ring, flips over, and drives out the far side', () => {
+  const tune = tuningFor(STATS);
+  const terr = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => 'asphalt', loops: [LOOP] };
+  const v = createVehicle(0, 3, 0, terr);
+  v.vz = 12;                                             // slow: the entry pad lifts it to vmin
+  let maxY = 0; let maxPitch = 0; let entered = false; let exited = false; let minSp = 99;
+  for (let i = 0; i < 60 * 8; i++) {
+    for (const e of stepVehicle(v, { gas: 1 }, terr, tune, DT)) { if (e.type === 'loop') entered = true; if (e.type === 'loopExit') exited = true; }
+    maxY = Math.max(maxY, v.y); maxPitch = Math.max(maxPitch, v.pitch);
+    if (v.loop) minSp = Math.min(minSp, v.loop.sp);
+    if (exited) break;
+  }
+  assert.ok(entered && exited, 'entered and exited');
+  assert.ok(maxY > 17, `reached the top (${maxY})`);
+  assert.ok(maxPitch > 3.0, 'upside down');
+  assert.ok(minSp > 10, `never stalls (${minSp})`);
+  assert.ok(v.grounded && v.loop === null && v.pitch === 0);
+  assert.ok(v.z > 10 + 14, `out the far side (${v.z})`);
+  assert.ok(Math.abs(v.x) < 0.5 && v.f > 15, `heading on at speed (${v.f})`);
+});
+
+test('loop: you can steer inside it (stay within the ring) and trucks not heading in do not trigger it', () => {
+  const tune = tuningFor(STATS);
+  const terr = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => 'asphalt', loops: [LOOP] };
+  const v = createVehicle(0, 5, 0, terr); v.vz = 20;
+  let maxLat = 0;
+  for (let i = 0; i < 60 * 8; i++) { stepVehicle(v, { gas: 1, steer: 1 }, terr, tune, DT); if (v.loop) maxLat = Math.max(maxLat, Math.abs(v.x)); }
+  assert.ok(maxLat > 2 && maxLat <= LOOP.halfW, `steered inside the ring (${maxLat})`);
+  const w = createVehicle(30, 10, Math.PI / 2, terr); w.vx = 20;
+  assert.equal(atEntry(LOOP, w), false);
+  const back = createVehicle(0, 10, Math.PI, terr); back.vz = -20;
+  assert.equal(atEntry(LOOP, back), false, 'driving the wrong way through the mouth does nothing');
+});
+
+// ---------- Phase 3: track roster, loops on tracks, wall passages
+import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
+
+const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
+
+test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
+  assert.equal(TRACKS.length, 3);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress']);
+  assert.equal(getTrackById('canyon').name, 'Looper Canyon');
+  assert.equal(getTrackById('nope').id, 'greenridge');
+  assert.ok(validTrack('fortress') && !validTrack('x'));
+});
+
+for (const T of TRACKS) {
+  test(`track ${T.id}: closed, even spacing, gentle corners, level enough, grid on the road`, () => {
+    const S = T.SAMPLES; const n = S.length;
+    assert.ok(T.LENGTH > 650 && T.LENGTH < 950);
+    let minR = 1e9;
+    for (let i = 0; i < n; i++) {
+      const a = S[(i + n - 3) % n]; const b = S[i]; const c = S[(i + 3) % n];
+      const ab = Math.hypot(b.x - a.x, b.z - a.z); const bc = Math.hypot(c.x - b.x, c.z - b.z); const ca = Math.hypot(a.x - c.x, a.z - c.z);
+      const area = Math.abs((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x)) / 2;
+      if (area > 1e-6) minR = Math.min(minR, (ab * bc * ca) / (4 * area));
+      assert.ok(Math.hypot(b.x - S[(i + 1) % n].x, b.z - S[(i + 1) % n].z) > 1.5 && Math.hypot(b.x - S[(i + 1) % n].x, b.z - S[(i + 1) % n].z) < 2.6, 'even spacing');
+    }
+    assert.ok(minR > 17, `min corner radius ${minR}`);
+    const ys = S.map((p) => p.y);
+    assert.ok(Math.min(...ys) > 1 && Math.max(...ys) - Math.min(...ys) < 5, 'road stays low');
+    for (let slot = 0; slot < 6; slot++) {
+      const p = T.gridPose(slot);
+      assert.ok(Math.abs(T.nearest(p.x, p.z).d) < T.ROAD_HALF - 1, 'grid slot on the road');
+      assert.ok(!T.terrain.obstacles.some((o) => Math.hypot(o.x - p.x, o.z - p.z) < o.r + 3), `grid slot ${slot} clear of obstacles`);
+    }
+    for (const c of T.CHECKPOINTS) assert.ok(!T.LOOPS.some((L) => c > L.s - 0.02 && c < L.endS + 0.02), 'no checkpoint inside a loop');
+  });
+
+  test(`track ${T.id}: every truck can lap it with the AI - through loops, passages and slaloms, without getting stuck`, () => {
+    for (const tk of TRUCKS) {
+      const feel = getFeel(tk.id); const tune = tuningFor(tk.stats, feel.handling, feel.sus);
+      const terr = T.freshTerrain();
+      const sp = T.gridPose(1);
+      const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride);
+      const d = createDriver({ skill: 0.95, lane: 2 });
+      let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let stuck = 0; let loops = 0; let hits = 0;
+      for (let i = 0; i < 60 * 260 && acc < 1; i++) {
+        const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
+        for (const e of stepVehicle(v, input, terr, tune, DT)) { if (e.type === 'loop') loops++; if (e.type === 'hit') hits++; }
+        const n = T.nearest(v.x, v.z);
+        acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
+        if ((v.grounded || v.loop) && Math.abs(v.f) < 0.5) stuck += DT;
+      }
+      assert.ok(acc >= 0.98, `${tk.id} on ${T.id}: ${(acc * 100).toFixed(0)}% in ${time.toFixed(0)}s`);
+      assert.ok(time < 170, `${tk.id} on ${T.id}: lap ${time.toFixed(0)}s`);
+      assert.ok(stuck < 8, `${tk.id} on ${T.id}: stuck ${stuck.toFixed(1)}s`);
+      assert.equal(loops, T.LOOPS.length, `${tk.id} on ${T.id}: rode every loop (${loops})`);
+    }
+  });
+}
+
+test('tracks: new tracks have loops on dead-straight road, level under the ring, entry on the road', () => {
+  for (const T of TRACKS.slice(1)) {
+    assert.ok(T.LOOPS.length >= 1);
+    for (const L of T.LOOPS) {
+      for (let k = 0; k <= 10; k++) {
+        const p = T.sampleAt(L.s + (L.len / T.LENGTH) * (k / 10));
+        assert.ok(Math.abs((p.x - L.x) * L.tz - (p.z - L.z) * L.tx) < 0.5, 'road is straight under the ring');
+        assert.ok(Math.abs(p.y - L.y0) < 0.05, 'road is level under the ring');
+      }
+      assert.ok(Math.abs(T.nearest(L.x, L.z).d) < 0.3, 'entry is on the centre line');
+      assert.ok(L.R * 2 > 14 && L.vmin > 15);
+    }
+  }
+  assert.equal(TRACKS[1].LOOPS.length, 2, 'Looper Canyon has two loops');
+});
+
+test('tracks: wall passages are solid, clear of loops/jumps/the grid; gates and shortcuts are smashable', () => {
+  for (const T of TRACKS.slice(1)) {
+    assert.ok(T.WALLS.length > 150, `${T.id} walls ${T.WALLS.length}`);
+    for (const w of T.WALLS) {
+      const n = T.nearest(w.x, w.z);
+      assert.ok(Math.abs(Math.abs(n.d) - 0) >= 0 && Math.abs(n.d) < T.BARRIER, 'inside the barriers');
+      assert.ok(!T.LOOPS.some((L) => n.s > L.s - 0.015 && n.s < L.endS + 0.015), 'walls stay out of loops');
+      assert.ok(Math.abs(T.heightAt(w.x, w.z) - n.y) < 0.5, 'walls do not sit on jumps');
+      assert.ok(w.y0 > 0 && w.h >= 2.6);
+    }
+    assert.ok(T.PROPS.some((p) => p.type === 'wall' && p.tier === 'break'), 'smashable gate walls');
+    assert.ok(T.PROPS.some((p) => p.type === 'crate') && T.PROPS.some((p) => p.type === 'tnt'));
+    assert.ok(T.LANES.length >= 6, 'AI lane guidance');
+    // the road is still passable: every corridor leaves at least a 2.4 wide gap
+    for (const z of T.LANES) assert.ok(z.limit >= 0.6);
+  }
+});
+
+test('tracks: a fast truck cannot drive through a passage wall, but plows through a crate and cracks a gate', () => {
+  const T = TRACKS[1];
+  const terr = T.freshTerrain();
+  const tune = tuningFor(STATS);
+  const w = T.WALLS.find((q) => Math.abs(T.nearest(q.x, q.z).d) > 4.5 && T.nearest(q.x, q.z).s > 0.16 && T.nearest(q.x, q.z).s < 0.19);
+  const n = T.nearest(w.x, w.z);
+  const p = T.sampleAt(n.s);
+  const heading = Math.atan2(w.x - p.x, w.z - p.z);      // from the centre line straight at the wall
+  const v = createVehicle(p.x, p.z, heading, terr, tune.ride);
+  v.vx = Math.sin(heading) * 16; v.vz = Math.cos(heading) * 16;
+  let hit = false;
+  for (let i = 0; i < 90; i++) for (const e of stepVehicle(v, { gas: 1 }, terr, tune, DT)) if (e.type === 'hit' && e.obj.type === 'wall') hit = true;
+  assert.ok(hit, 'bounced off the wall');
+  assert.ok(Math.hypot(v.x - w.x, v.z - w.z) > 1.8, 'stayed outside it');
+  const crate = T.PROPS.find((q) => q.type === 'crate');
+  const start = T.sampleAt(T.nearest(crate.x, crate.z).s - 14 / T.LENGTH);
+  const h2 = Math.atan2(crate.x - start.x, crate.z - start.z);
+  const u = createVehicle(start.x, start.z, h2, terr, tune.ride);
+  u.vx = Math.sin(h2) * 16; u.vz = Math.cos(h2) * 16;
+  let smashed = false;
+  for (let i = 0; i < 120; i++) for (const e of stepVehicle(u, { gas: 1 }, terr, tune, DT)) if (e.type === 'smash' && e.obj.type === 'crate') smashed = true;
+  assert.ok(smashed, 'plowed through a crate');
+});
+
+test('tracks: obstacles are solid from the ground up (a rock on a hill is still solid)', () => {
+  const T = TRACKS[0];
+  const o = T.OBSTACLES.find((q) => q.type === 'boulder');
+  assert.ok(o.y0 > 1, 'ground height recorded');
+  const tune = tuningFor(STATS);
+  const terr = T.freshTerrain();
+  const heading = Math.atan2(1, 0);
+  const v = createVehicle(o.x - 8, o.z, heading, terr, tune.ride);
+  v.vx = 14; v.vz = 0;
+  let hit = false;
+  for (let i = 0; i < 90; i++) for (const e of stepVehicle(v, { gas: 1 }, terr, tune, DT)) if (e.type === 'hit' && e.obj === o) hit = true;
+  assert.ok(hit || Math.abs(T.nearest(o.x, o.z).d) > 0, 'boulder blocks (or the line misses it)');
+});
+
+test('tracks: fresh terrain copies are independent per race', () => {
+  const T = TRACKS[2];
+  const a = T.freshTerrain(); const b = T.freshTerrain();
+  const n = b.props.length;
+  removeProp(a, a.props[0]);
+  assert.equal(b.props.length, n);
+  assert.equal(T.PROPS.length, n, 'the master list is untouched');
+});
+
+test('every truck has a distinct nitro style with a valid flame tint', async () => {
+  const { FEEL } = await import('../src/vehicles/truck-feel.js');
+  for (const [id, f] of Object.entries(FEEL)) {
+    assert.ok(TINTS.includes(f.nitro.tint), `${id} tint`);
+    assert.ok(f.nitro.nozzles.length >= 1 && f.nitro.rate > 0 && f.nitro.fov > 0, `${id} nitro`);
+  }
+  const sigs = new Set(Object.values(FEEL).map((f) => `${f.nitro.tint}/${f.nitro.nozzles.length}`));
+  assert.ok(sigs.size >= 5);
 });

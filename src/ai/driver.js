@@ -23,8 +23,10 @@ export function driverInput(d, v, tune, track, ctx, dt) {
   const speed = Math.max(0, v.f);
   // personal lane drifts a little so the pack does not move in a line
   const wobble = Math.sin(n.s * Math.PI * 2 * 7 + d.phase) * 1.6;
-  const off = clamp(d.lane + wobble, -(track.roadHalf - 2), track.roadHalf - 2);
   const look = 9 + speed * 0.55;
+  // wall passages narrow the lane the AI may use; slaloms and islands tell it which side to take
+  const lane = track.laneAt ? track.laneAt(n.s + (look * 0.8) / track.length) : { limit: track.roadHalf - 2, off: null };
+  const off = lane.off !== null ? lane.off : clamp(d.lane + wobble, -lane.limit, lane.limit);
   const p = track.sampleAt(n.s + look / track.length);
   const tx = p.x + p.tz * off;
   const tz = p.z - p.tx * off;
@@ -40,7 +42,7 @@ export function driverInput(d, v, tune, track, ctx, dt) {
   const target = tune.maxSpeed * d.skill * rb * (1 - clamp(sev * 1.5, 0, 0.55));
 
   let gas = 0; let brake = 0; let boost = false;
-  if (ctx.phase !== 'racing') return { steer: 0, gas: 0, brake: 1, boost: false };
+  if (ctx.phase !== 'racing') return { steer: 0, gas: 0, brake: 0, boost: false, hold: true };
 
   if (speed < target) gas = 1;
   else if (speed > target + 3.5) brake = 1;
