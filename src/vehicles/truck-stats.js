@@ -53,6 +53,12 @@ export const TRUCKS = [
     },
     paint: { body: '#e0e0e0', accent: '#ff9f1c', rim: '#495057' },
   },
+  {
+    id: 'volt', name: 'Volt', blurb: 'electric coil truck',
+    stats: { speed: 8, grip: 6, weight: 4 },
+    shape: { wheelR: 9, cab: 'closed', bed: 'flat', cabH: 5, bedLen: 12, hoodLen: 10, features: ['coils'] },
+    paint: { body: '#16286b', accent: '#00e5ff', rim: '#e0f7ff' },
+  },
 ];
 
 export function getTruck(id) {

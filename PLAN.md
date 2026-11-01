@@ -69,24 +69,24 @@ Tests: track geometry (closed, curvature, clearance, grade), barrier containment
 - Nitro: ONE tap, drains the meter for the length it burns (4.5 s, costs 15% to start), much stronger boost, each truck has its own flame colour, nozzle count, ignition burst, shake and FOV punch.
 - Bug fix: cars no longer roll backwards during the 1-2-3 countdown (hold input).
 
-**Phase 4a — Race pace + competitive rivals** (NEXT, decisions agreed)
+**Phase 4a — Race pace + competitive rivals** (DONE)
 Problem: normal top speed ~23 u/s versus ~45 with nitro, so normal feels slow and nitro feels like cheating; rivals cruise at ~22 and rarely boost, so the pack never fights back.
 - Faster normal speed: base top speed up about 35% (roughly 30+ u/s for the fast trucks, 24+ for the heavy ones) with more acceleration; nitro shrinks to about 1.3x top speed (still a strong surge, drained by the single tap) so normal driving is the main game.
 - Rivals: each gets a personality (aggressive, steady, risky-lines, defensive), a real nitro budget (meter, pickups and pads like the player), tighter catch-up in both directions (player ahead: rivals push harder; behind: they ease, never cheat), and lane choice through forks.
 - Tests: per-truck lap-time targets (every truck laps each track inside a time window), nitro/normal speed ratio assertions, rivals use the nitro budget but never exceed it, pack stays within a set gap of the player over a lap, AI still completes all tracks.
 
-**Phase 4b — Hot Wheels style track elements** (every track gets them)
+**Phase 4b — Hot Wheels style track elements** (DONE; forks are parallel split-road lanes with a median wall)
 - Accelerator pads (chevron strips) on risky lines; slow zones (oil, goo, mud, sand patches you can avoid); nitro pickups (refill part of the meter, so the meter becomes a route resource); visible checkpoint gates with a small bonus; shortcuts behind breakable walls (reuse the wall tier); gaps with a real failure path (miss the jump and you drop into a slow recovery lane).
 - Forks on every track: the road splits into a short risky route and a long safe one and rejoins. Needs branch-aware lap progress, checkpoints, minimap, AI route choice, wrong-way logic and respawn. Each existing track gets one fork; loops become a choice where it makes sense.
 - Tests: pad/zone/pickup effects, both fork routes completable by every truck, no checkpoint skipping via a branch, AI picks routes and never gets stuck, minimap draws both branches.
 
-**Phase 4c — Ninth truck: Volt (electric)**
+**Phase 4c — Ninth truck: Volt (electric)** (DONE; chain lightning)
 - Voxel model with roof coils and glowing cyan/white body; flowing sparks and arcs along the body, wheels and coils (always on, stronger with speed and nitro); nitro is lightning arcs with a blue-white flash; electric whine and crackle sound instead of an engine roar.
 - Handling: fast, light, strong acceleration and steering, weak off-road. Ability (confirmed): visible chain lightning. Bolts jump from Volt to nearby trucks and props (and between them), drawn as bright forking voxel arcs with a flash and crackle; in Arena it damages and chains between rivals on ram, in races it briefly slows rivals it arcs to. Charge pads refill it.
 - Added to the garage roster (nine trucks), paint customisation, per-truck feel entry.
 - Tests: model integrity, roster count and unique ids, feel/nitro entries valid, spark emitter present and pooled within the particle budget.
 
-**Phase 4d — Loop camera fix** (bug)
+**Phase 4d — Loop camera fix** (DONE; side view, no fade)
 When riding a loop the ring, the blocks and the pylons sit between the camera and the truck, so the way down is hidden. Cause: all four camera views ignore loops.
 - While on a loop the camera moves to the side of the ring plane (profile view, wider field of view) so the whole ring is visible, and parts of the ring and blocks that sit in front of the truck fade out; it eases back to the normal view on exit.
 - Tests: camera goal while looping stays off the ring plane, loop camera ends cleanly, no regression in the four views.

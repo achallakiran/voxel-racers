@@ -1,6 +1,9 @@
 // three.js adapter for ParticlePool: one InstancedMesh of cubes, unlit, per-instance colour.
 import * as THREE from '../../lib/three.module.js';
 import { TINTS, tintColor } from './particle-pool.js';
+
+// tints that behave like fire (shrink away) rather than smoke (puff and fade)
+const FLAME_TINTS = new Set(['fire', 'ice', 'acid', 'plasma', 'gold']);
 import { particleScale } from './emit.js';
 
 export class ParticleRenderer {
@@ -36,7 +39,7 @@ export class ParticleRenderer {
         continue;
       }
       const t = pool.t(i);
-      const kind = pool.tint[i] === flameTintIndex ? 'flame' : 'smoke';
+      const kind = FLAME_TINTS.has(TINTS[pool.tint[i]]) ? 'flame' : 'smoke';
       const sc = particleScale(kind, t, pool.size[i]);
       this._p.set(pool.pos[i * 3], pool.pos[i * 3 + 1], pool.pos[i * 3 + 2]);
       this._s.set(sc, sc, sc);

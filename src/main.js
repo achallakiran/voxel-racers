@@ -12,7 +12,7 @@ import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
 import { createWorld } from './world/scenes.js';
-import { createVehicle, stepVehicle, tuningFor, BOOST_COST } from './physics/arcade.js';
+import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import { TRACKS, getTrackById, validTrack } from './world/tracks.js';
 import { createRace, formatTime, wrapDelta } from './core/race.js';
@@ -29,6 +29,8 @@ import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
 import { nextCamera, validCamera, cameraGoal, newCameraState } from './core/camera-modes.js';
 import { createTouchControls } from './ui/touch-controls.js';
+import { boltPath, chainTargets, chargeTick, canZap, ZAP_COST, ZAP_DAMAGE, ZAP_SLOW } from './fx/lightning.js';
+import { LightningRenderer } from './fx/lightning-render.js';
 import { emissionRate, takeSpawns, makeParticle, QUALITY_SCALE } from './fx/emit.js';
 
 const $ = (id) => document.getElementById(id);
@@ -103,6 +105,8 @@ function start() {
 
   // particles (smoke / flame)
   const pool = new ParticlePool(1400);
+  const lightning = new LightningRenderer(scene);
+  let zapCharge = 1;
   const debris = new DebrisPool(500);
   const debrisR = new DebrisRenderer(scene, debris);
   let boomT = 0;          // explosion flash: briefly brightens the sun (no extra light, so no extra shader cost)
@@ -337,7 +341,7 @@ function start() {
     prevVy = 0; prevF = 0;
     const racing = driveMode === 'race';
     courseTerrain = racing ? TR.freshTerrain() : ARENA_TERRAIN;
-    if (racing) world.props.set(courseTerrain.props);
+    if (racing) { world.props.set(courseTerrain.props); world.pickups.set(courseTerrain.pickups || []); } else world.pickups.clear();
     clearRivals();
     debris.life.fill(0); debris.alive = 0;
     match = null; endTimer = 0; truckMesh.visible = true; boomT = 0;
@@ -349,6 +353,7 @@ function start() {
     playerAcc = racing ? wrapDelta(TR.START_S, TR.nearest(s.x, s.z).s) : 0;
     playerPrevS = racing ? TR.nearest(s.x, s.z).s : 0;
     stuckT = 0; place = rivals.length + 1;
+    zapCharge = 1; lightning.clear();
     $('drive').classList.toggle('lefty', !!save.leftHanded);
     $('drive').classList.toggle('race', racing);
     $('combo').classList.remove('show');
@@ -372,6 +377,8 @@ function start() {
     touch.reset();
     keys.clear();
     audio.engineStop();
+    lightning.clear();
+    world.pickups.clear();
     vehicle = null;
     race = null;
     clearRivals();
@@ -408,6 +415,8 @@ function start() {
     for (const r of rivals) { scene.remove(r.mesh); disposeTruck(r.mesh); if (r.bar) { scene.remove(r.bar.group); } }
     rivals = [];
   }
+  const RIVAL_STYLES = ['aggressive', 'steady', 'risky', 'defensive', 'steady'];
+  let playerLat = 0;
   function spawnRivals() {
     const others = TRUCKS.filter((_, i) => i !== truckIdx);
     for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
@@ -423,15 +432,16 @@ function start() {
       const n = TR.nearest(sp.x, sp.z);
       return {
         truck: t, mesh, v, tune: rt,
-        driver: createDriver({ skill: 0.9 + rand() * 0.08, lane: (rand() - 0.5) * 6, phase: rand() * 6, boostEvery: 7 + rand() * 6 }),
+        driver: createDriver({ skill: 0.9 + rand() * 0.08, lane: (rand() - 0.5) * 6, phase: rand() * 6, boostEvery: 4 + rand() * 3, style: RIVAL_STYLES[i % RIVAL_STYLES.length] }),
         acc: wrapDelta(TR.START_S, n.s), prevS: n.s, color: t.paint.body,
       };
     });
   }
   function rivalStep(dt) {
+    playerLat = TR.nearest(vehicle.x, vehicle.z).d;
     const phase = race ? race.phase : 'countdown';
     for (const r of rivals) {
-      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, playerAcc, myAcc: r.acc }, dt);
+      const input = driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, playerAcc, myAcc: r.acc, gapAhead: (r.acc - playerAcc) * TR.LENGTH, playerLat: playerLat }, dt);
       handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
     }
     const all = [vehicle, ...rivals.map((r) => r.v)];
@@ -439,6 +449,7 @@ function start() {
       if (h.a === 0 || h.b === 0) {
         shake = Math.max(shake, Math.min(0.7, h.power / 14));
         audio.thump(h.power * 0.9);
+        if (h.power > 4) zap(vehicle);
       }
     }
   }
@@ -552,6 +563,8 @@ function start() {
   }
   function handleEvents(events, v, byPlayer) {
     for (const e of events) {
+      if (byPlayer && e && e.type === 'pad') { audio.boost(); shake = Math.max(shake, 0.3); zapCharge = Math.min(1, zapCharge + 0.12); }
+      if (byPlayer && e && e.type === 'pickup') { audio.click(); shake = Math.max(shake, 0.15); zapCharge = Math.min(1, zapCharge + 0.3); }
       if (!e || !e.obj) continue;
       if (e.type === 'smash') destroyProp(e.obj, v.x, v.z, byPlayer);
       else if (e.type === 'hit' && e.obj.tier === 'break') {
@@ -580,6 +593,36 @@ function start() {
     if (!isPlayer) { rivals[index - 1].bar.group.visible = false; if (match) match.foeWrecked(); }
     else { if (match) match.playerWrecked(); }
   }
+  // Volt's chain lightning: arcs from the truck to the nearest rivals and on to the next (arena: damage; race: slows them)
+  const isVolt = () => !!vehicle && TRUCKS[truckIdx].id === 'volt';
+  function zap(fromV) {
+    if (!isVolt() || !canZap(zapCharge)) return false;
+    const cand = rivals.map((r, i) => ({ id: i, x: r.v.x, y: r.v.y, z: r.v.z, r })).filter((c) => !c.r.v.wrecked);
+    const chain = chainTargets(fromV, cand);
+    if (!chain.length) return false;
+    zapCharge -= ZAP_COST;
+    let prev = { x: fromV.x, y: fromV.y + 1.4, z: fromV.z };
+    for (const c of chain) {
+      const to = { x: c.x, y: c.y + 1.0, z: c.z };
+      lightning.add(boltPath(prev, to, rand), 0.34, 0.22);
+      prev = to;
+      const v = c.r.v;
+      if (match) { if (applyDamage(v, ZAP_DAMAGE)) wreck(c.id + 1); }
+      else { v.vx *= ZAP_SLOW; v.vz *= ZAP_SLOW; }
+      burst(debris, { x: c.x, y: c.y + 1, z: c.z, colors: [0x7df9ff, 0xffffff, 0x2cf0ff], count: Math.round(8 * (QUALITY_SCALE[save.particles] ?? 1)) + 2, speed: 6, up: 4, size: 0.16, u: rand });
+    }
+    audio.zap(); shake = Math.max(shake, 0.55);
+    return true;
+  }
+  // decorative arcs crackling off the truck (no target needed)
+  function crackle(v, n = 2, reach = 3.6) {
+    for (let i = 0; i < n; i++) {
+      const a = { x: v.x, y: v.y + 1.4, z: v.z };
+      const b = { x: v.x + (rand() - 0.5) * 2 * reach, y: v.y + 0.3 + rand() * 2.2, z: v.z + (rand() - 0.5) * 2 * reach };
+      lightning.add(boltPath(a, b, rand, 6, 0.7), 0.2, 0.12);
+    }
+  }
+
   function arenaStep(dt) {
     const phase = match.phase;
     const trucks = allTrucks();
@@ -595,7 +638,7 @@ function start() {
       const dmg = ramDamage(a, b, h.power);
       if (applyDamage(a, dmg.a)) wreck(ia);
       if (applyDamage(b, dmg.b)) wreck(ib);
-      if (ia === 0 || ib === 0) { shake = Math.max(shake, Math.min(0.8, h.power / 14)); audio.thump(h.power * 0.9); }
+      if (ia === 0 || ib === 0) { shake = Math.max(shake, Math.min(0.8, h.power / 14)); audio.thump(h.power * 0.9); if (h.power > 4) zap(vehicle); }
       if (h.power > 6) { burst(debris, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.8, z: (a.z + b.z) / 2, colors: [0x9aa0aa, 0xffd60a, 0x1c1c20], count: 4, speed: 5, up: 4, size: 0.2, u: rand }); }
     }
   }
@@ -780,6 +823,7 @@ function start() {
       for (const e of events) if (e && e.type === 'loop') { shake = Math.max(shake, 0.4); audio.boost(); }
       for (const e of events) {
         if (e === 'boost') {
+          if (isVolt()) { crackle(vehicle, 4, 4.5); zap(vehicle); }
           const nz = feel.nitro;
           shake = Math.max(shake, nz.kick); audio.boost(); nitroPunch = 1;
           truckMesh.updateMatrixWorld(true);
@@ -849,6 +893,9 @@ function start() {
       shake = Math.max(shake, nz.kick * 0.25);
     }
     emitExhaust(dt);
+    zapCharge = chargeTick(zapCharge, dt);
+    if (isVolt() && boosting && rand() < 0.3) crackle(v, 1, 3);
+    lightning.update(dt);
 
     // race rules + HUD
     if (race) {
@@ -856,6 +903,7 @@ function start() {
       race.update(n.s);
       playerAcc += wrapDelta(playerPrevS, n.s); playerPrevS = n.s;
       rivalPose(dt);
+      tickPickups(courseTerrain, dt); world.pickups.sync(courseTerrain.pickups || [], clock);
       if (race.phase === 'racing') {
         const wedged = input.gas > 0.5 && v.grounded && !v.loop && Math.abs(v.f) < 1.0;
         stuckT = wedged ? stuckT + dt : Math.max(0, stuckT - dt * 2);
@@ -863,7 +911,7 @@ function start() {
       }
       for (const e of race.drainEvents()) {
         if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
-        else if (e === 'checkpoint') audio.click();
+        else if (e === 'checkpoint') { audio.click(); vehicle.nitro = Math.min(1, vehicle.nitro + 0.12); }
         else if (e === 'lap') audio.chime();
         else if (e === 'finish') {
           audio.chime();
@@ -921,8 +969,8 @@ function start() {
     sun.intensity += flash - flashApplied; flashApplied = flash;
 
     // camera
-    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f }, camState);
-    const kp = camMode === 'iso-fixed' ? 7 : (camMode === 'chase' ? 6 : 5);
+    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null }, camState);
+    const kp = v.loop ? 6 : camMode === 'iso-fixed' ? 7 : (camMode === 'chase' ? 6 : 5);
     camPos.lerp(tmp.set(g.pos.x, g.pos.y, g.pos.z), 1 - Math.exp(-kp * dt));
     camLook.lerp(tmp.set(g.look.x, g.look.y, g.look.z), 1 - Math.exp(-(kp + 2) * dt));
     nitroPunch = v.boostT > 0 ? Math.min(1, nitroPunch + dt * 3) * 1 : nitroPunch * Math.exp(-3 * dt);

@@ -17,7 +17,20 @@ export const SURFACES = {
   grass: { grip: 0.65, drag: 0.5, maxMul: 0.82 },
   sand: { grip: 0.55, drag: 0.8, maxMul: 0.7 },
   mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
+  goo: { grip: 0.55, drag: 1.6, maxMul: 0.5 },      // sticky slow patch
+  oil: { grip: 0.16, drag: 0.05, maxMul: 1.0 },     // slippery patch
+  pad: { grip: 1.2, drag: 0, maxMul: 1.0 },         // accelerator strip (kick handled in stepVehicle)
 };
+export const PAD_KICK = 7;
+export const PAD_TIME = 1.3;
+export const PICKUP_NITRO = 0.4;
+export const PICKUP_RESPAWN = 12;
+
+// pickups come back after a while; called once per frame by whoever owns the terrain
+export function tickPickups(terrain, dt) {
+  if (!terrain.pickups) return;
+  for (const p of terrain.pickups) if (p.taken) { p.cool -= dt; if (p.cool <= 0) p.taken = false; }
+}
 export const BOOST_COST = 0.15;   // least tank needed to start a boost
 export const BOOST_TIME = 4.5;    // a full tank burns for 4.5 s; the meter drains as it burns
 export const NITRO_REGEN = 0.09;
@@ -31,15 +44,15 @@ export function tuningFor(stats, handling = { steer: 1, grip: 1, boost: 1 }, sus
     suspC: 0.5 * Math.sqrt(K),
     ride: SPRING_REST - GRAVITY / K,        // resting chassis height above the ground
     restitution: 0.5 + 0.2 * (sus.bounce - 1),
-    maxSpeed: 12 + stats.speed * 1.6,
-    accel: 10 + stats.speed * 1.1 - stats.weight * 0.35,
+    maxSpeed: 16 + stats.speed * 2.1,
+    accel: 14 + stats.speed * 1.2 - stats.weight * 0.35,
     brake: 34,
     reverseMax: 7,
     rollDrag: 0.9,
     steerRate: 2.2 * handling.steer,
     grip: (2.2 + stats.grip * 0.85) * handling.grip,
-    boostMul: 1 + 3.2 * handling.boost,
-    boostMax: 1.95,
+    boostMul: 1 + 2.4 * handling.boost,
+    boostMax: 1.32,
   };
 }
 
@@ -51,7 +64,7 @@ export function createVehicle(x, z, heading, terrain, ride = 0.25) {
     pitch: 0, roll: 0,
     f: 0, l: 0,               // forward / lateral speed (for HUD, wheels, dust)
     nitro: 1, boostT: 0, loop: null, hp: 100, maxHp: 100, wrecked: false,
-    fallV: 0, surface: 'dirt', rise: 0,
+    fallV: 0, surface: 'dirt', rise: 0, padT: 0,
     steerVis: 0,
   };
 }
@@ -117,7 +130,13 @@ export function stepVehicle(v, input, terrain, tune, dt) {
     v.nitro = Math.max(0, v.nitro - dt / BOOST_TIME);
     if (v.nitro <= 0) v.boostT = 0;
   } else v.nitro = Math.min(1, v.nitro + NITRO_REGEN * dt);
-  const boosting = v.boostT > 0;
+  v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
+  if (v.surface === 'pad' && v.grounded) {
+    if (v.padT < 0.3) { f += PAD_KICK; events.push({ type: 'pad' }); }
+    v.padT = PAD_TIME;
+  }
+  if (v.padT > 0) v.padT = Math.max(0, v.padT - dt);
+  const boosting = v.boostT > 0 || v.padT > 0;
   const surf = SURFACES[(terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt'] || SURFACES.dirt;
   v.surface = (terrain.surfaceAt && terrain.surfaceAt(v.x, v.z)) || 'dirt';
   // nitro punches through soft ground: mud and sand slow you far less while it burns
@@ -161,6 +180,14 @@ export function stepVehicle(v, input, terrain, tune, dt) {
 
   let nx = v.x + v.vx * dt;
   let nz = v.z + v.vz * dt;
+
+  // pickups: drive through a canister to top up the nitro
+  if (terrain.pickups) for (const k of terrain.pickups) {
+    if (k.taken || Math.abs(v.x - k.x) > 2.6 || Math.abs(v.z - k.z) > 2.6 || v.y > (k.y0 || 0) + 4) continue;
+    k.taken = true; k.cool = PICKUP_RESPAWN;
+    v.nitro = Math.min(1, v.nitro + PICKUP_NITRO);
+    events.push({ type: 'pickup', obj: k });
+  }
 
   // solid obstacles (fly over them if you are high enough)
   for (const o of terrain.obstacles || []) {

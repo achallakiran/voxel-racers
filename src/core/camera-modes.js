@@ -18,7 +18,23 @@ export function newCameraState(t) {
 
 const ISO = { x: 0.62, y: 0.78, z: 0.62 };
 
+// While riding a loop every view switches to a side-on view of the ring (the ring, its blocks and pylons would otherwise
+// sit between the camera and the truck). t.loop = the loop definition L the truck is on.
+export function loopCameraGoal(L, t) {
+  const mid = Math.PI * L.k;                                // forward middle of the ring
+  const cx = L.x + L.tx * mid; const cz = L.z + L.tz * mid;
+  const D = 30;
+  const sx = L.tz; const sz = -L.tx;                        // right-hand side of travel
+  const cy = L.y0 + L.R;
+  return {
+    pos: { x: cx + sx * D, y: cy + 1, z: cz + sz * D },
+    look: { x: t.x * 0.65 + cx * 0.35, y: t.y * 0.65 + cy * 0.35, z: t.z * 0.65 + cz * 0.35 },
+    fov: 58,
+  };
+}
+
 export function cameraGoal(mode, t, state) {
+  if (t.loop) return loopCameraGoal(t.loop, t);
   const h = t.heading || 0;
   const sp = t.speed || 0;
   switch (mode) {

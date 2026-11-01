@@ -48,6 +48,12 @@ const GREENRIDGE_DEF = {
       feat(0.865 + 14 / LENGTH, 'ramp', { kind: 'log', w: 12, profile: log }),
     ];
   },
+  walls({ W }) {
+    W.fork(0.368, 52, 1, 'brick');                         // split road: risky pads + gap, or sticky goo
+    for (const [a, o, l] of [[0.03, 0, 8], [0.455, 0, 8], [0.945, -2, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.2, 3, 10, 5); W.oil(0.16, -3, 10, 5);
+    for (const [a, o] of [[0.02, 0], [0.12, 3], [0.25, -3], [0.45, 0], [0.7, 2], [0.84, 0], [0.95, 3]]) W.pickup(a, o);
+  },
   obstacles(T) {
     const { rng, sampleAt, ROAD_HALF, SHOULDER, LENGTH } = T;
     const rand = rng(21);
@@ -115,6 +121,10 @@ const CANYON_DEF = {
     W.corridor(0.905, 30, 9, 'brick');
     W.barrels(0.135, 3, 3);
     W.tnt(0.95, 0);
+    W.fork(0.352, 52, 1, 'brick');
+    for (const [a, o, l] of [[0.03, 0, 8], [0.64, 0, 8], [0.97, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.62, 3, 10, 5); W.oil(0.965, 2, 9, 5);
+    for (const [a, o] of [[0.04, 0], [0.12, 2], [0.5, 0], [0.66, 0], [0.76, 0], [0.84, 3], [0.96, -3]]) W.pickup(a, o);
   },
   obstacles(T) {
     const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
@@ -153,7 +163,7 @@ const FORTRESS_DEF = {
     const { feat, lateral, JUMP, rng } = T;
     const rand = rng(12);
     const rocks = [];
-    for (let i = 0; i < 16; i++) rocks.push(lateral(0.55 + rand() * 0.04, (rand() - 0.5) * 10, { type: 'bump', kind: 'rock', r: 1.1 + rand() * 1.0, h: 0.35 + rand() * 0.5 }));
+    for (let i = 0; i < 16; i++) rocks.push(lateral(0.597 + rand() * 0.028, (rand() - 0.5) * 10, { type: 'bump', kind: 'rock', r: 1.1 + rand() * 1.0, h: 0.35 + rand() * 0.5 }));
     return [...JUMP(0.1, 2.4, 9), ...rocks, ...JUMP(0.68, 2.8, 10), feat(0.825, 'whoops', { kind: 'whoops', len: 26, w: 11, amp: 0.55, wave: 4 })];
   },
   walls({ W }) {
@@ -166,6 +176,10 @@ const FORTRESS_DEF = {
     W.slalom(0.735, 5, 12, 'stone');
     W.corridor(0.88, 36, 7.6, 'stone');
     W.crates(0.43, 1, 3); W.barrels(0.5, -2, 3); W.tnt(0.935, 2);
+    W.fork(0.52, 52, 1, 'stone');
+    for (const [a, o, l] of [[0.12, 0, 8], [0.415, 0, 8], [0.855, 0, 8], [0.96, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.11, 3, 10, 5); W.oil(0.70, -3, 10, 5);
+    for (const [a, o] of [[0.1, 0], [0.27, 0], [0.40, 0], [0.628, 0], [0.7, 0], [0.86, 0], [0.97, 0]]) W.pickup(a, o);
   },
   obstacles(T) {
     const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;

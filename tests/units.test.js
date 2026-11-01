@@ -12,10 +12,10 @@ import { emissionRate, takeSpawns, makeParticle, particleScale, QUALITY_SCALE } 
 const key = (v) => `${v.x},${v.y},${v.z}`;
 
 // ---------------------------------------------------------------- roster
-test('roster has eight unique trucks with valid stats', () => {
-  assert.equal(TRUCKS.length, 8);
-  assert.equal(new Set(TRUCKS.map((t) => t.id)).size, 8);
-  assert.equal(new Set(TRUCKS.map((t) => t.name)).size, 8);
+test('roster has nine unique trucks with valid stats', () => {
+  assert.equal(TRUCKS.length, 9);
+  assert.equal(new Set(TRUCKS.map((t) => t.id)).size, 9);
+  assert.equal(new Set(TRUCKS.map((t) => t.name)).size, 9);
   for (const t of TRUCKS) {
     for (const k of ['speed', 'grip', 'weight']) assert.ok(t.stats[k] >= 1 && t.stats[k] <= 10, `${t.id}.${k}`);
     assert.ok(t.blurb && t.blurb.length > 2);
@@ -75,7 +75,7 @@ test('all voxels and emitters stay within sane bounds', () => {
     }
     for (const e of m.emitters) {
       assert.ok(e.y > 3 && e.y < m.size.y + 8, `${t.id} emitter y`);
-      assert.ok(['smoke', 'flame'].includes(e.kind));
+      assert.ok(['smoke', 'flame', 'spark'].includes(e.kind));
       assert.ok(TINTS.includes(e.tint), `${t.id} tint ${e.tint}`);
     }
   }
@@ -844,7 +844,7 @@ test('terrain mesh: columns emit tops and only visible side walls', () => {
 import { resolveCollisions, TRUCK_R } from '../src/physics/collide.js';
 import { createDriver, driverInput, rubberBand } from '../src/ai/driver.js';
 
-const TRACK_API = { nearest: TRK.nearest, sampleAt: TRK.sampleAt, length: TRK.LENGTH, roadHalf: TRK.ROAD_HALF };
+const TRACK_API = { nearest: TRK.nearest, sampleAt: TRK.sampleAt, length: TRK.LENGTH, roadHalf: TRK.ROAD_HALF, laneAt: (s, r) => TRACKS[0].laneAt(s, r) };
 
 test('collide: overlapping trucks are pushed apart and bounce', () => {
   const a = { x: 0, y: 0, z: 0, vx: 10, vz: 0 };
@@ -864,10 +864,10 @@ test('collide: overlapping trucks are pushed apart and bounce', () => {
 });
 
 test('ai: rubber band stays gentle and favours the trailing truck', () => {
-  assert.ok(rubberBand(1, 0.9) > 1 && rubberBand(1, 0.9) <= 1.08);
-  assert.ok(rubberBand(0.9, 1) < 1 && rubberBand(0.9, 1) >= 0.9);
+  assert.ok(rubberBand(1, 0.9) > 1 && rubberBand(1, 0.9) <= 1.12);
+  assert.ok(rubberBand(0.9, 1) < 1 && rubberBand(0.9, 1) >= 0.88);
   assert.equal(rubberBand(0.5, 0.5), 1);
-  assert.equal(rubberBand(9, 0), 1.08);
+  assert.equal(rubberBand(9, 0), 1.12);
 });
 
 test('ai: every rival truck can lap the track by itself, stays on the road and does not get stuck', () => {
@@ -875,12 +875,13 @@ test('ai: every rival truck can lap the track by itself, stays on the road and d
     const feel = getFeel(t.id);
     const tune = tuningFor(t.stats, feel.handling, feel.sus);
     const sp = TRK.gridPose(1);
-    const v = createVehicle(sp.x, sp.z, sp.heading, TRK.terrain, tune.ride);
+    const terr0 = TRACKS[0].freshTerrain();
+    const v = createVehicle(sp.x, sp.z, sp.heading, terr0, tune.ride);
     const d = createDriver({ skill: 0.95, lane: 2 });
     let acc = 0; let prev = TRK.nearest(v.x, v.z).s; let time = 0; let offRoad = 0; let stuck = 0;
     for (let i = 0; i < 60 * 240 && acc < 1; i++) {
       const input = driverInput(d, v, tune, TRACK_API, { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
-      stepVehicle(v, input, TRK.terrain, tune, DT);
+      for (const e of stepVehicle(v, input, terr0, tune, DT)) if (e.type === 'smash') { const k = terr0.obstacles.indexOf(e.obj); if (k >= 0) terr0.obstacles.splice(k, 1); }
       const n = TRK.nearest(v.x, v.z);
       acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
       if (Math.abs(n.d) > TRK.ROAD_HALF + 0.5) offRoad += DT;
@@ -930,7 +931,7 @@ test('nitro: the meter drains smoothly for the whole burn and ends when empty', 
   stepVehicle(a, { gas: 1, boost: true }, t, tune, DT);
   let peak = 0;
   for (let i = 0; i < 240; i++) { stepVehicle(a, { gas: 1 }, t, tune, DT); peak = Math.max(peak, a.f); }
-  assert.ok(peak > base * 1.8, `boost peak ${peak} vs ${base}`);
+  assert.ok(peak > base * 1.3 && peak < base * 1.6, `boost peak ${peak} vs ${base}`);
 });
 
 test('track: grid slots are on the road, behind the line, in two columns', () => {
@@ -971,7 +972,7 @@ test('track: no cliffs - shoulders are gentle and landings are low (cannot get t
   assert.ok(Math.max(...ys) - Math.min(...ys) < 5, 'road does not climb high');
 });
 
-test('physics: nitro is strong - top speed 1.5x+, big kick, and it plows through mud', () => {
+test('physics: nitro is strong - top speed ~1.4x, big kick, and it plows through mud', () => {
   const tune = tuningFor(STATS);
   const run2 = (surf, boost) => {
     const t = { heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => surf };
@@ -984,7 +985,7 @@ test('physics: nitro is strong - top speed 1.5x+, big kick, and it plows through
   };
   const normal = run2('asphalt', false);
   const boosted = run2('asphalt', true);
-  assert.ok(boosted > normal * 1.5, `boost ${boosted} vs ${normal}`);
+  assert.ok(boosted > normal * 1.3 && boosted < normal * 1.6, `boost ${boosted} vs ${normal}`);
   assert.ok(run2('mud', true) > run2('mud', false) * 1.8, 'nitro through mud');
 });
 
@@ -1454,4 +1455,213 @@ test('loop: the ground under every ring is filled with solid blocks', () => {
     assert.ok(T.BLOCKS.length >= 12 * T.LOOPS.length, `${T.id} blocks ${T.BLOCKS.length}`);
     for (const b of T.BLOCKS) assert.ok(b.kind === 'plinth' && b.y0 > 0 && b.h >= 0.8 && T.terrain.obstacles.includes(b));
   }
+});
+
+// ---------- Phase 4d: loop camera
+import { loopCameraGoal } from "../src/core/camera-modes.js";
+test('camera: while riding a loop every view looks at the ring from the side, off the ring plane', () => {
+  const L = TRACKS[1].LOOPS[0];
+  for (const mode of CAMERA_MODES) {
+    for (const th of [0.5, Math.PI / 2, Math.PI, 4.5]) {
+      const w = loopWorld(L, th, 0);
+      const g = cameraGoal(mode, { x: w.x, y: w.y, z: w.z, heading: Math.atan2(L.tx, L.tz), speed: 20, loop: L }, { fx: 0, fz: 0 });
+      const side = (g.pos.x - L.x) * L.tz - (g.pos.z - L.z) * L.tx;
+      assert.ok(Math.abs(side) > 20, `${mode}: camera is ${side.toFixed(0)} to the side`);
+      assert.ok(g.fov >= 50, 'wide enough to see the ring');
+      assert.ok(Math.hypot(g.look.x - w.x, g.look.z - w.z) < 12 && Math.abs(g.look.y - w.y) < 12, 'still looks near the truck');
+    }
+  }
+  const off = cameraGoal('chase', { x: 0, y: 1, z: 0, heading: 0, speed: 10, loop: null }, { fx: 0, fz: 0 });
+  assert.ok(off.fov === 62, 'normal views untouched outside loops');
+});
+
+// ---------- Phase 4a: pace and rival personalities
+import { STYLES, rubberBand as rubber } from '../src/ai/driver.js';
+const lapWith = (T, tk, style, lane = 2) => {
+  const feel = getFeel(tk.id); const tune = tuningFor(tk.stats, feel.handling, feel.sus);
+  const terr = T.freshTerrain(); const sp = T.gridPose(1);
+  const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride);
+  const d = createDriver({ skill: 0.95, lane, style });
+  let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let boosts = 0;
+  for (let i = 0; i < 60 * 200 && acc < 1; i++) {
+    const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', playerAcc: 0, myAcc: acc }, DT);
+    for (const e of stepVehicle(v, input, terr, tune, DT)) {
+      if (e === 'boost') boosts++;
+      if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }
+    }
+    const n = T.nearest(v.x, v.z); acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
+  }
+  return { time, acc, boosts };
+};
+
+test('pace: normal driving is fast (fast trucks 30+, heavy ones 24+) and nitro is a ~1.4x surge, not a doubling', () => {
+  for (const tk of TRUCKS) {
+    const t = tuningFor(tk.stats, getFeel(tk.id).handling, getFeel(tk.id).sus);
+    assert.ok(t.maxSpeed >= 24, `${tk.id} top speed ${t.maxSpeed}`);
+    assert.ok(t.boostMax <= 1.4 && t.boostMax >= 1.25);
+  }
+  assert.ok(tuningFor(TRUCKS[0].stats).maxSpeed >= 30 && tuningFor(TRUCKS[4].stats).maxSpeed >= 33);
+});
+
+test('pace: every truck laps every track inside a lap-time window and the roster stays within 1.5x', () => {
+  for (const T of TRACKS) {
+    const times = TRUCKS.map((tk) => { const r = lapWith(T, tk, 'steady'); assert.ok(r.acc >= 0.98, `${tk.id} on ${T.id} finished`); return r.time; });
+    assert.ok(Math.min(...times) > 35 && Math.max(...times) < 95, `${T.id}: ${times.map((x) => x.toFixed(0))}`);
+    assert.ok(Math.max(...times) / Math.min(...times) < 1.5, `${T.id} roster spread`);
+  }
+});
+
+test('rivals: four personalities, all finish; aggressive is no slower than steady and burns nitro more often', () => {
+  assert.deepEqual(Object.keys(STYLES).sort(), ['aggressive', 'defensive', 'risky', 'steady']);
+  const T = TRACKS[0]; const tk = TRUCKS[0];
+  const r = {}; for (const s of Object.keys(STYLES)) r[s] = lapWith(T, tk, s);
+  for (const s of Object.keys(r)) assert.ok(r[s].acc >= 0.98, `${s} finished`);
+  assert.ok(r.aggressive.time <= r.steady.time * 1.03, 'aggressive pace');
+  assert.ok(r.aggressive.boosts >= r.steady.boosts, `nitro use ${r.aggressive.boosts} vs ${r.steady.boosts}`);
+  const times = Object.values(r).map((x) => x.time);
+  assert.ok(Math.max(...times) / Math.min(...times) < 1.2, 'the pack stays together');
+});
+
+test('rivals: catch-up works both ways - behind they push harder, far ahead they ease off - within a fair band', () => {
+  assert.ok(rubber(0.1, 0) > 1.05 && rubber(0.1, 0) <= 1.12, 'rival trailing the player speeds up');
+  assert.ok(rubber(0, 0.1) < 0.95 && rubber(0, 0.1) >= 0.88, 'rival far ahead eases off');
+  assert.equal(rubber(0, 0), 1);
+});
+
+test('rivals: a defensive driver swings across to block a player right behind', () => {
+  const T = TRACKS[0]; const tk = TRUCKS[0];
+  const feel = getFeel(tk.id); const tune = tuningFor(tk.stats, feel.handling, feel.sus);
+  const terr = T.freshTerrain();
+  const p = T.sampleAt(0.05);
+  const v = createVehicle(p.x, p.z, Math.atan2(p.tx, p.tz), terr, tune.ride); v.vx = p.tx * 20; v.vz = p.tz * 20;
+  const d = createDriver({ skill: 0.95, lane: 0, style: 'defensive' });
+  const inp = driverInput(d, v, tune, apiFor(T), { phase: 'racing', playerAcc: 0, myAcc: 0.01, gapAhead: 12, playerLat: 4 }, DT);
+  const free = driverInput(createDriver({ skill: 0.95, lane: 0, style: 'defensive' }), v, tune, apiFor(T), { phase: 'racing', playerAcc: 0, myAcc: 0.01, gapAhead: 100, playerLat: 4 }, DT);
+  assert.ok(inp.steer < free.steer, 'steers toward the right-hand side to cover the player');
+});
+
+// ---------- Phase 4b: track elements (pads, goo, oil, pickups, forks)
+import { tickPickups, PICKUP_NITRO, PICKUP_RESPAWN, SURFACES as SURF } from '../src/physics/arcade.js';
+
+const FLATT = (surf, extra = {}) => ({ heightAt: () => 0, obstacles: [], radius: 1e9, surfaceAt: () => surf, ...extra });
+
+test('elements: an accelerator pad kicks you forward, keeps a short boost, and fires one event per pass', () => {
+  const tune = tuningFor(STATS); const t = FLATT('pad');
+  const v = createVehicle(0, 0, 0, t); v.vz = 15;
+  let pads = 0; for (let i = 0; i < 60; i++) for (const e of stepVehicle(v, { gas: 1 }, t, tune, DT)) if (e.type === 'pad') pads++;
+  const plain = createVehicle(0, 0, 0, FLATT('asphalt')); plain.vz = 15;
+  for (let i = 0; i < 60; i++) stepVehicle(plain, { gas: 1 }, FLATT('asphalt'), tune, DT);
+  assert.equal(pads, 1);
+  assert.ok(v.f > plain.f + 5, `pad ${v.f} vs plain ${plain.f}`);
+});
+
+test('elements: goo is sticky and oil is slippery', () => {
+  const tune = tuningFor(STATS);
+  const run3 = (surf) => { const t = FLATT(surf); const v = createVehicle(0, 0, 0, t); v.vz = 25; let lat = 0; for (let i = 0; i < 90; i++) { stepVehicle(v, { gas: 1, steer: 0.6 }, t, tune, DT); lat = Math.max(lat, Math.abs(v.l)); } return { f: v.f, lat }; };
+  const road = run3('asphalt'); const goo = run3('goo'); const oil = run3('oil');
+  assert.ok(goo.f < road.f * 0.75, `goo ${goo.f} vs ${road.f}`);
+  assert.ok(oil.lat > road.lat * 1.8, `oil slides ${oil.lat} vs ${road.lat}`);
+  assert.ok(SURF.goo && SURF.oil && SURF.pad);
+});
+
+test('elements: a nitro canister refills the meter once, then comes back after a while', () => {
+  const tune = tuningFor(STATS);
+  const t = FLATT('asphalt', { pickups: [{ x: 0, z: 10, y0: 0, taken: false, cool: 0 }] });
+  const v = createVehicle(0, 0, 0, t); v.vz = 20; v.nitro = 0.2;
+  let got = 0; for (let i = 0; i < 60; i++) for (const e of stepVehicle(v, { gas: 1 }, t, tune, DT)) if (e.type === 'pickup') got++;
+  assert.equal(got, 1);
+  assert.ok(v.nitro >= 0.2 + PICKUP_NITRO - 0.05, `meter ${v.nitro}`);
+  assert.ok(t.pickups[0].taken);
+  tickPickups(t, PICKUP_RESPAWN - 1); assert.ok(t.pickups[0].taken, 'still gone');
+  tickPickups(t, 2); assert.ok(!t.pickups[0].taken, 'back');
+});
+
+test('elements: every track has a fork - median wall, a fast lane and a safe lane, zones, pickups and a trench', () => {
+  for (const T of TRACKS) {
+    assert.ok(T.ZONES.some((z) => z.kind === 'pad') && T.ZONES.some((z) => z.kind === 'goo') && T.ZONES.some((z) => z.kind === 'oil'), `${T.id} zones`);
+    assert.ok(T.PICKUPS.length >= 6, `${T.id} pickups`);
+    assert.ok(T.FEATURES.some((f) => f.type === 'trench'), `${T.id} gap`);
+    const routes = T.LANES.filter((l) => l.route);
+    assert.ok(routes.some((l) => l.route === 'fast') && routes.some((l) => l.route === 'safe'), `${T.id} fork lanes`);
+    const f = routes.find((l) => l.route === 'fast'); const s = routes.find((l) => l.route === 'safe');
+    assert.ok(f.off * s.off < 0, 'on opposite sides');
+    assert.ok(T.laneAt(f.from + 0.06, 'fast').off === f.off && T.laneAt(f.from + 0.06, 'safe').off === s.off);
+    // zones are real surfaces on the road
+    const z = T.ZONES.find((q) => q.kind === 'pad'); const p = T.sampleAt(z.s + 2 / T.LENGTH);
+    assert.equal(T.surfaceAt(p.x + p.tz * z.off, p.z - p.tx * z.off), 'pad');
+  }
+});
+
+test('elements: both fork routes can be driven by the trucks that choose them, and the risky lane pays off', () => {
+  for (const T of TRACKS) {
+    const safe = lapWith(T, TRUCKS[0], 'steady'); const fast = lapWith(T, TRUCKS[0], 'aggressive');
+    assert.ok(safe.acc >= 0.98 && fast.acc >= 0.98, `${T.id} both routes finish`);
+    assert.ok(fast.time < safe.time, `${T.id}: risky lane ${fast.time.toFixed(1)}s beats safe ${safe.time.toFixed(1)}s`);
+    for (const tk of TRUCKS) { const r = lapWith(T, tk, 'aggressive'); assert.ok(r.acc >= 0.98, `${tk.id} aggressive on ${T.id}`); }
+  }
+});
+
+test('elements: miss the jump and you drop into the trench (slow or stalled), clear it at speed and you fly over', () => {
+  const T = TRACKS[0]; const tr = T.FEATURES.find((f) => f.type === 'trench');
+  const tune = tuningFor(STATS);
+  const attempt = (speed) => {
+    const terr = T.freshTerrain();
+    const hd = tr.rot; const back = 24;
+    const v = createVehicle(tr.x - Math.sin(hd) * back, tr.z - Math.cos(hd) * back, hd, terr, tune.ride);
+    v.vx = Math.sin(hd) * speed; v.vz = Math.cos(hd) * speed;
+    let minY = 99;
+    for (let i = 0; i < 60 * 4; i++) { stepVehicle(v, { gas: speed > 20 ? 1 : 0 }, terr, tune, DT); minY = Math.min(minY, v.y - T.heightAt(v.x, v.z)); }
+    const along = (v.x - tr.x) * Math.sin(hd) + (v.z - tr.z) * Math.cos(hd);
+    return { along, y: v.y, ground: T.heightAt(v.x, v.z) };
+  };
+  const slow = attempt(7); const fastRun = attempt(30);
+  assert.ok(slow.along < tr.len + 1, `slow car stuck at/in the trench (${slow.along.toFixed(1)})`);
+  assert.ok(fastRun.along > tr.len + 4, `fast car cleared it (${fastRun.along.toFixed(1)})`);
+});
+
+// ---------- Phase 4c: Volt, the electric truck
+import { boltPath, chainTargets, chargeTick, canZap, ZAP_COST, ZAP_RANGE, ZAP_HOP, ZAP_HOPS } from '../src/fx/lightning.js';
+
+test('volt: the ninth truck has coils that spin, spark emitters, glowing parts and its own feel', () => {
+  const t = getTruck('volt');
+  assert.equal(t.id, 'volt');
+  const data = buildTruckVoxels(t.shape);
+  assert.ok(data.parts.filter((p) => p.id.startsWith('coil')).length === 2 && data.parts.every((p) => p.anim.type));
+  const sparks = data.emitters.filter((e) => e.kind === 'spark');
+  assert.ok(sparks.length >= 6 && sparks.every((e) => TINTS.includes(e.tint)), 'flowing sparks from coils, nose and tail');
+  assert.ok(data.voxels.filter((v) => v.k === 'glow').length > 40, 'glowing stripes and coil tops');
+  assert.ok(PALETTE_KEYS.includes('glow'));
+  const f = getFeel('volt');
+  assert.equal(f.nitro.tint, 'ice');
+  assert.ok(f.voice.whine >= 0.5 && f.voice.wave === 'triangle', 'electric whine, not a roar');
+  assert.ok(emissionRate('spark', 0) > 5 && emissionRate('spark', 1) > emissionRate('spark', 0), 'sparks busier at speed');
+  const p = makeParticle('spark', 'ice', { x: 0, y: 1, z: 0 }, { x: 0, y: 1, z: 0 }, 0.5, 0.3, 0.6, 0.9);
+  assert.ok(p.rise < 0 && p.life < 0.7, 'sparks arc down and die fast');
+});
+
+test('lightning: bolts are jagged but start and end exactly on their targets', () => {
+  let seed = 7; const u = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const a = { x: 0, y: 1, z: 0 }; const b = { x: 10, y: 2, z: 4 };
+  const path = boltPath(a, b, u, 9, 0.8);
+  assert.equal(path.length, 10);
+  assert.deepEqual(path[0], a); assert.deepEqual(path[9], b);
+  let off = 0;
+  for (let i = 1; i < 9; i++) { const t = i / 9; off = Math.max(off, Math.hypot(path[i].x - (a.x + (b.x - a.x) * t), path[i].z - (a.z + (b.z - a.z) * t))); }
+  assert.ok(off > 0.05 && off < 3, `jag ${off}`);
+});
+
+test('lightning: the chain jumps to the nearest truck, then on to the next nearest, no repeats, within range', () => {
+  const cand = [{ id: 'a', x: 8, y: 0, z: 0 }, { id: 'b', x: 16, y: 0, z: 0 }, { id: 'c', x: 24, y: 0, z: 0 }, { id: 'd', x: 60, y: 0, z: 0 }, { id: 'e', x: 3, y: 0, z: 40 }];
+  const chain = chainTargets({ x: 0, y: 0, z: 0 }, cand);
+  assert.deepEqual(chain.map((c) => c.id), ['a', 'b', 'c']);
+  assert.ok(chain.length <= ZAP_HOPS);
+  assert.deepEqual(chainTargets({ x: 0, y: 0, z: 0 }, [{ id: 'far', x: ZAP_RANGE + 2, y: 0, z: 0 }]), [], 'out of range');
+  assert.equal(chainTargets({ x: 0, y: 0, z: 0 }, [{ id: 'a', x: 5, y: 0, z: 0 }, { id: 'z', x: 5 + ZAP_HOP + 2, y: 0, z: 0 }]).length, 1, 'hop range limits the chain');
+});
+
+test('lightning: charge builds back over time and each zap costs a share', () => {
+  assert.ok(canZap(1) && !canZap(ZAP_COST - 0.01));
+  let c = 0; for (let i = 0; i < 60 * 5; i++) c = chargeTick(c, 1 / 60);
+  assert.ok(c > ZAP_COST && c <= 1);
+  assert.equal(chargeTick(1, 10), 1);
 });

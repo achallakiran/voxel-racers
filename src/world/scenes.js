@@ -463,6 +463,12 @@ function makeTrackColor(T) {
       c = [0.27, 0.28, 0.31];
       if (Math.abs(smp.d) < 0.8 && Math.floor(sAlong / 5) % 2 === 0) c = [0.94, 0.9, 0.66];
       else if (Math.abs(smp.ad - (T.ROAD_HALF - 0.8)) < 0.7) c = [0.95, 0.95, 0.95];
+    } else if (smp.surf === 'pad') {
+      c = Math.floor(sAlong / 1.5) % 2 ? [1, 0.86, 0.12] : [0.98, 0.52, 0.05];
+    } else if (smp.surf === 'goo') {
+      c = Math.floor(sAlong / 2 + smp.d) % 2 ? [0.4, 0.78, 0.2] : [0.3, 0.64, 0.16];
+    } else if (smp.surf === 'oil') {
+      c = (Math.floor(sAlong / 2) + Math.floor(smp.d / 2)) & 1 ? [0.06, 0.05, 0.09] : [0.14, 0.11, 0.2];
     } else if (smp.surf === 'mud') {
       c = [0.33, 0.22, 0.13];
     } else if (smp.surf === 'sand') {
@@ -734,6 +740,35 @@ function buildPropMeshes(group) {
   };
 }
 
+// nitro canisters on the track: bright yellow, spinning, hidden while taken
+function buildPickupMeshes(group) {
+  let list = []; let baseY = [];
+  const mat = (c, e) => new THREE.MeshLambertMaterial({ color: c, emissive: new THREE.Color(e) });
+  return {
+    set(pickups) {
+      this.clear();
+      for (const p of pickups) {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(UNIT, mat('#ffd60a', '#775500')); body.scale.set(0.85, 1.1, 0.85); g.add(body);
+        const cap = new THREE.Mesh(UNIT, mat('#4cc9f0', '#145a70')); cap.scale.set(0.5, 0.35, 0.5); cap.position.y = 0.72; g.add(cap);
+        const bolt = new THREE.Mesh(UNIT, mat('#ffffff', '#888888')); bolt.scale.set(0.2, 0.7, 0.9); bolt.rotation.z = 0.5; g.add(bolt);
+        const y = (p.y0 || 0) + 1.5;
+        g.position.set(p.x, y, p.z); baseY.push(y);
+        group.add(g); list.push(g);
+      }
+    },
+    sync(pickups, t) {
+      for (let i = 0; i < list.length && i < pickups.length; i++) {
+        list[i].visible = !pickups[i].taken;
+        list[i].rotation.y = t * 2.2 + i;
+        list[i].position.y = baseY[i] + Math.sin(t * 3 + i) * 0.22;
+      }
+    },
+    clear() { for (const g of list) group.remove(g); list = []; baseY = []; },
+    get count() { return list.length; },
+  };
+}
+
 // ------------------------------------------------------------------ world
 export function createWorld(scene, lights) {
   const outdoor = new THREE.Group();
@@ -760,6 +795,9 @@ export function createWorld(scene, lights) {
   const propGroup = new THREE.Group();
   scene.add(propGroup);
   const propMeshes = buildPropMeshes(propGroup);
+  const pickupGroup = new THREE.Group();
+  scene.add(pickupGroup);
+  const pickupMeshes = buildPickupMeshes(pickupGroup);
   const trackGroups = new Map();     // track id -> { group, stats }
   let activeTrack = null;
   let trackStats = null;
@@ -848,6 +886,7 @@ export function createWorld(scene, lights) {
     setMode,
     setCourse,
     props: propMeshes,
+    pickups: pickupMeshes,
     get trackStats() { return trackStats; },
     update,
     get mode() { return mode; },

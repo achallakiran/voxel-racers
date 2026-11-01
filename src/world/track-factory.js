@@ -185,10 +185,19 @@ export function makeTrack(def) {
 
   function bumpHeight(f, x, z) { const d = Math.hypot(x - f.x, z - f.z); return d >= f.r ? 0 : f.h * 0.5 * (1 + Math.cos(Math.PI * d / f.r)); }
   function pitDepth(f, x, z) { const d = Math.hypot(x - f.x, z - f.z); return d >= f.r ? 0 : f.depth * 0.5 * (1 + Math.cos(Math.PI * d / f.r)); }
+  // a trench: a gap across a lane you have to jump (f = {x,z,rot,len,w,depth}, origin at the near lip)
+  function trenchDepth(f, x, z) {
+    const dx = x - f.x; const dz = z - f.z;
+    const along = dx * Math.sin(f.rot) + dz * Math.cos(f.rot);
+    const lat = dx * Math.cos(f.rot) - dz * Math.sin(f.rot);
+    const edge = Math.min(along, f.len - along, f.w / 2 - Math.abs(lat)) / 0.5;
+    return edge <= 0 ? 0 : f.depth * Math.min(1, edge);
+  }
   function featureSum(x, z) {
     let up = 0; let down = 0;
     for (const f of FEATURES) {
       if (f.type === 'pit') { const d = pitDepth(f, x, z); if (d > down) down = d; }
+      else if (f.type === 'trench') { const d = trenchDepth(f, x, z); if (d > down) down = d; }
       else if (f.type === 'bump') { const v = bumpHeight(f, x, z); if (v > up) up = v; }
       else { const v = featureHeight(f, x, z); if (v > up) up = v; }
     }
@@ -199,11 +208,22 @@ export function makeTrack(def) {
     for (const f of FEATURES) {
       let v = 0;
       if (f.type === 'pit') v = pitDepth(f, x, z);
+      else if (f.type === 'trench') v = trenchDepth(f, x, z);
       else if (f.type === 'bump') v = bumpHeight(f, x, z);
       else v = featureHeight(f, x, z);
       if (v > bestV) { bestV = v; best = f.kind; }
     }
     return best;
+  }
+  // painted zones on the road: accelerator pads, goo and oil patches (they are real surfaces, so physics and colour agree)
+  const ZONES = [];
+  function zoneAt(n) {
+    for (const z of ZONES) {
+      let a = n.s - z.s; if (a > 0.5) a -= 1; if (a < -0.5) a += 1;
+      a *= LENGTH;
+      if (a >= 0 && a <= z.len && Math.abs(n.d - z.off) <= z.w / 2) return z.kind;
+    }
+    return null;
   }
   function surfaceFor(s) {
     for (const sec of SECTIONS) if (s >= sec.from && s < sec.to) return sec.surf;
@@ -220,7 +240,7 @@ export function makeTrack(def) {
     const f = ad < ROAD_HALF + 4 ? featureSum(x, z) : 0;
     const onRoad = ad <= ROAD_HALF;
     return {
-      h: Math.max(0.1, base + f), surf: onRoad ? surfaceFor(n.s) : 'grass', s: n.s, d: n.d, ad, onRoad, feature: Math.abs(f) > 0.05, featKind: featureKind(x, z), nearest: n,
+      h: Math.max(0.1, base + f), surf: onRoad ? (ZONES.length && zoneAt(n)) || surfaceFor(n.s) : 'grass', s: n.s, d: n.d, ad, onRoad, feature: Math.abs(f) > 0.05, featKind: featureKind(x, z), nearest: n,
     };
   }
   const heightAt = (x, z) => sample(x, z).h;
@@ -246,7 +266,33 @@ export function makeTrack(def) {
   const wallLine = (s, len, off, kind) => {          // a straight wall along the road at lateral offset `off`
     for (let d = 0; d <= len; d += 1.5) { const p = sampleAt(s + d / LENGTH); wallAt(p.x + p.tz * off, p.z - p.tx * off, Math.atan2(p.tx, p.tz), kind); }
   };
+  const PICKUPS = [];
   const W = {
+    pad(s, off, len = 7, w = 5) { ZONES.push({ kind: 'pad', s, off, len, w }); },
+    goo(s, off, len = 9, w = 5) { ZONES.push({ kind: 'goo', s, off, len, w }); },
+    oil(s, off, len = 9, w = 5) { ZONES.push({ kind: 'oil', s, off, len, w }); },
+    pickup(s, off) { PICKUPS.push({ id: PICKUPS.length, ...lateral(s, off, {}), r: 1.3, taken: false, cool: 0 }); },
+    // a FORK: a median wall splits the road in two lanes with different risk and reward.
+    //   fast lane: crate gate, accelerator pads, a jump over a trench, a nitro canister at the end
+    //   safe lane: goo and oil patches, a nitro canister, a few crates
+    fork(s, len = 52, fastSide = 1, kind = 'brick') {
+      const at = (m) => s + m / LENGTH;
+      wallLine(s, len, 0, kind);
+      const fo = fastSide * 3.7; const so = -fastSide * 3.7;
+      // fast lane
+      W.crates(at(-3), fo, 3);
+      W.pad(at(5), fo, 7, 4.6); W.pad(at(14), fo, 7, 4.6);
+      const pa = sampleAt(at(23)); const rot = Math.atan2(pa.tx, pa.tz);
+      FEATURES.push({ type: 'ramp', kind: 'ramp', ...lateral(at(23), fo, {}), rot, w: 5.2, profile: kicker(5, 1.9) });
+      FEATURES.push({ type: 'trench', kind: 'pit', ...lateral(at(28.4), fo, {}), rot, len: 7, w: 5.6, depth: 3.5 });
+      FEATURES.push({ type: 'ramp', kind: 'ramp', ...lateral(at(35.4), fo, {}), rot, w: 5.2, profile: landing(10, 1.0) });
+      W.pickup(at(46), fo);
+      // safe lane
+      W.goo(at(6), so, 9, 4.6); W.oil(at(20), so, 9, 4.6);
+      W.pickup(at(33), so); W.crates(at(40), so, 2);
+      LANES.push({ from: at(-45), to: at(len + 4), limit: 1.4, off: fo, route: 'fast' });
+      LANES.push({ from: at(-45), to: at(len + 4), limit: 1.4, off: so, route: 'safe' });
+    },
     // two walls squeezing the road to `gap` wide for `len` units
     corridor(s, len, gap, kind = 'brick') {
       wallLine(s, len, gap / 2 + 1, kind); wallLine(s, len, -(gap / 2 + 1), kind);
@@ -306,13 +352,14 @@ export function makeTrack(def) {
 
   const OBSTACLES = def.obstacles ? def.obstacles({ ...T, ROAD_HALF, SHOULDER }) : [];
   // obstacle heights are measured from the ground they stand on
-  for (const o of [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS]) o.y0 = heightAt(o.x, o.z);
+  for (const o of [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS, ...PICKUPS]) o.y0 = heightAt(o.x, o.z);
 
   // AI lane guidance: the allowed lateral offset (and a forced offset in slaloms / islands) at a lap fraction
-  function laneAt(s) {
+  function laneAt(s, route = 'safe') {
     const q = ((s % 1) + 1) % 1;
     let limit = ROAD_HALF - 2; let off = null;
     for (const z of LANES) {
+      if (z.route && z.route !== route) continue;
       if ((q >= z.from && q <= z.to) || (q + 1 >= z.from && q + 1 <= z.to)) { limit = Math.min(limit, z.limit); if (z.off !== null) off = z.off; }
     }
     return { limit, off };
@@ -359,16 +406,16 @@ export function makeTrack(def) {
     return { x: p.x + p.tz * lane, z: p.z - p.tx * lane, heading: Math.atan2(p.tx, p.tz), s: START_S - (row * 9) / LENGTH };
   };
 
-  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, loops: LOOPS, radius: 1e9 };
+  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9 };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {
     const props = PROPS.map((p) => ({ ...p }));
-    return { ...terrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...props], props };
+    return { ...terrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...props], props, pickups: PICKUPS.map((k) => ({ ...k, taken: false, cool: 0 })) };
   }
 
   return {
     id: def.id, name: def.name, theme: def.theme, ROAD_HALF, SHOULDER, BARRIER,
-    LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, LOOPS, LANES,
+    LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, PICKUPS, ZONES, LOOPS, LANES,
     nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear,
     sceneryLayout, barrierLayout, startPose, gridPose, terrain, freshTerrain, featureHeightAt: featureHeight,
     TRACK: { name: def.name, length: LENGTH, halfWidth: ROAD_HALF, barrier: BARRIER, samples: SAMPLES, checkpoints: CHECKPOINTS },

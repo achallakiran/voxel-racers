@@ -158,7 +158,7 @@ def main():
 
         # ---------------- cycle all trucks
         n = page.evaluate('window.__voxelRacers.trucks')
-        check(n == 8, f'eight trucks in roster ({n})')
+        check(n == 9, f'nine trucks in roster ({n})')
         first = page.evaluate('window.__voxelRacers.truckId')
         seen = {}
         for i in range(n):
@@ -172,7 +172,7 @@ def main():
             check(info['parts'] or info['em'], f"{tid}: has motion/smoke (parts={info['parts']}, emitters={info['em']})")
             check(colours(png) > 12, f'{tid}: renders')
             page.click('#btn-next')
-        check(page.evaluate('window.__voxelRacers.truckId') == first, 'next x8 wraps back to the first truck')
+        check(page.evaluate('window.__voxelRacers.truckId') == first, 'next x9 wraps back to the first truck')
         check(seen['titan']['w'] == 6, 'Titan has six wheels')
         check(seen['yellow-thunder']['w'] == 4 and 'stopsign' in seen['yellow-thunder']['parts'], 'bus has a swinging stop sign')
         check('jaw' in seen['toxic']['parts'], 'Toxic has a moving jaw')

@@ -57,6 +57,12 @@ export const FEEL = {
     sus: { k: 30, c: 3.0, roll: 0.9, pitch: 1.1, bounce: 1.5 },
     handling: { steer: 0.75, grip: 1.15, boost: 0.8 },
   },
+  volt: {
+    nitro: { tint: 'ice', rate: 210, nozzles: [-0.25, 0.25], kick: 0.45, fov: 12, burst: 40 },
+    voice: { f0: 70, range: 170, wave: 'triangle', detune: 4, cutoff: 900, cutoffRange: 2800, sub: 0, whine: 0.75, grit: 0.12, gain: 0.24, pulse: 40 },
+    sus: { k: 68, c: 5.0, roll: 0.9, pitch: 0.9, bounce: 1.0 },
+    handling: { steer: 1.15, grip: 1.0, boost: 1.1 },
+  },
 };
 
 const DEFAULT = FEEL.crusher;

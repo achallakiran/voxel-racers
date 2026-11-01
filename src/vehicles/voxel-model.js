@@ -10,7 +10,7 @@
 //   size:     bounding size in voxels
 
 export const PALETTE_KEYS = [
-  'body', 'accent', 'rim', 'tire', 'tread', 'dark', 'glass', 'light', 'chrome', 'flame', 'skin', 'tooth',
+  'body', 'accent', 'rim', 'tire', 'tread', 'dark', 'glass', 'light', 'chrome', 'flame', 'skin', 'tooth', 'glow',
 ];
 
 const X0 = 5;
@@ -331,6 +331,37 @@ export function buildTruckVoxels(shapeIn) {
     sp.box(X1 + 1, X1 + 1, bodyTop + 5, bodyTop + 9, cabZ1 - 11, cabZ1 - 7, 'flame');
     sp.box(X1 + 1, X1 + 1, bodyTop + 6, bodyTop + 8, cabZ1 - 10, cabZ1 - 8, 'light');
   }
+
+  if (has('coils')) {
+    // Volt: two tesla coils on the bed (rotating glow rings, crackling sparks), glowing stripes and a lightning nose
+    const topY = bodyTop + 11;
+    const coils = [[X0 + 3, bedZ0 + 3], [X1 - 3, bedZ0 + 3]];
+    coils.forEach(([cx, cz], i) => {
+      box(set, cx - 1, cx + 1, bodyTop + 1, bodyTop + 2, cz - 1, cz + 1, 'dark');          // base
+      for (let y = bodyTop + 3; y <= topY - 1; y++) set(cx, y, cz, y % 2 ? 'chrome' : 'glow');   // striped shaft
+      box(set, cx - 1, cx + 1, topY, topY + 2, cz - 1, cz + 1, 'glow');                      // top sphere
+      set(cx - 1, topY, cz - 1, 'chrome'); set(cx + 1, topY, cz + 1, 'chrome'); set(cx - 1, topY + 2, cz + 1, 'chrome'); set(cx + 1, topY + 2, cz - 1, 'chrome');
+      set(cx, topY + 3, cz, 'light');
+      // ring orbiting the shaft
+      const ring = addPart(`coil-${i}`, { x: cx + 0.5, y: topY - 3, z: cz + 0.5 }, { type: 'spin', axis: 'y', amp: 1.4, speed: 3.2, offset: i * 1.2 });
+      for (const [dx, dz] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) ring.set(cx + dx, topY - 3, cz + dz, 'glow');
+      for (const [dx, dz] of [[-2, 1], [2, -1], [1, -2], [-1, 2]]) ring.set(cx + dx, topY - 3, cz + dz, 'light');
+      emitters.push({ x: cx, y: topY + 4, z: cz, dx: 0, dy: 1, dz: -0.2, kind: 'spark', tint: 'ice' });
+      emitters.push({ x: cx, y: topY + 1, z: cz, dx: i ? 1 : -1, dy: 0.4, dz: -0.6, kind: 'spark', tint: 'ice' });
+    });
+    for (const x of [X0, X1]) {
+      box(set, x, x, baseY + 2, baseY + 2, hoodZ0, hoodZ1, 'glow');                  // side stripes
+      box(set, x, x, bodyTop, bodyTop, cabZ0, cabZ1, 'glow');
+    }
+    box(set, X0 + 4, X1 - 4, baseY + 3, baseY + 3, length - 2, length - 2, 'glow');   // nose bolt: zig-zag
+    box(set, 10, 11, baseY + 4, baseY + 5, length - 2, length - 2, 'glow');
+    box(set, 13, 14, baseY + 2, baseY + 3, length - 2, length - 2, 'glow');
+    for (const x of [X0, X1]) {
+      emitters.push({ x, y: baseY + 1, z: length - 1, dx: x === X0 ? -1 : 1, dy: 0.3, dz: 0.5, kind: 'spark', tint: 'ice' });
+      emitters.push({ x, y: baseY + 4, z: 1, dx: x === X0 ? -1 : 1, dy: 0.4, dz: -1, kind: 'spark', tint: 'ice' });
+    }
+  }
+
   if (has('tailpipe')) {
     box(set, 18, 18, baseY + 2, baseY + 2, 0, 1, 'chrome');
     emitters.push({ x: 18, y: baseY + 2, z: -1, dx: 0, dy: 0.25, dz: -1, kind: 'smoke', tint: 'gray' });

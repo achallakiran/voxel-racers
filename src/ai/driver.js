@@ -9,24 +9,37 @@ function wrap(a) {
   return a;
 }
 
-export function createDriver({ skill = 0.95, lane = 0, phase = 0, boostEvery = 9 } = {}) {
-  return { skill, lane, phase, boostEvery, stuckT: 0, reverseT: 0, reverseSteer: 1, nextBoost: boostEvery * 0.6 };
+// Rival personalities. skillAdd: raw pace; nitroAt: meter level that tempts it to burn nitro; boostMul: how often it
+// tries (smaller = more often); corner: how hard it brakes for bends (smaller = later braking, riskier); wobble: lane
+// weaving; block: swings across to shut the door on a player right behind it.
+export const STYLES = {
+  steady: { fast: false, skillAdd: 0, nitroAt: 0.7, boostMul: 1, corner: 1, wobble: 1, block: false },
+  aggressive: { fast: true, skillAdd: 0.04, nitroAt: 0.45, boostMul: 0.6, corner: 0.8, wobble: 1.3, block: false },
+  risky: { fast: true, skillAdd: 0.02, nitroAt: 0.55, boostMul: 0.75, corner: 0.7, wobble: 2, block: false },
+  defensive: { fast: false, skillAdd: 0.01, nitroAt: 0.6, boostMul: 0.9, corner: 1, wobble: 0.5, block: true },
+};
+
+export function createDriver({ skill = 0.95, lane = 0, phase = 0, boostEvery = 9, style = 'steady' } = {}) {
+  return { skill, lane, phase, boostEvery, style: STYLES[style] ? style : 'steady', stuckT: 0, reverseT: 0, reverseSteer: 1, nextBoost: boostEvery * 0.6 };
 }
 
 // Rubber band: trailing the player speeds you up a little, leading slows you a little.
 export function rubberBand(playerAcc, myAcc) {
-  return clamp(1 + (playerAcc - myAcc) * 2.2, 0.9, 1.08);
+  return clamp(1 + (playerAcc - myAcc) * 3, 0.88, 1.12);
 }
 
 export function driverInput(d, v, tune, track, ctx, dt) {
   const n = track.nearest(v.x, v.z);
   const speed = Math.max(0, v.f);
   // personal lane drifts a little so the pack does not move in a line
-  const wobble = Math.sin(n.s * Math.PI * 2 * 7 + d.phase) * 1.6;
+  const st = STYLES[d.style] || STYLES.steady;
+  const wobble = Math.sin(n.s * Math.PI * 2 * 7 + d.phase) * 1.6 * st.wobble;
   const look = 9 + speed * 0.55;
   // wall passages narrow the lane the AI may use; slaloms and islands tell it which side to take
-  const lane = track.laneAt ? track.laneAt(n.s + (look * 0.8) / track.length) : { limit: track.roadHalf - 2, off: null };
-  const off = lane.off !== null ? lane.off : clamp(d.lane + wobble, -lane.limit, lane.limit);
+  const lane = track.laneAt ? track.laneAt(n.s + (look * 0.8) / track.length, st.fast && tune.maxSpeed >= 28 ? 'fast' : 'safe') : { limit: track.roadHalf - 2, off: null };
+  let off = lane.off !== null ? lane.off : clamp(d.lane + wobble, -lane.limit, lane.limit);
+  // defensive drivers close the door on a player right behind them
+  if (st.block && lane.off === null && ctx.gapAhead > 4 && ctx.gapAhead < 30 && ctx.playerLat !== undefined) off = clamp(ctx.playerLat, -lane.limit, lane.limit);
   const p = track.sampleAt(n.s + look / track.length);
   const tx = p.x + p.tz * off;
   const tz = p.z - p.tx * off;
@@ -39,7 +52,7 @@ export function driverInput(d, v, tune, track, ctx, dt) {
   const b = track.sampleAt(n.s + (24 + speed) / track.length);
   const sev = Math.abs(wrap(Math.atan2(b.tx, b.tz) - Math.atan2(a.tx, a.tz)));
   const rb = rubberBand(ctx.playerAcc ?? 0, ctx.myAcc ?? 0);
-  const target = tune.maxSpeed * d.skill * rb * (1 - clamp(sev * 1.5, 0, 0.55));
+  const target = tune.maxSpeed * (d.skill + st.skillAdd) * rb * (1 - clamp(sev * 1.5 * st.corner, 0, 0.55));
 
   let gas = 0; let brake = 0; let boost = false;
   if (ctx.phase !== 'racing') return { steer: 0, gas: 0, brake: 0, boost: false, hold: true };
@@ -61,9 +74,10 @@ export function driverInput(d, v, tune, track, ctx, dt) {
 
   // nitro on a clear straight when the tank is nearly full
   d.nextBoost -= dt;
-  if (d.nextBoost <= 0 && sev < 0.12 && v.nitro >= 0.68 && speed > 8 && Math.abs(diff) < 0.2) {
+  const behind = (ctx.playerAcc ?? 0) - (ctx.myAcc ?? 0) > 0.015;          // trailing the player: spend nitro sooner
+  if (d.nextBoost <= 0 && sev < 0.12 && v.nitro >= (behind ? st.nitroAt - 0.15 : st.nitroAt) && speed > 8 && Math.abs(diff) < 0.2) {
     boost = true;
-    d.nextBoost = d.boostEvery * (0.8 + 0.4 * ((n.s * 97) % 1));
+    d.nextBoost = d.boostEvery * st.boostMul * (behind ? 0.6 : 1) * (0.8 + 0.4 * ((n.s * 97) % 1));
   }
   return { steer, gas, brake, boost };
 }

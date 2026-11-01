@@ -10,7 +10,7 @@ export const VOXEL_SIZE = 0.1;
 
 const FIXED = {
   tire: '#1b1b1f', tread: '#3d3d46', dark: '#26262b', glass: '#7fd8ff',
-  light: '#fff6b0', chrome: '#d9dee3', flame: '#ff3b30', skin: '#f1c27d', tooth: '#f6f3e8',
+  light: '#fff6b0', chrome: '#d9dee3', flame: '#ff3b30', skin: '#f1c27d', tooth: '#f6f3e8', glow: '#52f4ff',
 };
 
 let sharedGeometry = null;
@@ -66,6 +66,7 @@ export function createTruckMesh(truck, paintOverride) {
     if (key === 'light' || key === 'flame') {
       materials[key].emissive = new THREE.Color(colorFor(key, paint)).multiplyScalar(0.35);
     }
+    if (key === 'glow') materials[key].emissive = new THREE.Color(colorFor(key, paint)).multiplyScalar(0.9);
   }
 
   const root = new THREE.Group();
