@@ -82,7 +82,7 @@ Problem: normal top speed ~23 u/s versus ~45 with nitro, so normal feels slow an
 
 **Phase 4c — Ninth truck: Volt (electric)**
 - Voxel model with roof coils and glowing cyan/white body; flowing sparks and arcs along the body, wheels and coils (always on, stronger with speed and nitro); nitro is lightning arcs with a blue-white flash; electric whine and crackle sound instead of an engine roar.
-- Handling: fast, light, strong acceleration and steering, weak off-road. Ability: ride charge pads for extra charge; Arena version chain lightning on ram (to be confirmed with you when we get there).
+- Handling: fast, light, strong acceleration and steering, weak off-road. Ability (confirmed): visible chain lightning. Bolts jump from Volt to nearby trucks and props (and between them), drawn as bright forking voxel arcs with a flash and crackle; in Arena it damages and chains between rivals on ram, in races it briefly slows rivals it arcs to. Charge pads refill it.
 - Added to the garage roster (nine trucks), paint customisation, per-truck feel entry.
 - Tests: model integrity, roster count and unique ids, feel/nitro entries valid, spark emitter present and pooled within the particle budget.
 
