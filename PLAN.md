@@ -123,6 +123,46 @@ Order: 6a -> 6b -> 6c -> 6d -> 6e. Each step ends with tests, a push to main and
 - Rivals choose gap or detour by style and speed; one shortcut per track that needs nitro.
 - Tests: forks rejoin with correct progress and checkpoints, trench jump clears at normal speed and nitro, a miss respawns correctly, detour lane completable by every truck, AI never stuck, minimap draws both routes.
 
+**Phase 7 — Fix pass, difficulty, football, and very different stages** (PLAN, awaiting your go-ahead; replaces 5f's football and goes before 5d)
+Your feedback: still overpowered, loop pillars and side view, easy to drive round obstacles, arena hits, football missing, stages too alike.
+
+**7a — Race fixes + difficulty setting**
+- Difficulty (Easy / Normal / Hard, a settings icon, saved): Easy = today. Normal = rival skill 100-104%, catch-up up to +20% when trailing, a free nitro top-up when far behind. Hard = skill 104-110%, catch-up +30%, rivals dodge walls cleanly and no pit mistakes.
+- Method first: a bot that drives like a good player is raced against the pack in tests; each level must keep the pack within a set gap of that bot over three laps.
+- Loops: remove the grey support pylons (keep the solid stone blocks under the ring). Camera: replace the side view with a chase view that rolls with the ring so the road curves up and over you, ring made see-through.
+- Obstacles: every wall run (corridors, islands, slaloms, forks) is extended to the track barrier, so there is no way round the side; crates, barrels and rocks stop you unless you hit them fast or on nitro.
+- Tests: no gap between wall ends and the barrier, pylons gone, loop camera stays behind the truck, bot-versus-pack gap per level, breakAt rules.
+
+**7b — Arena damage rule**
+- You only take damage from a hit that comes at you. If you ram a rival, they take it and you do not (unless they were driving at you too). Your own explosions and Volt's bolts never hurt you. Rivals hurt each other only when one attacks.
+- Tests: attacker versus victim for each pairing, blast owner is immune, damage still ends matches.
+
+**7c — Stage engine + Himalaya Pass**
+- Stage engine: every stage defines its own sky and light, fog, weather particles (snow, rain, ash, embers, spray), ground and wall palette, backdrop (mountains, ocean, city, cave walls), gravity, wind, surface set (adds ice, snow, wet planks, lava), hazards and its own prop set. Each stage gets a different music and engine-ambience mix.
+- Himalaya Pass: snow, thin blizzard fog, ice patches (very low grip), prayer-flag gates, yak herds crossing, stone chortens, a rope bridge with loose planks, cliff edges with no barrier on the outer side, a timed avalanche wave from the slope.
+- Tests: stage defs valid, every stage laps with every truck, hazards fire and respawn correctly, new surfaces change grip as stated.
+
+**7d — Skull Cavern + Magma Peak**
+- Skull Cavern: underground, almost dark with a headlight cone, glowing mushrooms and crystals, bone bridges, a skull-mouth tunnel entrance, dripping stalactites that drop on a timer, bats, a tight twisting road with low ceiling look.
+- Magma Peak: a volcano climb round the crater rim, lava rivers beside and across the road (touch = respawn and a time penalty), cooling rock plates that sink, geyser launchers, falling ash and embers, red heat sky.
+- Tests as 7c plus lava respawn, geyser launch height, stalactite hit.
+
+**7e — Football mode** (arena variant, replaces the football part of 5f)
+- A walled pitch with two goals and a big ball, two teams of trucks (you plus rivals), ram the ball with the nose, kickers and ramps for lobs, nitro to chase, short matches (3 minutes or first to 5), team colours, goal replays with a camera cut. Joystick and the same two buttons; no new controls.
+- Tests: ball physics, goal scoring, team assignment, match end.
+
+**7f — Sea Bridge + Dragon's Spine (very steep)**
+- Sea Bridge: a road on piers and boardwalk over the ocean, side wind gusts, wet planks (low grip), waves splashing the deck, a drawbridge gap to jump, ships and gulls, no side barriers in places (fall = respawn).
+- Dragon's Spine: a very steep stage with switchback hairpins, climbs up to about 35 degrees and long drops; strong gravity along the slope, downhill speed to manage, uphill needs nitro; ramps off the crest. Track tools get a higher grade limit for this stage only.
+- Tests: grade limits per stage, wind force, drop respawn, every truck can finish the climb.
+
+**7g — Neon Night City + Moon Crater**
+- Neon Night City: rain, wet asphalt, neon signs, crossing traffic cars as moving obstacles, a drift section, headlights on.
+- Moon Crater: low gravity (huge jumps, floaty landings), crater bowls, dust, Earth in the sky, boost craters.
+- Tests: gravity value respected, traffic cars collide and respawn, all trucks finish.
+
+Order: 7a -> 7b -> 7c -> 7d -> 7e -> 7f -> 7g. Each ends with tests, a push to main and your test.
+
 **Phase 5d — Big arena + squash**
 Bigger multi-level stadium, rows of parked cars on the ground that FLATTEN (squash height, tyres pop) when driven over, ramps, a crusher pit; squash score.
 **Phase 5e — Ram + Block** (block shares the brake button; parry window, Batman-style counter cinematic, finisher).
