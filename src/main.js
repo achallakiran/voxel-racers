@@ -12,6 +12,7 @@ import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
 import { createWorld } from './world/scenes.js';
+import { tickHazards } from './physics/hazards.js';
 import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST, RACE_START_NITRO, SUS_MODES } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import { TRACKS, getTrackById, validTrack } from './world/tracks.js';
@@ -948,7 +949,7 @@ function start() {
       race.update(n.s);
       playerAcc += wrapDelta(playerPrevS, n.s); playerPrevS = n.s;
       rivalPose(dt);
-      tickPickups(courseTerrain, dt); world.pickups.sync(courseTerrain.pickups || [], clock);
+      tickPickups(courseTerrain, dt); tickHazards(courseTerrain, dt); world.follow(v.x, v.y, v.z); world.pickups.sync(courseTerrain.pickups || [], clock);
       if (race.phase === 'racing') {
         const wedged = input.gas > 0.5 && v.grounded && !v.loop && Math.abs(v.f) < 1.0;
         stuckT = wedged ? stuckT + dt : Math.max(0, stuckT - dt * 2);

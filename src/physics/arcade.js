@@ -3,6 +3,7 @@
 // the terrain falls away faster than gravity (kickers, crests) and lands with a thump.
 //
 import { atEntry, startLoop, stepLoop, exitLoop } from './loop.js';
+import { hazardEffects } from './hazards.js';
 
 // Heading convention: forward = (sin h, cos h). Steering input > 0 turns right (heading decreases).
 
@@ -20,6 +21,9 @@ export const SURFACES = {
   goo: { grip: 0.5, drag: 2.2, maxMul: 0.4 },      // sticky slow patch
   oil: { grip: 0.16, drag: 0.05, maxMul: 1.0 },     // slippery patch
   pad: { grip: 1.2, drag: 0, maxMul: 1.0 },         // accelerator strip (kick handled in stepVehicle)
+  snow: { grip: 0.85, drag: 0.25, maxMul: 0.95 },     // packed snow road
+  ice: { grip: 0.32, drag: 0.03, maxMul: 1.0 },     // very slippery
+  planks: { grip: 0.95, drag: 0.1, maxMul: 0.98 },  // wooden bridge
 };
 export const PAD_KICK = 9;
 export const PAD_TIME = 1.3;
@@ -102,6 +106,7 @@ function slope(terrain, x, z) {
 // returns a list of events: 'boost' | {type:'land'|'hit'|'wall', power}
 export function stepVehicle(v, input, terrain, tune, dt) {
   const events = [];
+  const G = terrain.gravity ?? GRAVITY;
   if (input.hold) input = { steer: 0, gas: 0, brake: 0, boost: false, hold: true };   // countdown / finished: stand still, never reverse
   // loops: ride the ring while on it, or hop on at the mouth
   if (terrain.loops && !v.loop && v.grounded) {
@@ -181,13 +186,17 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   }
   v.vx = f * sinH + l * cosH;
   v.vz = f * cosH - l * sinH;
+  // wind pushes sideways (less when the tyres are gripping)
+  if (terrain.wind) { const wk = v.grounded ? 1 : 1.6; v.vx += terrain.wind.x * wk * dt; v.vz += terrain.wind.z * wk * dt; }
+  // timed hazards (avalanche, geysers ...): effects are exact functions of the stage clock
+  if (terrain.hazards && terrain.hazards.length) hazardEffects(v, terrain, dt, events);
 
   if (v.grounded) {
     // gravity along the slope: climbing slows, descending speeds up
     const s = slope(terrain, v.x, v.z);
     const sg = boosting ? 0.35 : 0.8;
-    v.vx -= GRAVITY * s.gx * sg * dt;
-    v.vz -= GRAVITY * s.gz * sg * dt;
+    v.vx -= G * s.gx * sg * dt;
+    v.vz -= G * s.gz * sg * dt;
   } else {
     const air = Math.exp(-0.05 * dt);
     v.vx *= air;
@@ -266,7 +275,7 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   const gPrev = terrain.heightAt(v.x, v.z);
   let h = v.y - g1;
   if (!wasGrounded) v.fallV = Math.min(v.fallV, v.vy);
-  let ay = -GRAVITY;
+  let ay = -G;
   if (h < SPRING_REST) ay += tune.suspK * (SPRING_REST - h) - tune.suspC * v.vy;
   v.vy = clamp(v.vy + ay * dt, -45, MAX_UP);
   v.y += v.vy * dt;

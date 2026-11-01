@@ -123,7 +123,7 @@ Order: 6a -> 6b -> 6c -> 6d -> 6e. Each step ends with tests, a push to main and
 - Rivals choose gap or detour by style and speed; one shortcut per track that needs nitro.
 - Tests: forks rejoin with correct progress and checkpoints, trench jump clears at normal speed and nitro, a miss respawns correctly, detour lane completable by every truck, AI never stuck, minimap draws both routes.
 
-**Phase 7 — Fix pass, difficulty, football, and very different stages** (7a and 7b DONE, rest planned; goes before 5d)
+**Phase 7 — Fix pass, difficulty, football, and very different stages** (7a, 7b, 7c DONE, rest planned; goes before 5d)
 Your feedback: still overpowered, loop pillars and side view, easy to drive round obstacles, arena hits, football missing, stages too alike.
 
 **7a — Race fixes + difficulty setting**
@@ -137,7 +137,7 @@ Your feedback: still overpowered, loop pillars and side view, easy to drive roun
 - You only take damage from a hit that comes at you. If you ram a rival, they take it and you do not (unless they were driving at you too). Your own explosions and Volt's bolts never hurt you. Rivals hurt each other only when one attacks.
 - Tests: attacker versus victim for each pairing, blast owner is immune, damage still ends matches.
 
-**7c — Stage engine + Himalaya Pass**
+**7c — Stage engine + Himalaya Pass** (DONE: per-stage gravity, wind, snow/ice/plank surfaces, timed avalanche hazard, snowfall, alpine sky/fog, snow-capped peaks and pines; Himalaya Pass is the 4th stage. Slalom left out of this stage: AI jams on it at snow-stage speeds)
 - Stage engine: every stage defines its own sky and light, fog, weather particles (snow, rain, ash, embers, spray), ground and wall palette, backdrop (mountains, ocean, city, cave walls), gravity, wind, surface set (adds ice, snow, wet planks, lava), hazards and its own prop set. Each stage gets a different music and engine-ambience mix.
 - Himalaya Pass: snow, thin blizzard fog, ice patches (very low grip), prayer-flag gates, yak herds crossing, stone chortens, a rope bridge with loose planks, cliff edges with no barrier on the outer side, a timed avalanche wave from the slope.
 - Tests: stage defs valid, every stage laps with every truck, hazards fire and respawn correctly, new surfaces change grip as stated.

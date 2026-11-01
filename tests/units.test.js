@@ -1262,8 +1262,8 @@ import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 3);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress']);
+  assert.equal(TRACKS.length, 4);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -1921,4 +1921,66 @@ test('intro: the audio has intro and title sounds and every one is a safe no-op 
   for (const k of ['introText', 'introLogo', 'introZap', 'introStop', 'grungeHit']) { assert.equal(typeof a[k], 'function', k); a[k](); }
   assert.equal(a.titleBed(true), false, 'no sound yet, so no bed');
   assert.equal(a.titleBed(false), false);
+});
+
+// ---------------------------------------------------------------- phase 7c: stage engine (gravity, wind, hazards, snow)
+import { stepVehicle as stepV7c, createVehicle as mkV7c, tuningFor as tuneV7c } from '../src/physics/arcade.js';
+import { avalanchePhase, avalancheBand, tickHazards } from '../src/physics/hazards.js';
+
+const flat7c = (extra = {}) => ({ heightAt: () => 0, surfaceAt: () => 'asphalt', constrain: (x, z) => ({ x, z }), obstacles: [], radius: 1e9, ...extra });
+const truck7c = () => tuneV7c({ speed: 6, grip: 6, weight: 6 });
+
+test('7c: lower gravity makes jumps float longer', () => {
+  const air = (g) => {
+    const terr = flat7c({ gravity: g });
+    const v = mkV7c(0, 0, 0, terr, 0); v.y = 3; v.grounded = false; v.vy = 6; let t = 0;
+    while (t < 10) { stepV7c(v, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60); t += 1 / 60; if (v.grounded) break; }
+    return t;
+  };
+  assert.ok(air(2) > air(undefined) * 1.5, 'low gravity -> much longer hang time');
+});
+
+test('7c: wind pushes a coasting truck sideways', () => {
+  const terr = flat7c({ wind: { x: 6, z: 0 } });
+  const v = mkV7c(0, 0, 0, terr, 0);
+  for (let i = 0; i < 120; i++) stepV7c(v, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60);
+  assert.ok(v.x > 0.5, 'drifted downwind');
+});
+
+test('7c: ice is slipperier than snow, planks are grippy', async () => {
+  const { SURFACES } = await import('../src/physics/arcade.js');
+  assert.ok(SURFACES.ice.grip < SURFACES.snow.grip && SURFACES.snow.grip < SURFACES.asphalt.grip);
+  assert.ok(SURFACES.planks.grip > SURFACES.snow.grip);
+});
+
+test('7c: avalanche wave sweeps from its side and is a pure function of the clock', () => {
+  const h = { kind: 'avalanche', period: 16, warn: 2, warnLead: 2.5, dur: 3, offset: 0, w: 13, side: 1 };
+  assert.ok(avalanchePhase(h, 1) < 0, 'idle while warning');
+  assert.ok(avalanchePhase(h, 2.1) >= 0 && avalanchePhase(h, 2.1) < 0.1);
+  assert.ok(avalanchePhase(h, 5.5) < 0, 'idle after the wave');
+  assert.equal(avalanchePhase(h, 2.5 + 16), avalanchePhase(h, 2.5));
+  const [a0, b0] = avalancheBand(h, 0.05); const [a1] = avalancheBand(h, 0.9);
+  assert.ok(a1 < a0 && b0 === 6.5, 'front travels across the road from the right edge');
+});
+
+test('7c: standing in the avalanche pushes and slows the truck', () => {
+  const terr = flat7c({ hazards: [{ kind: 'avalanche', x: 0, z: 0, tx: 0, tz: 1, len: 40, w: 30, side: 1, period: 16, warn: 0, warnLead: 1, dur: 10, offset: 0 }], time: 5 });
+  const v = mkV7c(0, 0, 0, terr, 0); v.vx = 0; v.vz = 0;
+  for (let i = 0; i < 60; i++) stepV7c(v, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60);
+  assert.ok(v.x < -1, 'swept toward the far side (left)');
+});
+
+test('7c: tickHazards advances the clock', () => {
+  const terr = { hazards: [], time: 0 };
+  tickHazards(terr, 0.5); tickHazards(terr, 0.25);
+  assert.equal(terr.time, 0.75);
+});
+
+test('7c: Himalaya Pass has snow, ice, planks, avalanche hazards and wind; fresh terrain resets the clock', () => {
+  const T = getTrackById('himalaya');
+  const surfs = new Set(T.SECTIONS.map((s) => s.surf));
+  for (const s of ['snow', 'ice', 'planks']) assert.ok(surfs.has(s), s);
+  assert.equal(T.terrain.hazards.length, 3);
+  assert.ok(T.env.wind && T.env.weather === 'snow');
+  const a = T.freshTerrain(); a.time = 9; assert.equal(T.freshTerrain().time, 0);
 });

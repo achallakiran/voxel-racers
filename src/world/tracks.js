@@ -195,6 +195,60 @@ const FORTRESS_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF)];
+// ---------------------------------------------------------------- 4. Himalaya Pass (snow, ice, wind, avalanches)
+const HIMALAYA_DEF = {
+  id: 'himalaya', name: 'Himalaya Pass',
+  theme: { a: [0.93, 0.96, 1.0], b: [0.86, 0.9, 0.97], edge: [0.74, 0.78, 0.86], far: [0.72, 0.78, 0.9], dirt: [0.55, 0.5, 0.47], rut: [0.45, 0.4, 0.38], sand: [0.8, 0.82, 0.88], sky: 'alpine', snow: true },
+  peaks: 30, scenery: ['pine', 'pine'], sceneryCount: 380,
+  env: { weather: 'snow', wind: { x: 9, z: 0 }, fog: { color: '#dfe9f5', near: 30, far: 135 } },
+  ctrl() {
+    const ctrl = [];
+    for (let k = 0; k < 20; k++) {
+      const th = (2 * Math.PI * k) / 20;
+      const r = 1 + 0.07 * Math.sin(2 * th + 0.9) + 0.04 * Math.sin(4 * th + 0.2) + 0.02 * Math.sin(7 * th);
+      ctrl.push({ x: 128 * Math.cos(th) * r, z: 92 * Math.sin(th) * r });
+    }
+    return ctrl;
+  },
+  elevation: (s) => 4.2 + 1.5 * Math.sin(2 * Math.PI * s + 0.4) + 0.8 * Math.sin(2 * Math.PI * 3 * s + 1.2) + 0.4 * Math.sin(2 * Math.PI * 7 * s),
+  sections: [
+    { from: 0.0, to: 0.34, surf: 'snow' }, { from: 0.34, to: 0.42, surf: 'asphalt' }, { from: 0.42, to: 0.5, surf: 'planks' },
+    { from: 0.5, to: 0.6, surf: 'snow' }, { from: 0.6, to: 0.72, surf: 'asphalt' }, { from: 0.72, to: 0.79, surf: 'snow' },
+    { from: 0.79, to: 0.85, surf: 'ice' }, { from: 0.85, to: 0.9, surf: 'snow' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
+  ],
+  loops: ({ straightNear }) => [{ s: straightNear(0.615, 16, 0.02) }],
+  features(T) {
+    const { JUMP, feat } = T;
+    return [...JUMP(0.08, 2.4, 9), feat(0.875, 'whoops', { kind: 'whoops', len: 28, w: 11, amp: 0.55, wave: 4.2 })];
+  },
+  walls({ W }) {
+    W.fork(0.135, 52, 1, 'stone');
+    W.corridor(0.245, 30, 8.2, 'stone');
+    W.island(0.70, 32, 'stone', 1);
+    W.barrels(0.475, -1, 3); W.crates(0.945, 1, 3); W.tnt(0.778, 2);
+    for (const [a, o, l] of [[0.04, 0, 8], [0.30, 0, 8], [0.965, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.41, 3, 9, 5); W.oil(0.55, -3, 10, 5);
+    for (const [a, o] of [[0.03, 0], [0.10, 0], [0.22, 0], [0.31, 0], [0.43, 0], [0.52, 0], [0.60, 0], [0.69, 0], [0.76, 0], [0.91, 0]]) W.pickup(a, o);
+  },
+  hazards({ sampleAt, LENGTH, add }) {
+    // avalanche waves sweep a stretch of road from alternating sides; a warning leads each one
+    for (const [s, side, off] of [[0.215, 1, 0], [0.762, -1, 4], [0.81, 1, 8]]) {
+      const p = sampleAt(s);
+      add({ kind: 'avalanche', x: p.x, z: p.z, tx: p.tx, tz: p.tz, len: 18, w: 13, side, period: 16, warn: 2.0, warnLead: 2.5, dur: 3.0, offset: off, s });
+    }
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(88); const out = [];
+    for (let i = 0; i < 34; i++) {
+      const s = rand(); const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
+      const p = sampleAt(s); if (s < 0.02 || s > 0.98) continue;
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF)];
 export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => TRACKS.some((t) => t.id === id);

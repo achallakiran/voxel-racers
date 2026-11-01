@@ -115,6 +115,35 @@ function buildSky(stopsDef = SUNSET) {
   return sky;
 }
 
+const ALPINE = [[-1, '#e9f1fa'], [0.0, '#e9f1fa'], [0.1, '#cfdcec'], [0.35, '#9db6d4'], [0.7, '#6e8fb8'], [1, '#4a6c9a']];
+
+// falling snow: a box of flakes that follows the truck and wraps, so it is cheap and always around the camera
+function buildSnow(parent) {
+  const N = 380; const BOX = 46; const H = 26;
+  const geo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false }), N);
+  mesh.frustumCulled = false;
+  const fl = [];
+  for (let i = 0; i < N; i++) fl.push({ x: (hash2(i, 1) - 0.5) * BOX, y: hash2(i, 2) * H, z: (hash2(i, 3) - 0.5) * BOX, v: 3 + hash2(i, 4) * 3, ph: hash2(i, 5) * 6 });
+  mesh.visible = false;
+  parent.add(mesh);
+  const mm = new THREE.Matrix4();
+  return {
+    mesh, flakes: fl, BOX, H,
+    update(dt, t, cx, cy, cz, wind) {
+      for (let i = 0; i < N; i++) {
+        const f = fl[i];
+        f.y -= f.v * dt; f.x += ((wind ? wind.x : 0) * 1.2 + Math.sin(t + f.ph) * 0.6) * dt;
+        if (f.y < 0) f.y += H;
+        if (f.x > BOX / 2) f.x -= BOX; else if (f.x < -BOX / 2) f.x += BOX;
+        mm.setPosition(cx + f.x, cy - 4 + f.y, cz + f.z);
+        mesh.setMatrixAt(i, mm);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    },
+  };
+}
+
 function buildSun() {
   const g = new THREE.Group();
   const cubes = [];
@@ -469,6 +498,13 @@ function makeTrackColor(T) {
       c = Math.floor(sAlong / 2 + smp.d) % 2 ? [0.4, 0.78, 0.2] : [0.3, 0.64, 0.16];
     } else if (smp.surf === 'oil') {
       c = (Math.floor(sAlong / 2) + Math.floor(smp.d / 2)) & 1 ? [0.06, 0.05, 0.09] : [0.14, 0.11, 0.2];
+    } else if (smp.surf === 'snow') {
+      c = [0.92, 0.95, 0.99];
+      if (Math.abs(Math.abs(smp.d) - 2.2) < 0.6) c = [0.8, 0.86, 0.94];
+    } else if (smp.surf === 'ice') {
+      c = (Math.floor(sAlong / 3 + smp.d / 2) & 1) ? [0.62, 0.84, 0.97] : [0.7, 0.9, 1.0];
+    } else if (smp.surf === 'planks') {
+      c = Math.floor(sAlong / 1.2) % 2 ? [0.5, 0.34, 0.2] : [0.44, 0.29, 0.17];
     } else if (smp.surf === 'mud') {
       c = [0.33, 0.22, 0.13];
     } else if (smp.surf === 'sand') {
@@ -554,6 +590,17 @@ function buildTrack(group, T) {
       trunks.push({ x: t.x, y: t.y + 5.0 * sc, z: t.z, sx: 4 * sc, sy: 1.2 * sc, sz: 3.2 * sc, color: rock.clone().multiplyScalar(1.2) });
       continue;
     }
+    if (t.type === 'peak') {
+      // stepped voxel mountain: dark rock base, grey scree, snow cap
+      const layers = [[16, 5, '#5b5f6e'], [13, 5, '#6d7284'], [10, 5, '#8a90a2'], [7, 4, '#dfe6f0'], [4.2, 4, '#ffffff'], [2, 3, '#ffffff']];
+      let y = t.y - 1;
+      for (const [w, h, c] of layers) {
+        const col = new THREE.Color(c).multiplyScalar(0.92 + t.tint * 0.12);
+        trunks.push({ x: t.x, y: y + (h * sc) / 2, z: t.z, sx: w * sc, sy: h * sc, sz: w * sc * 0.85, color: col });
+        y += h * sc;
+      }
+      continue;
+    }
     if (t.type === 'tower') {
       const stone = new THREE.Color('#8e8f96').multiplyScalar(g);
       trunks.push({ x: t.x, y: t.y + 4.5 * sc, z: t.z, sx: 2.6 * sc, sy: 9 * sc, sz: 2.6 * sc, color: stone });
@@ -564,8 +611,17 @@ function buildTrack(group, T) {
       continue;
     }
     trunks.push({ x: t.x, y: t.y + 0.7 * sc, z: t.z, sx: 0.55 * sc, sy: 1.4 * sc, sz: 0.55 * sc, color: '#6b4a2b' });
-    const green = new THREE.Color('#2f7d32').multiplyScalar(g);
+    const snowy = !!T.theme.snow;
+    const green = new THREE.Color(snowy ? '#1f5a3a' : '#2f7d32').multiplyScalar(g);
     if (t.type === 'pine') {
+      if (snowy) {
+        leaves.push({ x: t.x, y: t.y + 1.9 * sc, z: t.z, sx: 3.0 * sc, sy: 1.1 * sc, sz: 3.0 * sc, color: green });
+        leaves.push({ x: t.x, y: t.y + 2.55 * sc, z: t.z, sx: 3.0 * sc, sy: 0.25 * sc, sz: 3.0 * sc, color: '#f4f8ff' });
+        leaves.push({ x: t.x, y: t.y + 2.9 * sc, z: t.z, sx: 2.2 * sc, sy: 1.1 * sc, sz: 2.2 * sc, color: green });
+        leaves.push({ x: t.x, y: t.y + 3.55 * sc, z: t.z, sx: 2.2 * sc, sy: 0.25 * sc, sz: 2.2 * sc, color: '#f4f8ff' });
+        leaves.push({ x: t.x, y: t.y + 3.9 * sc, z: t.z, sx: 1.3 * sc, sy: 1.1 * sc, sz: 1.3 * sc, color: '#f4f8ff' });
+        continue;
+      }
       leaves.push({ x: t.x, y: t.y + 1.9 * sc, z: t.z, sx: 3.0 * sc, sy: 1.1 * sc, sz: 3.0 * sc, color: green });
       leaves.push({ x: t.x, y: t.y + 2.9 * sc, z: t.z, sx: 2.2 * sc, sy: 1.1 * sc, sz: 2.2 * sc, color: green });
       leaves.push({ x: t.x, y: t.y + 3.9 * sc, z: t.z, sx: 1.3 * sc, sy: 1.1 * sc, sz: 1.3 * sc, color: green });
@@ -773,6 +829,10 @@ export function createWorld(scene, lights) {
   skyDay.userData.backdrop = true;
   skyDay.visible = false;
   outdoor.add(skyDay);
+  const skyAlpine = buildSky(ALPINE);
+  skyAlpine.userData.backdrop = true;
+  skyAlpine.visible = false;
+  outdoor.add(skyAlpine);
   const sunMesh = buildSun();
   sunMesh.userData.backdrop = true;
   outdoor.add(sunMesh);
@@ -798,7 +858,11 @@ export function createWorld(scene, lights) {
   const fogOut = new THREE.Fog('#f4a96b', 26, 110);
   const fogGar = new THREE.Fog('#16161e', 14, 40);
   const fogDay = new THREE.Fog('#cfe6f5', 40, 170);
+  const fogAlpine = new THREE.Fog('#dfe9f5', 30, 135);
   let mode = 'outdoor';
+  const snow = buildSnow(scene);
+  let focus = { x: 0, y: 0, z: 0 };
+  let weatherWind = null;
 
   function setMode(next) {
     mode = next === 'garage' || next === 'drive' ? next : 'outdoor';
@@ -811,13 +875,19 @@ export function createWorld(scene, lights) {
     for (const child of outdoor.children) if (child.userData.mesa && racing) child.visible = false;
     sky.visible = !racing;
     arena.cloudMat.color.set(racing ? '#ffffff' : '#ffd9e0');
-    skyDay.visible = racing;
+    const env = racing && activeTrack ? activeTrack.env || {} : {};
+    const alpine = racing && activeTrack && activeTrack.theme.sky === 'alpine';
+    skyDay.visible = racing && !alpine;
+    skyAlpine.visible = alpine;
+    snow.mesh.visible = racing && env.weather === 'snow';
+    weatherWind = env.wind || null;
     sandbox.visible = d && course === 'arena';
     for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
     groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
-    scene.background = new THREE.Color(g ? '#16161e' : (racing ? '#bfe3fb' : '#ffb35a'));
-    scene.fog = g ? fogGar : (racing ? fogDay : fogOut);
+    scene.background = new THREE.Color(g ? '#16161e' : (alpine ? '#cfdcec' : racing ? '#bfe3fb' : '#ffb35a'));
+    if (alpine && env.fog) { fogAlpine.color.set(env.fog.color); fogAlpine.near = env.fog.near; fogAlpine.far = env.fog.far; }
+    scene.fog = g ? fogGar : (alpine ? fogAlpine : racing ? fogDay : fogOut);
     if (g) {
       hemi.color.set('#8fa0ff'); hemi.groundColor.set('#2a2230'); hemi.intensity = 0.9;
       sun.color.set('#ffe9c8'); sun.intensity = 1.5; sun.position.set(4, 9, 6);
@@ -855,6 +925,7 @@ export function createWorld(scene, lights) {
 
   const m = new THREE.Matrix4();
   function update(dt, t, spin) {
+    if (snow.mesh.visible) snow.update(dt, t, focus.x, focus.y, focus.z, weatherWind);
     if (mode !== 'garage') {
       arena.clouds.position.x = ((t * 0.6 + 70) % 140) - 70;
       // dust drifts on the wind and wraps (title only)
@@ -876,6 +947,7 @@ export function createWorld(scene, lights) {
   return {
     setMode,
     setCourse,
+    follow(x, y, z) { focus = { x, y, z }; },
     props: propMeshes,
     pickups: pickupMeshes,
     get trackStats() { return trackStats; },

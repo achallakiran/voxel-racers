@@ -397,6 +397,18 @@ export function makeTrack(def) {
       if (Math.abs(n.d) < BARRIER + 2) continue;
       out.push({ x, z, y: heightAt(x, z), type: rand() < 0.65 ? kinds[0] : kinds[1], scale: 0.8 + rand() * 0.9, tint: rand() });
     }
+    // distant mountains ringing the stage (stages that ask for them)
+    if (def.peaks) {
+      const pr = rng(91);
+      for (let i = 0; i < def.peaks; i++) {
+        const p = sampleAt(pr());
+        const side = pr() < 0.5 ? -1 : 1;
+        const off = BARRIER + 34 + pr() * 55;
+        const x = p.x + p.tz * side * off; const z = p.z - p.tx * side * off;
+        if (Math.abs(nearest(x, z).d) < BARRIER + 30) continue;
+        out.push({ x, z, y: heightAt(x, z), type: 'peak', scale: 1.2 + pr() * 1.6, tint: pr() });
+      }
+    }
     return out;
   }
 
@@ -423,15 +435,18 @@ export function makeTrack(def) {
     return { x: p.x + p.tz * lane, z: p.z - p.tx * lane, heading: Math.atan2(p.tx, p.tz), s: START_S - (row * 9) / LENGTH };
   };
 
-  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true };
+  const ENV = { gravity: undefined, wind: null, weather: 'none', ...(def.env || {}) };
+  const HAZARDS = [];
+  if (def.hazards) def.hazards({ W: null, sampleAt, LENGTH, ROAD_HALF, add: (h) => HAZARDS.push(h) });
+  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true, gravity: ENV.gravity, wind: ENV.wind, hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {
     const props = PROPS.map((p) => ({ ...p }));
-    return { ...terrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...props], props, pickups: PICKUPS.map((k) => ({ ...k, taken: false, cool: 0 })) };
+    return { ...terrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...props], props, pickups: PICKUPS.map((k) => ({ ...k, taken: false, cool: 0 })), hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
   }
 
   return {
-    id: def.id, name: def.name, theme: def.theme, ROAD_HALF, SHOULDER, BARRIER,
+    id: def.id, name: def.name, theme: def.theme, env: ENV, ROAD_HALF, SHOULDER, BARRIER,
     LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, PICKUPS, ZONES, LOOPS, LANES,
     nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear,
     sceneryLayout, barrierLayout, startPose, gridPose, terrain, freshTerrain, featureHeightAt: featureHeight,
