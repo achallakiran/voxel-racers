@@ -297,6 +297,6 @@ Mobile frame-rate tuning, LOD, final balance.
 
 **Phase 8 - Real layouts (user feedback: stages look alike; road should go through things)**
 - 8a Skull Cavern: the road runs through a giant skull on the bend (roofed tunnel, glowing eyes, teeth, crystals, rocks falling from the roof). DONE (set piece in src/world/structures.js, clearance tested).
-- 8b Moon Crater: spherical-looking course with big curvature, craters on and beside the road, low gravity, Earth and Milky Way sky. NEXT.
+- 8b Moon DONE.
 - 8c Magma Peak: climb the cone, drop steeply into the crater (needs landform support + steeper slopes). Later.
 - 8d Steep slide stage / remaining stages get their own layouts. Later.

@@ -87,12 +87,12 @@ export function makeTrack(def) {
     const c0 = (spec.side ?? -1) * (rw + 0.1);
     LOOPS.push({
       s: s0, endS: s0 + len / LENGTH, len, R, k, x: a.x, z: a.z, tx: (b.x - a.x) / l, tz: (b.z - a.z) / l,
-      y0: def.elevation(s0), halfW: rw, c0, c1: -c0, vmin: spec.vmin ?? 22, gl: 9,
+      y0: def.elevation(s0, rawAt(s0)), halfW: rw, c0, c1: -c0, vmin: spec.vmin ?? 22, gl: 9,
     });
   }
   // the road is level under and around each loop so the ring and the road agree
   function elevation(s) {
-    let y = def.elevation(s);
+    let y = def.elevation(s, rawAt(s));
     for (const L of LOOPS) {
       const m = 0.012;
       const w = Math.min(smooth((s - (L.s - m * 2)) / m), 1 - smooth((s - L.endS) / m));
@@ -238,7 +238,10 @@ export function makeTrack(def) {
     const ad = Math.abs(n.d);
     const nat = natural(x, z);
     const blend = smooth((ad - ROAD_HALF) / 10);
-    const base = Math.max(0.1, n.y + (nat - 2.6) * blend);
+    const gb = def.ground ? smooth((ad - ROAD_HALF - 4) / 16) : blend;   // landform stages keep the road corridor and its walls level
+    const base = def.ground
+      ? Math.max(0.1, n.y * (1 - gb) + (def.ground(x, z) + (nat - 2.6) * 0.12) * gb)   // a stage with its own landform (dome, craters, mountain)
+      : Math.max(0.1, n.y + (nat - 2.6) * blend);
     const f = ad < ROAD_HALF + 4 ? featureSum(x, z) : 0;
     const onRoad = ad <= ROAD_HALF;
     return {

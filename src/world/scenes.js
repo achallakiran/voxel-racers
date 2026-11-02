@@ -124,7 +124,8 @@ const GOLDEN = [[-1, '#ffd9a0'], [0.0, '#ffd9a0'], [0.08, '#ffb870'], [0.28, '#f
 const STORM = [[-1, '#8f98a6'], [0.0, '#8f98a6'], [0.12, '#7a8494'], [0.4, '#5c6678'], [0.75, '#434b5c'], [1, '#2c3242']];
 const VOLCANO = [[-1, '#ff7a30'], [0.0, '#ff7a30'], [0.1, '#d6401c'], [0.35, '#7a1f18'], [0.7, '#3a1114'], [1, '#1a0809']];
 const CAVE = [[-1, '#1c2230'], [0.0, '#1c2230'], [0.5, '#10141e'], [1, '#080a10']];
-const SKY_STOPS = { day: DAY, alpine: ALPINE, golden: GOLDEN, storm: STORM, volcano: VOLCANO, cave: CAVE };
+const SPACE = [[-1, '#07091a'], [0.0, '#07091a'], [0.25, '#03040d'], [1, '#010208']];
+const SKY_STOPS = { space: SPACE, day: DAY, alpine: ALPINE, golden: GOLDEN, storm: STORM, volcano: VOLCANO, cave: CAVE };
 
 // weather particles: a box of specks that follows the truck and wraps, so it is cheap and always around the camera
 const WEATHER = {
@@ -171,6 +172,65 @@ function buildWeather(parent) {
       mesh.instanceMatrix.needsUpdate = true;
     },
   };
+}
+
+// the night sky of the Moon stage: coloured stars, a Milky Way band, and the Earth hanging in it (all follow the truck, so they stay at infinity)
+function buildSpace() {
+  const g = new THREE.Group();
+  const R = 120;
+  const rnd = (() => { let a = 12345; return () => { a = (a * 1664525 + 1013904223) >>> 0; return a / 4294967296; }; })();
+  const pts = []; const cols = [];
+  const tint = [[1, 1, 1], [0.8, 0.88, 1], [1, 0.92, 0.8], [1, 0.8, 0.75], [0.75, 0.82, 1]];
+  const dir = (u, v) => { const y = u * 2 - 1; const r = Math.sqrt(1 - y * y); const a = v * Math.PI * 2; return [r * Math.cos(a), y, r * Math.sin(a)]; };
+  for (let i = 0; i < 1700; i++) {                       // the field of stars
+    const [x, y, z] = dir(rnd(), rnd());
+    if (y < -0.1) continue;
+    const t = tint[Math.floor(rnd() * tint.length)]; const b = 0.35 + rnd() * 0.65;
+    pts.push(x * R, y * R, z * R); cols.push(t[0] * b, t[1] * b, t[2] * b);
+  }
+  // Milky Way: a dense, glowing band along an inclined great circle, brightest at its core
+  const tilt = 0.9; const ct = Math.cos(tilt); const st = Math.sin(tilt);
+  for (let i = 0; i < 4200; i++) {
+    const a = rnd() * Math.PI * 2;
+    const w = (rnd() + rnd() + rnd() - 1.5) * 0.28;           // soft spread across the band
+    let x = Math.cos(a) * Math.cos(w); let y = Math.sin(w); let z = Math.sin(a) * Math.cos(w);
+    const y2 = y * ct - z * st; const z2 = y * st + z * ct; y = y2; z = z2;
+    if (y < -0.05) continue;
+    const core = Math.exp(-((w / 0.12) ** 2));
+    const warm = 0.5 + 0.5 * Math.sin(a * 3 + 1);
+    const b = (0.12 + 0.55 * core) * (0.5 + rnd() * 0.7);
+    pts.push(x * R, y * R, z * R); cols.push(b * (0.7 + 0.5 * warm), b * 0.8, b * (1.15 - 0.4 * warm));
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  const stars = new THREE.Points(geo, new THREE.PointsMaterial({ size: 2.2, sizeAttenuation: false, vertexColors: true, fog: false, depthWrite: false, transparent: true }));
+  stars.renderOrder = -1; stars.frustumCulled = false;
+  g.add(stars);
+  // the Earth: a chunky voxel-feel globe with oceans, land, cloud swirls and a night side
+  const eg = new THREE.SphereGeometry(15, 28, 18);
+  const pos = eg.attributes.position; const ec = new Float32Array(pos.count * 3);
+  const sunDir = new THREE.Vector3(-0.35, 0.25, -0.9).normalize();
+  const n3 = (x, y, z) => { const v = Math.sin(x * 12.9 + y * 78.2 + z * 37.7) * 43758.5453; return v - Math.floor(v); };
+  for (let i = 0; i < pos.count; i++) {
+    const nx = pos.getX(i) / 15; const ny = pos.getY(i) / 15; const nz = pos.getZ(i) / 15;
+    const q = (k) => Math.round(k * 5) / 5;
+    const land = Math.sin(q(nx) * 5.1 + 1) * Math.cos(q(ny) * 4.3 + q(nz) * 3) + 0.6 * Math.sin(q(nz) * 7 + q(nx) * 2);
+    let c = land > 0.55 ? [0.2 + 0.25 * n3(q(nx), q(ny), q(nz)), 0.5, 0.2] : [0.08, 0.26, 0.62];
+    if (Math.abs(ny) > 0.86) c = [0.92, 0.95, 1];                                  // ice caps
+    const cl = Math.sin(q(nx) * 9 + q(ny) * 3) * Math.sin(q(nz) * 8 - q(ny) * 5);
+    if (cl > 0.45) c = [0.96, 0.97, 1];                                           // clouds
+    const light = Math.max(0.12, Math.min(1, 0.25 + 0.95 * (nx * -sunDir.x + ny * -sunDir.y + nz * -sunDir.z)));
+    ec[i * 3] = c[0] * light; ec[i * 3 + 1] = c[1] * light; ec[i * 3 + 2] = c[2] * light;
+  }
+  eg.setAttribute('color', new THREE.BufferAttribute(ec, 3));
+  const earth = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
+  earth.position.set(55, 48, -105); earth.rotation.set(0.3, 1.0, 0.2);
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(16.6, 24, 14), new THREE.MeshBasicMaterial({ color: '#5aa8ff', transparent: true, opacity: 0.22, side: THREE.BackSide, fog: false, depthWrite: false }));
+  halo.position.copy(earth.position);
+  g.add(earth, halo);
+  g.userData.earth = earth;
+  return g;
 }
 
 function buildSun() {
@@ -514,7 +574,7 @@ function makeTrackColor(T) {
       const k = smp.featKind;
       if (k === 'log') c = [0.48, 0.32, 0.19];
       else if (k === 'rock') c = [0.5, 0.52, 0.56];
-      else if (k === 'pit') c = [0.2, 0.13, 0.08];
+      else if (k === 'pit') c = th.pit || [0.2, 0.13, 0.08];
       else if (k === 'whoops') c = [0.86, 0.7, 0.4];
       else c = [0.89, 0.69, 0.29];
     } else if (smp.surf === 'asphalt') {
@@ -619,6 +679,21 @@ function buildTrack(group, T) {
       trunks.push({ x: t.x, y: t.y + 1.4 * sc, z: t.z, sx: 8 * sc, sy: 2.8 * sc, sz: 6 * sc, color: rock });
       trunks.push({ x: t.x, y: t.y + 3.6 * sc, z: t.z, sx: 6 * sc, sy: 1.8 * sc, sz: 4.6 * sc, color: rock.clone().multiplyScalar(1.1) });
       trunks.push({ x: t.x, y: t.y + 5.0 * sc, z: t.z, sx: 4 * sc, sy: 1.2 * sc, sz: 3.2 * sc, color: rock.clone().multiplyScalar(1.2) });
+      continue;
+    }
+    if (t.type === 'moonrock') {
+      const g2 = new THREE.Color('#8a8a94').multiplyScalar(0.7 + t.tint * 0.4);
+      trunks.push({ x: t.x, y: t.y + 0.7 * sc, z: t.z, sx: 2.6 * sc, sy: 1.4 * sc, sz: 2.2 * sc, color: g2, rot: t.tint * 3 });
+      trunks.push({ x: t.x + 0.5 * sc, y: t.y + 1.6 * sc, z: t.z - 0.2 * sc, sx: 1.7 * sc, sy: 1.2 * sc, sz: 1.5 * sc, color: g2.clone().multiplyScalar(1.1), rot: t.tint * 3 });
+      trunks.push({ x: t.x - 1.7 * sc, y: t.y + 0.35 * sc, z: t.z + 0.9 * sc, sx: 1.1 * sc, sy: 0.7 * sc, sz: 1.0 * sc, color: g2.clone().multiplyScalar(0.9) });
+      continue;
+    }
+    if (t.type === 'moonmount') {
+      let y = t.y - 2;
+      for (const [w, h, c] of [[20, 5, '#4a4a54'], [15, 5.5, '#5a5a66'], [10.5, 5, '#6e6e7a'], [6.5, 4.5, '#84848f'], [3.4, 3.5, '#a0a0aa']]) {
+        trunks.push({ x: t.x, y: y + (h * t.scale) / 2, z: t.z, sx: w * t.scale, sy: h * t.scale, sz: w * t.scale * 0.8, color: new THREE.Color(c), rot: t.tint });
+        y += h * t.scale;
+      }
       continue;
     }
     if (t.type === 'stalagmite') {
@@ -905,6 +980,10 @@ export function createWorld(scene, lights) {
     return skies.get(key);
   };
   skyFor(DAY, 'day');
+  const space = buildSpace();
+  space.visible = false;
+  space.userData.backdrop = true;
+  outdoor.add(space);
   const sunMesh = buildSun();
   sunMesh.userData.backdrop = true;
   outdoor.add(sunMesh);
@@ -951,6 +1030,7 @@ export function createWorld(scene, lights) {
     const look = racing ? { ...LOOK_DEFAULT, ...(env.look || {}) } : null;
     for (const [k, m] of skies) m.visible = false;
     if (racing) skyFor(SKY_STOPS[look.sky] || DAY, look.sky).visible = true;
+    space.visible = racing && look.sky === 'space';
     snow.set(racing ? env.weather : null);
     weatherWind = env.breeze || env.wind || null;
     sandbox.visible = d && course === 'arena';
@@ -998,6 +1078,7 @@ export function createWorld(scene, lights) {
   const m = new THREE.Matrix4();
   function update(dt, t, spin) {
     if (snow.mesh.visible) snow.update(dt, t, focus.x, focus.y, focus.z, weatherWind);
+    if (space.visible) { space.position.set(focus.x, 0, focus.z); space.userData.earth.rotation.y += dt * 0.05; }
     if (mode !== 'garage') {
       arena.clouds.position.x = ((t * 0.6 + 70) % 140) - 70;
       // dust drifts on the wind and wraps (title only)

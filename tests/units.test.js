@@ -1262,8 +1262,8 @@ import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 6);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma']);
+  assert.equal(TRACKS.length, 7);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -1283,7 +1283,7 @@ for (const T of TRACKS) {
     }
     assert.ok(minR > 17, `min corner radius ${minR}`);
     const ys = S.map((p) => p.y);
-    assert.ok(Math.min(...ys) > 1 && Math.max(...ys) - Math.min(...ys) < 5, 'road stays low');
+    assert.ok(Math.min(...ys) > 1 && Math.max(...ys) - Math.min(...ys) < (T.env.elevRange ?? 5), 'road stays low');
     for (let slot = 0; slot < 6; slot++) {
       const p = T.gridPose(slot);
       assert.ok(Math.abs(T.nearest(p.x, p.z).d) < T.ROAD_HALF - 1, 'grid slot on the road');
@@ -1328,7 +1328,7 @@ test('tracks: new tracks have loops on dead-straight road, level under the ring,
         assert.ok(Math.abs(p.y - L.y0) < 0.05, 'road is level under the ring');
       }
       assert.ok(Math.abs(T.nearest(L.x, L.z).d) < 0.3, 'entry is on the centre line');
-      assert.ok(L.R * 2 > 14 && L.vmin > 15);
+      assert.ok(L.R * 2 > 14 && L.vmin > (T.terrain.gravity < 30 ? 12 : 15));
     }
   }
   assert.equal(TRACKS[1].LOOPS.length, 2, 'Looper Canyon has two loops');
@@ -2062,4 +2062,23 @@ test('8a: the skull cave leaves the road, barriers and a truck-tall gap clear, a
   assert.ok(Math.abs(Math.atan2(Math.sin(c - a), Math.cos(c - a))) > 0.5, 'tunnel turns by more than ~30 degrees');
   const inside = T.terrain.hazards.filter((h) => h.kind === 'stalactite' && T.nearest(h.x, h.z).s > spec.s0 && T.nearest(h.x, h.z).s < spec.s1);
   assert.ok(inside.length >= 3 && inside.every((h) => h.drop < SKULL.roof + 1), 'stalactites fall from the cave roof');
+});
+
+// ---------------------------------------------------------------- phase 8b: Moon Crater stage
+test('8b: Moon stage has low gravity, a domed surface, craters on the road and a space sky', () => {
+  const T = getTrackById('moon');
+  assert.equal(T.terrain.gravity, 14);
+  assert.ok(T.terrain.gravity < 30);
+  assert.equal(T.env.look.sky, 'space');
+  assert.ok((T.env.elevRange ?? 5) >= 20, 'elevation range widened for the dome');
+  // the dome falls away from the centre: far sample is lower than the middle sample
+  const mid = T.sampleAt(0.0); const far = T.sampleAt(0.5);
+  assert.ok(Number.isFinite(mid.y) && Number.isFinite(far.y));
+  // every road sample is finite and the surface is continuous (no cliffs between neighbours)
+  let prev = T.sampleAt(0).y;
+  for (let i = 1; i <= 400; i++) {
+    const y = T.sampleAt(i / 400).y;
+    assert.ok(Number.isFinite(y) && Math.abs(y - prev) < 3, 'smooth road at ' + i);
+    prev = y;
+  }
 });

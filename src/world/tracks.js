@@ -360,6 +360,68 @@ const MAGMA_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF)];
+// ---------------------------------------------------------------- 7. Moon Crater (low gravity, a domed surface, craters in and beside the road)
+const moonP = (th) => [-25 + 122 * Math.cos(th) * (1 + 0.08 * Math.sin(3 * th + 0.5)), 90 * Math.sin(th) * (1 + 0.07 * Math.sin(2 * th + 1.0))];
+const moonDome = (x, z) => 22 - 0.0011 * (x * x + 1.15 * z * z);       // the whole world bulges like a ball: the road climbs over a crest and drops away
+// craters: { x, z, r, d } - a bowl with a raised rim. Some sit ON the road (the road dips through them), some beside it.
+const MOON_CRATERS = [];
+{
+  const at = (th, off, r, d) => { const [x, z] = moonP(th); const [x2, z2] = moonP(th + 0.01); const tx = x2 - x; const tz = z2 - z; const l = Math.hypot(tx, tz) || 1; MOON_CRATERS.push({ x: x + (tz / l) * off, z: z - (tx / l) * off, r, d }); };
+  for (const th of [0.95, 2.1, 4.25, 5.45]) at(th, 0, 10, 2.3);                    // on the road
+  for (const [th, off, r, d] of [[0.3, 24, 14, 3.2], [1.2, -26, 18, 4], [1.7, 30, 12, 2.6], [2.6, -24, 15, 3.4], [3.2, 26, 20, 4.6], [3.7, -30, 13, 3], [4.7, 28, 16, 3.6], [5.0, -26, 11, 2.4], [5.9, 30, 17, 3.8], [0.6, -34, 22, 5]]) at(th, off, r, d);
+}
+function moonGround(x, z) {
+  let h = moonDome(x, z);
+  for (const c of MOON_CRATERS) {
+    const dx = x - c.x; const dz = z - c.z;
+    const t = Math.hypot(dx, dz) / c.r;
+    if (t < 1) h -= c.d * (1 - t * t);                                          // bowl
+    if (t > 0.85 && t < 1.5) h += c.d * 0.28 * Math.exp(-(((t - 1.1) / 0.18) ** 2));   // raised rim
+  }
+  return Math.max(1.6, h);
+}
+const MOON_DEF = {
+  id: 'moon', name: 'Moon Crater',
+  theme: { a: [0.56, 0.56, 0.59], b: [0.5, 0.5, 0.54], edge: [0.68, 0.68, 0.7], far: [0.38, 0.38, 0.42], dirt: [0.62, 0.62, 0.65], rut: [0.5, 0.5, 0.54], sand: [0.72, 0.72, 0.74], sky: 'space', pit: [0.3, 0.3, 0.34], wall: [0.45, 0.45, 0.5] },
+  peaks: 22, peakType: 'moonmount', scenery: ['moonrock', 'moonrock'], sceneryCount: 150,
+  env: { gravity: 14, elevRange: 20, weather: null, look: { sky: 'space', fog: ['#03040a', 160, 460], hemi: ['#7a88b8', '#2c2c34', 0.75], sun: ['#ffffff', 3.3, -14, 7, 9] } },
+  ctrl() {
+    const ctrl = [];
+    for (let k = 0; k < 24; k++) { const [x, z] = moonP((2 * Math.PI * k) / 24); ctrl.push({ x, z }); }
+    return ctrl;
+  },
+  ground: moonGround,
+  elevation: (s, p) => moonGround(p.x, p.z),
+  sections: [
+    { from: 0.0, to: 0.1, surf: 'asphalt' }, { from: 0.1, to: 0.45, surf: 'dirt' }, { from: 0.45, to: 0.6, surf: 'sand' },
+    { from: 0.6, to: 0.9, surf: 'dirt' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
+  ],
+  loops: ({ straightNear }) => [{ s: straightNear(0.52, 16, 0.02), vmin: 14 }],
+  features(T) {
+    const { JUMP, feat } = T;
+    return [...JUMP(0.325, 1.0, 6), feat(0.73, 'whoops', { kind: 'whoops', len: 24, w: 11, amp: 0.5, wave: 4.5 })];
+  },
+  walls({ W }) {
+    W.fork(0.215, 52, 1, 'stone', 0.6);
+    W.island(0.70, 32, 'stone', -1);
+    W.corridor(0.855, 28, 7.8, 'stone');
+    W.barrels(0.15, 1, 3); W.tnt(0.62, 2); W.crates(0.565, -1, 3);
+    for (const [a, o, l] of [[0.04, 0, 8], [0.40, 0, 8], [0.80, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.66, 3, 9, 5); W.oil(0.46, -3, 10, 5);
+    for (const [a, o] of [[0.03, 0], [0.12, 0], [0.20, 0], [0.37, 0], [0.43, 0], [0.57, 0], [0.64, 0], [0.76, 0], [0.82, 0], [0.93, 0]]) W.pickup(a, o);
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(71); const out = [];
+    for (let i = 0; i < 30; i++) {
+      const s = rand(); const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
+      const p = sampleAt(s); if (s < 0.02 || s > 0.98) continue;
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF)];
 export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => TRACKS.some((t) => t.id === id);
