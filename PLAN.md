@@ -297,6 +297,15 @@ Mobile frame-rate tuning, LOD, final balance.
 
 **Phase 8 - Real layouts (user feedback: stages look alike; road should go through things)**
 - 8a Skull Cavern: the road runs through a giant skull on the bend (roofed tunnel, glowing eyes, teeth, crystals, rocks falling from the roof). DONE (set piece in src/world/structures.js, clearance tested).
-- 8b Moon DONE.
+- 8b Moon DONE (first version, a domed arena; replaced by 9b).
 - 8c Magma Peak: climb the cone, drop steeply into the crater (needs landform support + steeper slopes). Later.
 - 8d Steep slide stage / remaining stages get their own layouts. Later.
+
+
+## Phase 9 - Tiny planet (in progress)
+- 9a DONE: `world/planet.js`. Physics, AI and the track stay on a FLAT map; every vertex (ground, barriers, props, trucks, particles)
+  is bent onto a sphere by one shared function (Mercator, right-handed, conformal) in the vertex shader. Camera, sun and sky light follow
+  the local "up". Because the ground and the wheels use the same function a truck cannot hover.
+- 9b DONE: the Moon is a tiny planet (R=70). A stadium lap runs ~250 degrees round the ball, craters on and beside the road,
+  stars on the whole sphere, Earth rises and sets, no clouds.
+- 9c: minimap polish, perf check, tests + smoke, push.

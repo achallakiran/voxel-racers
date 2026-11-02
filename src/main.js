@@ -12,6 +12,8 @@ import { createAudio } from './audio/sfx.js';
 import { ParticlePool } from './fx/particle-pool.js';
 import { ParticleRenderer } from './fx/particle-render.js';
 import { createWorld } from './world/scenes.js';
+import { installPlanetWarp, PLANET_U, planetPoint, planetFrame, planetDir } from './world/planet.js';
+installPlanetWarp(THREE);
 import { tickHazards } from './physics/hazards.js';
 import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST, RACE_START_NITRO, SUS_MODES } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
@@ -103,6 +105,7 @@ function start() {
 
   const world = createWorld(scene, { hemi, sun, spot });
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 220);
+  const planetTmp = [0, 0, 0]; const planetLook = [0, 0, 0];
   const camBase = { x: 0, y: 0, z: 0, ly: 0 };
 
   // particles (smoke / flame)
@@ -1034,12 +1037,41 @@ function start() {
     camera.position.copy(camPos);
     if (window.__voxelRacers && window.__voxelRacers.camOverride) { const o = window.__voxelRacers.camOverride; camera.position.set(o.pos[0], o.pos[1], o.pos[2]); camLook.set(o.look[0], o.look[1], o.look[2]); }   // debug/screenshot aid
     if (shake > 0.01) camera.position.add(tmp.set((rand() - 0.5) * shake * 0.6, (rand() - 0.5) * shake * 0.6, (rand() - 0.5) * shake * 0.6));
-    camera.lookAt(camLook);
+    const PR = PLANET_U.value;
+    if (PR > 0) {
+      // planet stage: the camera lives on the sphere. Position and look-at go through the same warp as the world, and
+      // "up" is the surface normal under the camera, so the horizon curves and tilts as the truck goes round the ball
+      const cp = camera.position;
+      const fr = planetFrame(PR, cp.x, cp.y, cp.z);
+      planetPoint(PR, cp.x, cp.y, cp.z, planetTmp);
+      const lp = planetPoint(PR, camLook.x, camLook.y, camLook.z, planetLook);
+      camera.position.set(planetTmp[0], planetTmp[1], planetTmp[2]);
+      camera.up.set(fr.up[0], fr.up[1], fr.up[2]);
+      camera.lookAt(lp[0], lp[1], lp[2]);
+      world.skyTo({ x: planetTmp[0], y: planetTmp[1], z: planetTmp[2] });
+    } else {
+      camera.up.set(0, 1, 0);
+      world.skyTo(null);
+      camera.lookAt(camLook);
+    }
     if (Math.abs(camera.fov - camFov) > 0.01) { camera.fov = camFov; camera.updateProjectionMatrix(); }
 
     // light + shadow follow the truck
-    sun.target.position.set(v.x, 0, v.z);
-    sun.position.set(v.x + 8, 12, v.z + 5);
+    if (PR > 0) {
+      // the sun and the sky light keep the same angle to the ground under the truck, so every side of the planet is lit
+      const ps = planetPoint(PR, v.x, 0, v.z, planetTmp);
+      const sd = planetDir(PR, v.x, 0, v.z, world.sunDir);
+      sun.target.position.set(ps[0], ps[1], ps[2]);
+      sun.position.set(ps[0] + sd[0], ps[1] + sd[1], ps[2] + sd[2]);
+      const up = planetFrame(PR, v.x, 0, v.z).up;
+      hemi.position.set(up[0], up[1], up[2]);
+      sun.castShadow = false;
+    } else {
+      hemi.position.set(0, 1, 0);
+      sun.castShadow = true;
+      sun.target.position.set(v.x, 0, v.z);
+      sun.position.set(v.x + 8, 12, v.z + 5);
+    }
 
     // HUD
     $('nitro-fill').style.width = `${Math.round(v.nitro * 100)}%`;
@@ -1126,6 +1158,8 @@ function start() {
     get wheels() { return truckMesh.userData.wheels.length; },
     get particlesAlive() { return pool.alive; },
     get rev() { return rev; },
+    get scene() { return scene; },   // debug/screenshot aid
+    get camera() { return camera; },
     get vehicle() { return vehicle; },
     get camMode() { return camMode; },
     get race() { return race; },

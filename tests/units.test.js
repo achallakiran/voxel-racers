@@ -2065,20 +2065,77 @@ test('8a: the skull cave leaves the road, barriers and a truck-tall gap clear, a
 });
 
 // ---------------------------------------------------------------- phase 8b: Moon Crater stage
-test('8b: Moon stage has low gravity, a domed surface, craters on the road and a space sky', () => {
+test('8b/9b: the Moon is a tiny planet: low gravity, a space sky, a lap that stays where the map is undistorted, craters on the road', () => {
   const T = getTrackById('moon');
   assert.equal(T.terrain.gravity, 14);
-  assert.ok(T.terrain.gravity < 30);
   assert.equal(T.env.look.sky, 'space');
-  assert.ok((T.env.elevRange ?? 5) >= 20, 'elevation range widened for the dome');
-  // the dome falls away from the centre: far sample is lower than the middle sample
-  const mid = T.sampleAt(0.0); const far = T.sampleAt(0.5);
-  assert.ok(Number.isFinite(mid.y) && Number.isFinite(far.y));
-  // every road sample is finite and the surface is continuous (no cliffs between neighbours)
-  let prev = T.sampleAt(0).y;
-  for (let i = 1; i <= 400; i++) {
-    const y = T.sampleAt(i / 400).y;
-    assert.ok(Number.isFinite(y) && Math.abs(y - prev) < 3, 'smooth road at ' + i);
-    prev = y;
+  assert.ok(T.env.planet && T.env.planet.R >= 40 && T.env.planet.R <= 120, 'a small ball');
+  const R = T.env.planet.R;
+  // every road sample sits inside the latitude band where the Mercator scale stays above 0.85, and does not wrap past the far side
+  let minY = 1e9; let maxY = -1e9; let prev = T.sampleAt(0).y;
+  for (let i = 0; i <= 600; i++) {
+    const p = T.sampleAt(i / 600);
+    assert.ok(Math.abs(p.z) < 36 && Math.abs(p.x) < Math.PI * R * 0.82, `lap stays on the usable part of the map (x ${p.x.toFixed(0)}, z ${p.z.toFixed(0)})`);
+    assert.ok(1 / Math.cosh(p.z / R) > 0.85, 'map scale above 0.85');
+    assert.ok(Number.isFinite(p.y) && Math.abs(p.y - prev) < 3, 'smooth road at ' + i);
+    prev = p.y; minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  assert.ok(maxY - minY > 1.5, 'craters dip the road');
+  assert.ok((T.env.elevRange ?? 5) >= maxY - minY, 'declared elevation range covers the craters');
+  // the lap really goes a long way round the ball: over 200 degrees of longitude from end to end
+  const xs = []; for (let i = 0; i < 200; i++) xs.push(T.sampleAt(i / 200).x);
+  assert.ok((Math.max(...xs) - Math.min(...xs)) / R > 3.5, 'lap spans more than 200 degrees of the planet');
+});
+
+// ---------------------------------------------------------------- phase 9a: tiny-planet warp
+import { planetPoint, planetFrame, planetDir, PLANET_GLSL } from '../src/world/planet.js';
+
+test('9a: planet warp keeps height exact: a wheel on the flat ground is on the sphere surface', () => {
+  const R = 80;
+  for (let i = 0; i < 400; i++) {
+    const x = (Math.sin(i * 12.9898) * 43758.5453 % 1) * 200; const z = (Math.sin(i * 78.233) * 43758.5453 % 1) * 70;
+    const ground = planetPoint(R, x, 0, z); const wheel = planetPoint(R, x, 1.3, z);
+    assert.ok(Math.abs(Math.hypot(...ground) - R) < 1e-9, 'ground lies on the sphere');
+    assert.ok(Math.abs(Math.hypot(...wheel) - (R + 1.3)) < 1e-9, 'height above ground is radial height');
+    const up = planetFrame(R, x, 0, z).up;
+    const d = [wheel[0] - ground[0], wheel[1] - ground[1], wheel[2] - ground[2]];
+    assert.ok(Math.abs(d[0] * up[0] + d[1] * up[1] + d[2] * up[2] - 1.3) < 1e-9, 'up is the surface normal');
+  }
+});
+
+test('9a: planet warp is conformal (road keeps its shape), scale ~1 near the equator, and wraps round the ball', () => {
+  const R = 80;
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  // at the equator one flat unit is one unit on the ground, in both directions
+  assert.ok(Math.abs(dist(planetPoint(R, 0, 0, 0), planetPoint(R, 0, 0, 1)) - 1) < 1e-3);
+  assert.ok(Math.abs(dist(planetPoint(R, 0, 0, 0), planetPoint(R, 1, 0, 0)) - 1) < 1e-3);
+  // off the equator both directions shrink by the SAME factor (no shear, no squash)
+  for (const z of [10, 25, 35]) {
+    const dx = dist(planetPoint(R, 40, 0, z), planetPoint(R, 41, 0, z));
+    const dz = dist(planetPoint(R, 40, 0, z), planetPoint(R, 40, 0, z + 1));
+    assert.ok(Math.abs(dx - dz) < 5e-3, `conformal at z=${z}: ${dx} vs ${dz}`);
+    assert.ok(dx > 0.9 && dx < 1.0001, 'scale stays above 0.9 inside the track band');
+  }
+  // half the circumference away is the far side of the planet
+  const far = planetPoint(R, Math.PI * R, 0, 0);
+  assert.ok(far[2] < -R + 1e-6);
+  // a long flat road visibly curves away (horizon drop ~ d^2 / 2R)
+  const a40 = planetPoint(R, 40, 0, 0);
+  assert.ok(Math.abs((R - a40[2]) - (40 * 40) / (2 * R)) < 2.5, 'curves away like a ball');
+});
+
+test('9a: planet frame is orthogonal on the road and directions map to unit directions', () => {
+  const R = 80;
+  for (const [x, z] of [[0, 0], [60, 10], [-90, -25], [200, 30], [20, -35]]) {
+    const f = planetFrame(R, x, 0, z);
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    assert.ok(Math.abs(dot(f.east, f.up)) < 1e-9);
+    assert.ok(Math.abs(dot(f.north, f.up)) < 1e-9);
+    assert.ok(Math.abs(dot(f.east, f.north)) < 1e-9, 'conformal: east and north stay square');
+    const d = planetDir(R, x, 0, z, [0, 1, 0]);
+    assert.ok(Math.abs(Math.hypot(...d) - 1) < 1e-9);
+    const cr = [f.east[1] * f.up[2] - f.east[2] * f.up[1], f.east[2] * f.up[0] - f.east[0] * f.up[2], f.east[0] * f.up[1] - f.east[1] * f.up[0]];
+    assert.ok(dot(cr, f.north) > 0, 'right-handed: the map is not mirrored, so triangles are not culled as back faces');
+    assert.ok(/uPlanetR/.test(PLANET_GLSL));
   }
 });

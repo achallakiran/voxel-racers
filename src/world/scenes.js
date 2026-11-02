@@ -10,6 +10,7 @@ import {
 import { loopWorld } from '../physics/loop.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
 import { createHazardView } from './hazard-view.js';
+import { PLANET_U } from './planet.js';
 import { skullCave } from './structures.js';
 import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
@@ -182,9 +183,8 @@ function buildSpace() {
   const pts = []; const cols = [];
   const tint = [[1, 1, 1], [0.8, 0.88, 1], [1, 0.92, 0.8], [1, 0.8, 0.75], [0.75, 0.82, 1]];
   const dir = (u, v) => { const y = u * 2 - 1; const r = Math.sqrt(1 - y * y); const a = v * Math.PI * 2; return [r * Math.cos(a), y, r * Math.sin(a)]; };
-  for (let i = 0; i < 1700; i++) {                       // the field of stars
+  for (let i = 0; i < 2600; i++) {                       // the field of stars (the whole sphere: on a little planet the sky turns as you go round)
     const [x, y, z] = dir(rnd(), rnd());
-    if (y < -0.1) continue;
     const t = tint[Math.floor(rnd() * tint.length)]; const b = 0.35 + rnd() * 0.65;
     pts.push(x * R, y * R, z * R); cols.push(t[0] * b, t[1] * b, t[2] * b);
   }
@@ -195,7 +195,6 @@ function buildSpace() {
     const w = (rnd() + rnd() + rnd() - 1.5) * 0.28;           // soft spread across the band
     let x = Math.cos(a) * Math.cos(w); let y = Math.sin(w); let z = Math.sin(a) * Math.cos(w);
     const y2 = y * ct - z * st; const z2 = y * st + z * ct; y = y2; z = z2;
-    if (y < -0.05) continue;
     const core = Math.exp(-((w / 0.12) ** 2));
     const warm = 0.5 + 0.5 * Math.sin(a * 3 + 1);
     const b = (0.12 + 0.55 * core) * (0.5 + rnd() * 0.7);
@@ -225,7 +224,8 @@ function buildSpace() {
   }
   eg.setAttribute('color', new THREE.BufferAttribute(ec, 3));
   const earth = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
-  earth.position.set(55, 48, -105); earth.rotation.set(0.3, 1.0, 0.2);
+  // hangs ahead and above the start line of the little Moon; it sets below the horizon on the far side of the planet
+  earth.position.set(-75, 40, 54); earth.rotation.set(0.3, 1.0, 0.2);
   const halo = new THREE.Mesh(new THREE.SphereGeometry(16.6, 24, 14), new THREE.MeshBasicMaterial({ color: '#5aa8ff', transparent: true, opacity: 0.22, side: THREE.BackSide, fog: false, depthWrite: false }));
   halo.position.copy(earth.position);
   g.add(earth, halo);
@@ -349,7 +349,7 @@ function buildArena(group) {
   const scatter = scatterRocks(group);
 
   return {
-    groundMat, cloudMat, clouds, dust, motes, dm, arms, tires: tiles.length, people: people.length, stands: stands.length, towers: towerPos.length, scatter,
+    ground, groundMat, cloudMat, clouds, dust, motes, dm, arms, tires: tiles.length, people: people.length, stands: stands.length, towers: towerPos.length, scatter,
   };
 }
 
@@ -646,10 +646,13 @@ function buildTrack(group, T) {
   });
   group.add(meshFrom(fine, mat));
   const far = 150;
-  const cc = 6;
-  const cx0 = Math.floor((minX - far) / cc) * cc; const cz0 = Math.floor((minZ - far) / cc) * cc;
+  const PL = T.env && T.env.planet;
+  const cc = PL ? 4 : 6;
+  // on a little planet the flat map wraps all the way round the ball (x = +-pi R) and is squashed away from the equator,
+  // so the distant ground only covers that one wrap and a band of latitudes; the smooth ball underneath fills the rest
+  const cx0 = PL ? -Math.PI * PL.R : Math.floor((minX - far) / cc) * cc; const cz0 = PL ? -52 : Math.floor((minZ - far) / cc) * cc;
   const coarse = buildColumns({
-    x0: cx0, z0: cz0, nx: Math.ceil((maxX + far - cx0) / cc), nz: Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
+    x0: cx0, z0: cz0, nx: PL ? Math.floor((2 * Math.PI * PL.R) / cc) : Math.ceil((maxX + far - cx0) / cc), nz: PL ? 26 : Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
     heightAt: T.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => T.nearest(x, z).dist >= R - 4,
   });
   group.add(meshFrom(coarse, mat));
@@ -971,23 +974,39 @@ export function createWorld(scene, lights) {
   const garage = new THREE.Group();
   scene.add(outdoor, garage);
 
-  const sky = buildSky();
+  // backdrops (sky, stars, Earth, sun, flat ground) live in plain world space: they must never be bent onto a planet
+  const noWarp = (o) => { o.traverse((c) => { for (const m of [].concat(c.material || [])) m.userData.noWarp = true; }); return o; };
+  const sky = noWarp(buildSky());
   sky.userData.backdrop = true;
   outdoor.add(sky);
   const skies = new Map();            // sky key -> mesh (built once, per stage look)
   const skyFor = (stops, key) => {
-    if (!skies.has(key)) { const m = buildSky(stops); m.userData.backdrop = true; m.visible = false; outdoor.add(m); skies.set(key, m); }
+    if (!skies.has(key)) { const m = noWarp(buildSky(stops)); m.userData.backdrop = true; m.visible = false; outdoor.add(m); skies.set(key, m); }
     return skies.get(key);
   };
   skyFor(DAY, 'day');
-  const space = buildSpace();
+  const space = noWarp(buildSpace());
   space.visible = false;
   space.userData.backdrop = true;
   outdoor.add(space);
-  const sunMesh = buildSun();
+  const sunMesh = noWarp(buildSun());
   sunMesh.userData.backdrop = true;
   outdoor.add(sunMesh);
   const arena = buildArena(outdoor);
+  noWarp(arena.ground); noWarp(arena.clouds);
+  // the little planet: a rough ball just under the flat map's ground, so the world has a floor off the road
+  const planets = new Map();
+  const planetFor = (R) => {
+    if (!planets.has(R)) {
+      const geo = new THREE.IcosahedronGeometry(R - 4, 5);
+      const pos = geo.attributes.position; const cols = new Float32Array(pos.count * 3); const c = new THREE.Color();
+      for (let i = 0; i < pos.count; i++) { const j = 0.78 + 0.22 * hash2(pos.getX(i) * 0.9, pos.getZ(i) * 0.9 + pos.getY(i)); c.setRGB(0.5 * j, 0.5 * j, 0.54 * j); cols.set([c.r, c.g, c.b], i * 3); }
+      geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      const m = noWarp(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+      m.userData.backdrop = true; m.visible = false; m.frustumCulled = false; outdoor.add(m); planets.set(R, m);
+    }
+    return planets.get(R);
+  };
   const groundMat = arena.groundMat;
   const gar = buildGarage(garage);
   const sandbox = new THREE.Group();
@@ -1013,6 +1032,8 @@ export function createWorld(scene, lights) {
   const snow = buildWeather(scene);
   const hazardView = createHazardView(scene);
   let focus = { x: 0, y: 0, z: 0 };
+  let sunDirFlat = [8, 12, 5];
+  let skyAnchor = null;   // planet stages: the sky and stars are centred on the camera instead of the flat map
   let weatherWind = null;
 
   function setMode(next) {
@@ -1027,7 +1048,14 @@ export function createWorld(scene, lights) {
     sky.visible = !racing;
     arena.cloudMat.color.set(racing ? '#ffffff' : '#ffd9e0');
     const env = racing && activeTrack ? activeTrack.env || {} : {};
+    const planet = racing && env.planet ? env.planet : null;
+    PLANET_U.value = planet ? planet.R : 0;
+    for (const [, pm] of planets) pm.visible = false;
+    if (planet) planetFor(planet.R).visible = true;
+    arena.ground.visible = !planet;
+    sunMesh.visible = !planet && sunMesh.visible;
     const look = racing ? { ...LOOK_DEFAULT, ...(env.look || {}) } : null;
+    arena.clouds.visible = !(racing && look.sky === 'space');   // no clouds in the vacuum
     for (const [k, m] of skies) m.visible = false;
     if (racing) skyFor(SKY_STOPS[look.sky] || DAY, look.sky).visible = true;
     space.visible = racing && look.sky === 'space';
@@ -1046,7 +1074,7 @@ export function createWorld(scene, lights) {
       spot.visible = true;
     } else if (racing) {
       hemi.color.set(look.hemi[0]); hemi.groundColor.set(look.hemi[1]); hemi.intensity = look.hemi[2];
-      sun.color.set(look.sun[0]); sun.intensity = look.sun[1]; sun.position.set(look.sun[2], look.sun[3], look.sun[4]);
+      sun.color.set(look.sun[0]); sun.intensity = look.sun[1]; sun.position.set(look.sun[2], look.sun[3], look.sun[4]); sunDirFlat = [look.sun[2], look.sun[3], look.sun[4]];
       spot.visible = false;
     } else {
       hemi.color.set('#ffd2a0'); hemi.groundColor.set('#8a4b2a'); hemi.intensity = 1.35;
@@ -1078,7 +1106,8 @@ export function createWorld(scene, lights) {
   const m = new THREE.Matrix4();
   function update(dt, t, spin) {
     if (snow.mesh.visible) snow.update(dt, t, focus.x, focus.y, focus.z, weatherWind);
-    if (space.visible) { space.position.set(focus.x, 0, focus.z); space.userData.earth.rotation.y += dt * 0.05; }
+    if (skyAnchor) for (const [, sk] of skies) sk.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z);
+    if (space.visible) { if (skyAnchor) space.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z); else space.position.set(focus.x, 0, focus.z); space.userData.earth.rotation.y += dt * 0.05; }
     if (mode !== 'garage') {
       arena.clouds.position.x = ((t * 0.6 + 70) % 140) - 70;
       // dust drifts on the wind and wraps (title only)
@@ -1100,7 +1129,10 @@ export function createWorld(scene, lights) {
   return {
     setMode,
     setCourse,
+    get sunDir() { return sunDirFlat; },
     follow(x, y, z) { focus = { x, y, z }; },
+    // planet stages only: where the camera really is, so the sky follows it (pass null to go back to the flat map)
+    skyTo(p) { skyAnchor = p; if (!p) for (const [, sk] of skies) sk.position.set(0, 0, 0); },
     // what is actually switched on right now (guards against a stage whose ground or props never get shown)
     get shown() { return { track: !!(activeTrack && trackGroups.get(activeTrack.id) && trackGroups.get(activeTrack.id).group.visible), arena: sandbox.visible, hazards: hazardView.count }; },
     hazards: hazardView,
