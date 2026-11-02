@@ -1932,7 +1932,7 @@ test('intro: the audio has intro and title sounds and every one is a safe no-op 
 
 // ---------------------------------------------------------------- phase 7c: stage engine (gravity, wind, hazards, snow)
 import { stepVehicle as stepV7c, createVehicle as mkV7c, tuningFor as tuneV7c } from '../src/physics/arcade.js';
-import { avalanchePhase, avalancheBand, tickHazards } from '../src/physics/hazards.js';
+import { avalanchePhase, avalancheBand, tickHazards, lavaflowState, hazardEffects } from '../src/physics/hazards.js';
 
 const flat7c = (extra = {}) => ({ heightAt: () => 0, surfaceAt: () => 'asphalt', constrain: (x, z) => ({ x, z }), obstacles: [], radius: 1e9, ...extra });
 const truck7c = () => tuneV7c({ speed: 6, grip: 6, weight: 6 });
@@ -2308,7 +2308,7 @@ test('12: the Volcano Climb is an open sprint: no wrap-around, start low, finish
     if (i > 0) assert.ok(Math.abs(p.y - S[i - 3].y) / 6 < 0.25, 'no cliff on the road');
   }
   assert.ok(T.sampleAt(T.FINISH_S).y > T.sampleAt(T.START_S).y + 45, 'the finish is far above the start');
-  assert.ok(T.sampleAt(T.FINISH_S).y > maxY - 3, 'the finish is the highest part of the road');
+  assert.ok(T.sampleAt(T.FINISH_S).y > maxY - 6, 'the finish is at the top of the road');
   // the mountain and the road come from one function: ground beside the road is never lower than the road shoulder minus the slope
   const mid = T.sampleAt(0.5);
   assert.ok(T.heightAt(mid.x, mid.z) > 15, 'the road is high up the mountain');
@@ -2344,4 +2344,50 @@ test('12: every truck climbs the volcano to the finish at both driving styles', 
       assert.ok(done, `${tk.id} (${style}) reached the summit (${time.toFixed(0)}s)`);
     }
   }
+});
+
+test('12: lava puddles drift from the right (mountain side) across the road to the left, growing and shrinking away', () => {
+  const h = { kind: 'lavaflow', cx: 0, cz: 0, tx: 0, tz: 1, range: 9.5, r: 3.4, period: 7.5, phase: 0 };
+  let prevU = -2;
+  for (let t = 0.01; t < 7.4; t += 0.25) { const st = lavaflowState(h, t); assert.ok(st.u > prevU, 'moves one way only'); prevU = st.u; }
+  assert.ok(lavaflowState(h, 0.05).u < -0.95 && lavaflowState(h, 7.45).u > 0.95, 'enters on the right edge, leaves on the left');
+  assert.ok(lavaflowState(h, 0.05).size < 0.1 && lavaflowState(h, 3.75).size === 1 && lavaflowState(h, 7.45).size < 0.1, 'grows, then shrinks away');
+});
+
+test('12: a lava puddle slows a truck, shoves it left and burns nitro; a truck beside it is untouched', () => {
+  const T = getTrackById('volcano');
+  const h = T.freshTerrain().hazards.find((q) => q.kind === 'lavaflow');
+  assert.ok(h, 'the volcano has lava puddles');
+  const time = (0.5 - h.phase) * h.period;                // the puddle is full size, in the middle of the road
+  const st = lavaflowState(h, time);
+  const px = h.cx + h.tz * h.range * st.u; const pz = h.cz - h.tx * h.range * st.u;
+  const terr = { hazards: [h], time };
+  const mk = (x, z) => ({ x, z, y: h.y0, vx: h.tx * 12, vz: h.tz * 12, nitro: 0.8, hazCool: 0 });
+  const v = mk(px, pz); const ev = [];
+  hazardEffects(v, terr, 1 / 60, ev);
+  const fwd = v.vx * h.tx + v.vz * h.tz; const left = v.vx * h.tz - v.vz * h.tx;
+  assert.ok(fwd < 12 && left > 0 && v.nitro < 0.8 && ev.some((e) => e.type === 'lava'), 'slowed, pushed left, burned');
+  const away = mk(px + h.tz * 12, pz - h.tx * 12); const ev2 = [];
+  hazardEffects(away, terr, 1 / 60, ev2);
+  assert.ok(away.nitro === 0.8 && ev2.length === 0 && Math.abs(away.vx - h.tx * 12) < 1e-9, 'untouched away from the puddle');
+});
+
+test('12: the volcano has no floating stones, only lava puddles; stone blocks sit on the LEFT half and leave the right open', () => {
+  const T = getTrackById('volcano');
+  assert.ok(T.freshTerrain().hazards.every((q) => q.kind === 'lavaflow'));
+  const stones = T.WALLS.filter((w) => w.kind === 'stone');
+  assert.ok(stones.length >= 20, `stone blocks ${stones.length}`);
+  for (const w of stones) {
+    const d = T.nearest(w.x, w.z).d;
+    assert.ok(d > 0.8 && d < 7, `a stone block is on the left half (d=${d.toFixed(1)})`);
+    assert.ok(d - w.r * 1.2 > -0.5, 'it does not reach over the road centre');
+  }
+  assert.ok(T.LANES.some((l) => l.off !== null && l.off < 0), 'the AI is told to keep right through the blocks');
+});
+
+test('12: the volcano is steep and high: a tall mountain, a road that climbs hard but stays drivable', () => {
+  const T = getTrackById('volcano'); const S = T.SAMPLES;
+  assert.ok(T.sampleAt(T.FINISH_S).y > 90, 'the summit is high');
+  let maxGr = 0; for (let i = 1; i < S.length; i++) maxGr = Math.max(maxGr, (S[i].y - S[i - 1].y) / Math.hypot(S[i].x - S[i - 1].x, S[i].z - S[i - 1].z));
+  assert.ok(maxGr > 0.2 && maxGr < 0.32, `steepest road grade ${maxGr.toFixed(2)}`);
 });

@@ -525,7 +525,7 @@ const SATURN_DEF = {
 // ---------------------------------------------------------------- 9. Volcano Climb (a SPRINT: one run up a spiral road to the summit)
 // The road starts on the ash plain and winds round the volcano (always on the driver's right) up to the crater rim,
 // where the finish arch stands. The mountain and the road come from ONE function, coneHeight(r), so they can not drift apart.
-const VOL = { r0: 172, r1: 54, turns: 1.75, plain: 1.2, rise: 66, bowl: 28, th0: -0.6 };
+const VOL = { r0: 172, r1: 54, turns: 1.75, plain: 1.2, rise: 108, bowl: 40, th0: -0.6 };
 function coneHeight(r) {
   if (r >= VOL.r0 + 4) return VOL.plain;
   if (r >= VOL.r1) { const t = Math.max(0, (VOL.r0 + 4 - r) / (VOL.r0 + 4 - VOL.r1)); return VOL.plain + VOL.rise * Math.pow(t, 1.25); }
@@ -579,16 +579,17 @@ const VOLCANO_DEF = {
   },
   walls({ W }) {
     W.barrels(0.535, 1, 3); W.tnt(0.35, 2); W.crates(0.7, -1, 3);
+    for (const [a, l] of [[0.19, 40], [0.3, 44], [0.46, 44], [0.58, 44], [0.72, 48], [0.83, 44]]) W.rocks(a, l);
     for (const [a, o, l] of [[0.07, 0, 8], [0.27, 0, 8], [0.52, 0, 8], [0.74, 0, 8], [0.9, 0, 8]]) W.pad(a, o, l, 5.5);
-    W.goo(0.6, 3, 9, 5); W.oil(0.4, -3, 10, 5); W.lava(0.65, 3, 12, 5); W.lava(0.84, -3, 12, 5);
+    W.goo(0.6, 3, 9, 5); W.oil(0.4, -3, 10, 5);
     for (const [a, o] of [[0.1, 0], [0.19, 0], [0.31, 0], [0.42, 0], [0.5, 0], [0.62, 0], [0.72, 0], [0.8, 0], [0.88, 0]]) W.pickup(a, o);
   },
   hazards({ sampleAt, add }) {
-    // boulders that roll back and forth across the road
-    const spec = [[0.16, 0], [0.24, 2.0], [0.38, 3.1], [0.47, 0.8], [0.57, 2.4], [0.68, 4.0], [0.77, 1.1], [0.86, 2.9]];
+    // puddles of floating lava that drift from the mountain side (right) across the road to the cliff side (left)
+    const spec = [[0.14, 0], [0.14, 0.5], [0.28, 0.2], [0.42, 0.6], [0.42, 0.1], [0.56, 0.35], [0.66, 0.0], [0.66, 0.5], [0.76, 0.25], [0.88, 0.7]];
     for (const [s, ph] of spec) {
       const p = sampleAt(s);
-      add({ kind: 'drifter', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 4.4, r: 1.7, top: 3.4, period: 5.5, phase: ph });
+      add({ kind: 'lavaflow', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 9.5, r: 3.4, period: 7.5, phase: ph });
     }
   },
   obstacles(T) {

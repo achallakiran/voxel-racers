@@ -350,3 +350,9 @@ Mobile frame-rate tuning, LOD, final balance.
 - New track kind: SPRINT (`def.open`): an open centreline with no wrap, a start grid and a finish line (`finishS`), one run, AI drivers stop at the finish; race rules take `finishS`; minimap/start line/finish arch handle open tracks.
 - Volcano Climb: the road spirals 1.75 turns up a cone to the crater rim (volcano always on the driver's right); the mountain and the road both come from `coneHeight(r)`; lava veins, a glowing crater with a lava pool, embers, rolling boulders. Tests: open-track geometry, right-hand side, finish highest, every truck finishes at both styles.
 - Next: Part 2, "Inside the Volcano": an open-top crater, spiral descent, a gate at the bottom with lava below, finish out through the gate.
+
+### Phase 12b - Volcano: higher, steeper, lava puddles and stone blocks (DONE, awaiting feedback)
+- Summit raised (rise 66 -> 108, crater deeper); the road now climbs up to about 25% at the top.
+- The floating stones are gone. New hazard `lavaflow`: lava puddles that drift from the right (mountain side) across the road to the left, grow and shrink away; inside one you are slowed, shoved left and your nitro burns. Pure function of the stage clock (`lavaflowState`).
+- `W.rocks`: staggered blocks of stone on the LEFT half of the road in six stretches (the right half stays open; the AI keeps right through them).
+- The two lava road zones were removed from the volcano (a truck stalls on the steep slope in them).

@@ -1,6 +1,6 @@
 // Draws the timed stage hazards from the same pure functions the physics uses (so what you see is what hits you).
 import * as THREE from '../../lib/three.module.js';
-import { avalanchePhase, avalancheWarning, avalancheBand, geyserState, stalactiteState, STALACTITE_FALL } from '../physics/hazards.js';
+import { avalanchePhase, avalancheWarning, avalancheBand, geyserState, stalactiteState, lavaflowState, STALACTITE_FALL } from '../physics/hazards.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const mat = (c, basic = false) => (basic ? new THREE.MeshBasicMaterial({ color: c, fog: false }) : new THREE.MeshLambertMaterial({ color: c }));
@@ -30,6 +30,9 @@ export function createHazardView(parent) {
       } else if (h.kind === 'drifter') {
         it.shadow = box(group, M.blob);
         it.chunks = [box(group, M.ice1), box(group, M.ice2), box(group, M.ice3), box(group, M.ice2), box(group, M.ice1)];
+      } else if (h.kind === 'lavaflow') {
+        it.pool = Array.from({ length: 9 }, (_, i) => box(group, i % 3 ? M.lava : M.lavaHot));
+        it.rim = Array.from({ length: 7 }, () => box(group, M.shadow));
       } else if (h.kind === 'stalactite') {
         it.shadow = box(group, M.shadow);
         it.spike = [box(group, M.stone), box(group, M.stone), box(group, M.rock)];
@@ -44,7 +47,7 @@ export function createHazardView(parent) {
     const time = terrain.time || 0;
     for (const it of items) {
       const h = it.h;
-      for (const b of [...(it.blocks || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.chunks || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
+      for (const b of [...(it.pool || []), ...(it.rim || []), ...(it.blocks || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.chunks || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
       if (h.kind === 'avalanche') {
         const k = avalanchePhase(h, time);
         const warn = avalancheWarning(h, time);
@@ -61,6 +64,24 @@ export function createHazardView(parent) {
             const [x, z] = at(along, lat);
             const hh = 1.4 + o.r2 * 2.2 + Math.sin(time * 9 + o.r * 20) * 0.4;
             place(o.b, x, h.y0, z, 2.6, hh, 2.6);
+          }
+        }
+      } else if (h.kind === 'lavaflow') {
+        // a floating puddle of lava drifting from the right edge to the left; it grows, crosses and shrinks away
+        const st = lavaflowState(h, time);
+        if (st.size > 0.05) {
+          const px = h.cx + h.tz * h.range * st.u; const pz = h.cz - h.tx * h.range * st.u;
+          const R = h.r * st.size;
+          const y = h.y0 + 0.25 + 0.12 * Math.sin(time * 3 + h.phase * 5);
+          place(it.pool[0], px, y, pz, R * 1.5, 0.35, R * 1.5);
+          for (let i = 1; i < it.pool.length; i++) {
+            const a = (i / (it.pool.length - 1)) * Math.PI * 2 + time * 0.4;
+            const rr = R * (0.45 + 0.35 * ((i * 37) % 7) / 7);
+            place(it.pool[i], px + Math.cos(a) * rr, y + 0.05 + 0.2 * Math.max(0, Math.sin(time * 4 + i * 1.7)), pz + Math.sin(a) * rr, R * 0.7, 0.3 + 0.25 * Math.max(0, Math.sin(time * 4 + i)), R * 0.7);
+          }
+          for (let i = 0; i < it.rim.length; i++) {
+            const a = (i / it.rim.length) * Math.PI * 2 + 0.5;
+            place(it.rim[i], px + Math.cos(a) * R * 1.05, h.y0 + 0.1, pz + Math.sin(a) * R * 1.05, R * 0.42, 0.45, R * 0.42);
           }
         }
       } else if (h.kind === 'drifter') {

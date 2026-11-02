@@ -3,6 +3,7 @@
 //   avalanche  a wall of snow sweeping across a stretch of road from one side, once per `period` seconds
 //   drifter  a floating rock that slides across the road on a fixed path (a moving solid obstacle)
 //   yak        a slow animal walking back and forth across the road (a moving solid obstacle, see tickHazards)
+//   lavaflow   a puddle of lava drifting across the road from the right to the left: slows, shoves left and burns nitro
 // A hazard sits on the road frame of its stage: (x,z) centre, (tx,tz) direction of travel, `len` along, `w` across.
 
 export const AVALANCHE_PUSH = 40;        // sideways acceleration inside the wave
@@ -35,6 +36,16 @@ export function inRect(h, x, z) {
 }
 
 export const GEYSER_LAUNCH = 15;
+export const LAVA_PUSH = 16;            // sideways shove (to the left) inside a lava puddle
+export const LAVA_DRAG = 2.6;            // how hard the puddle slows you (per second)
+export const LAVA_BURN = 0.55;           // nitro burned per second inside it
+
+// lava puddle: it starts at the right edge (the mountain side), grows, drifts left across the road and shrinks away, then repeats.
+// frac 0..1 through the trip; u -1 (right edge) .. +1 (left edge); size 0..1 (grows and shrinks at the ends)
+export function lavaflowState(h, time) {
+  const frac = (((time / h.period) + h.phase) % 1 + 1) % 1;
+  return { frac, u: -1 + 2 * frac, size: Math.min(1, frac * 7, (1 - frac) * 7) };
+}
 export const STALACTITE_FALL = 0.9;       // seconds the rock takes to fall (its shadow grows over this time)
 const cyc = (h, time) => ((time - h.offset) % h.period + h.period) % h.period;
 
@@ -69,6 +80,17 @@ export function hazardEffects(v, terrain, dt, events) {
       if (stalactiteState(h, time).state !== 'impact' || v.y > (h.y0 || 0) + 3) continue;
       if (Math.hypot(v.x - h.x, v.z - h.z) > h.r || v.hazCool > 0) continue;
       v.vx *= 0.3; v.vz *= 0.3; v.hazCool = 1; events.push({ type: 'stalactite', hazard: h });
+      continue;
+    }
+    if (h.kind === 'lavaflow') {
+      const st = lavaflowState(h, time);
+      const px = h.cx + h.tz * h.range * st.u; const pz = h.cz - h.tx * h.range * st.u;
+      const rr = h.r * st.size + 0.8;
+      if (st.size < 0.2 || Math.hypot(v.x - px, v.z - pz) > rr || v.y > (h.y0 || 0) + 2.2) continue;
+      const sq = Math.exp(-LAVA_DRAG * dt);
+      v.vx = v.vx * sq + h.tz * LAVA_PUSH * dt; v.vz = v.vz * sq - h.tx * LAVA_PUSH * dt;
+      if (v.nitro > 0) v.nitro = Math.max(0, v.nitro - LAVA_BURN * dt);
+      if (!(v.hazCool > 0)) { v.hazCool = 0.8; events.push({ type: 'lava', hazard: h }); }
       continue;
     }
     if (h.kind !== 'avalanche') continue;

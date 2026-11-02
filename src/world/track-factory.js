@@ -308,6 +308,18 @@ export function makeTrack(def) {
       LANES.push({ from: s - 8 / LENGTH, to: s + (len + 4) / LENGTH, limit: 2.2, off: off >= 0 ? -3.4 : 3.4 });
     },
     oil(s, off, len = 9, w = 5) { ZONES.push({ kind: 'oil', s, off, len, w }); },
+    // blocks of stone scattered over the LEFT half of the road (positive offset) for `len` units, a staggered pattern that
+    // leaves the right half open: the AI is told to keep right through it
+    rocks(s, len, kind = 'stone') {
+      const pattern = [4.6, 2.4, 5.4, 1.5, 4.0, 2.9, 5.6, 1.8];
+      let k = 0;
+      for (let d = 0; d <= len; d += 4.4, k++) {
+        const off = pattern[k % pattern.length];
+        const p = sampleAt(s + d / LENGTH);
+        wallAt(p.x + p.tz * off, p.z - p.tx * off, Math.atan2(p.tx, p.tz), kind, 2.4 + (k % 3) * 0.5, 1.5);
+      }
+      LANES.push({ from: s - 6 / LENGTH, to: s + (len + 4) / LENGTH, limit: 2.4, off: -2.8 });
+    },
     pickup(s, off) { PICKUPS.push({ id: PICKUPS.length, ...lateral(s, off, {}), r: 1.3, taken: false, cool: 0 }); },
     // a FORK: a median wall splits the road in two lanes with different risk and reward.
     //   fast lane: crate gate, accelerator pads, a jump over a trench, a nitro canister at the end
