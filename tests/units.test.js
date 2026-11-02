@@ -1272,7 +1272,7 @@ test('tracks: roster of three, unique ids, lookup falls back to the first', () =
 for (const T of TRACKS) {
   test(`track ${T.id}: closed, even spacing, gentle corners, level enough, grid on the road`, () => {
     const S = T.SAMPLES; const n = S.length;
-    assert.ok(T.LENGTH > 650 && T.LENGTH < 950);
+    assert.ok(T.LENGTH > 650 && T.LENGTH < (T.id === 'saturn' ? 1050 : 950));
     let minR = 1e9;
     for (let i = 0; i < n; i++) {
       const a = S[(i + n - 3) % n]; const b = S[i]; const c = S[(i + 3) % n];
@@ -1328,7 +1328,7 @@ test('tracks: new tracks have loops on dead-straight road, level under the ring,
         assert.ok(Math.abs(p.y - L.y0) < 0.05, 'road is level under the ring');
       }
       assert.ok(Math.abs(T.nearest(L.x, L.z).d) < 0.3, 'entry is on the centre line');
-      assert.ok(L.R * 2 > 14 && L.vmin > (T.terrain.gravity < 30 ? 12 : 15));
+      assert.ok(L.R * 2 > 14 && L.vmin > (T.terrain.gravity < 12 ? 8 : T.terrain.gravity < 30 ? 12 : 15));
     }
   }
   assert.equal(TRACKS[1].LOOPS.length, 2, 'Looper Canyon has two loops');

@@ -266,16 +266,30 @@ function buildSpace() {
 // a giant banded gas planet standing in the world (Saturn, in the middle of the ring road), lit by the stage's sun
 function buildGasGiant(st) {
   const R = st.r;
-  const sg = new THREE.SphereGeometry(R, 48, 32);
+  const sg = new THREE.SphereGeometry(R, 120, 80);
   const pos = sg.attributes.position; const col = new Float32Array(pos.count * 3);
-  const bands = [[0.93, 0.85, 0.66], [0.84, 0.7, 0.48], [0.96, 0.89, 0.7], [0.78, 0.62, 0.42], [0.9, 0.8, 0.6], [0.72, 0.57, 0.4], [0.88, 0.78, 0.58], [0.8, 0.66, 0.46]];
+  // a banded palette (cream, rust, tan, umber, gold) with wavy band edges, a few storm ovals and a dark polar hexagon, quantised
+  // into blocky patches so it reads as voxel art from far away
+  const pal = [[0.98, 0.93, 0.78], [0.76, 0.46, 0.25], [0.9, 0.72, 0.46], [0.99, 0.96, 0.86], [0.56, 0.34, 0.2], [0.92, 0.76, 0.42], [0.82, 0.58, 0.34], [0.97, 0.9, 0.7], [0.66, 0.4, 0.24], [0.94, 0.82, 0.58]];
+  const NB = pal.length * 2;
+  const storms = [[-0.28, 0.9, 0.28, 0.14, [0.7, 0.3, 0.16]], [0.34, -1.6, 0.2, 0.09, [1, 0.97, 0.9]], [0.1, 2.5, 0.16, 0.07, [0.62, 0.34, 0.2]], [-0.55, -0.3, 0.18, 0.08, [1, 0.95, 0.85]], [0.55, 1.4, 0.14, 0.06, [0.85, 0.5, 0.28]]];
   for (let i = 0; i < pos.count; i++) {
-    const ny = pos.getY(i) / R; const nx = pos.getX(i) / R; const nz = pos.getZ(i) / R;
-    const wob = Math.sin(nx * 7 + nz * 5) * 0.035 + Math.sin(ny * 31 + nx * 3) * 0.02;
-    const bi = Math.max(0, Math.min(bands.length - 1, Math.floor(((ny + wob + 1) / 2) * bands.length)));
-    const q = Math.abs(ny) > 0.82 ? 0.82 : 1;
-    const b = bands[bi];
-    col[i * 3] = b[0] * q; col[i * 3 + 1] = b[1] * q; col[i * 3 + 2] = b[2] * q * (Math.abs(ny) > 0.82 ? 1.1 : 1);
+    const nx = pos.getX(i) / R; const ny = pos.getY(i) / R; const nz = pos.getZ(i) / R;
+    const lon = Math.atan2(nx, nz);
+    const qLon = Math.round(lon * 22) / 22; const qLat = Math.round(ny * 36) / 36;     // blocky patches
+    const wob = 0.045 * Math.sin(qLon * 5 + qLat * 9) + 0.025 * Math.sin(qLon * 13 - qLat * 21) + 0.012 * Math.sin(qLon * 31);
+    const f = Math.max(0, Math.min(0.9999, (qLat + wob + 1) / 2));
+    const bi = Math.floor(f * NB);
+    let c = pal[(bi * 7) % pal.length].slice();                 // adjacent bands are different colours, not a smooth ramp
+    if (bi % 3 === 0) { const t = 0.88 + 0.12 * Math.sin(qLon * 40 + bi); c = c.map((v) => v * t); }   // fine streaks inside some bands
+    for (const [la, lo, rw, rh, sc] of storms) {              // storm ovals
+      let dl = qLon - lo; if (dl > Math.PI) dl -= 2 * Math.PI; if (dl < -Math.PI) dl += 2 * Math.PI;
+      const e = (dl / rw) ** 2 + ((qLat - la) / rh) ** 2;
+      if (e < 1) c = e < 0.45 ? sc : c.map((v, k) => v * 0.5 + sc[k] * 0.5);
+    }
+    if (ny > 0.86) c = (Math.floor((qLon * 6) / Math.PI * 3 + 0.5) % 2 === 0) ? [0.4, 0.34, 0.5] : [0.52, 0.44, 0.6];   // polar hexagon, in violet
+    if (ny < -0.88) c = [0.5, 0.36, 0.3];
+    col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2];
   }
   sg.setAttribute('color', new THREE.BufferAttribute(col, 3));
   const globe = new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#4a3720' }));

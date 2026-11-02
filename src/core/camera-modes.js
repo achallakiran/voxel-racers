@@ -46,7 +46,7 @@ export function cameraGoal(mode, t, state) {
   // truck and look a little toward the centre: same distance and height as the isometric view, but heading-relative
   if (t.aim != null && (mode === 'iso-follow' || mode === 'chase')) {
     const a = h - t.aim;                              // the view direction: heading turned toward the right-hand side
-    const P = mode === 'chase' ? { back: 8, up: 3.6, ahead: 6, ly: 1.2, fov: 62 } : { back: 11, up: 5, ahead: 8, ly: 1.6, fov: 52 };
+    const P = mode === 'chase' ? { back: 11.5, up: 5.2, ahead: 7, ly: 1.4, fov: 62 } : { back: 15.5, up: 7.2, ahead: 9, ly: 1.8, fov: 54 };
     return {
       pos: { x: t.x - Math.sin(a) * P.back, y: t.y + P.up, z: t.z - Math.cos(a) * P.back },
       look: { x: t.x + Math.sin(a) * P.ahead, y: t.y + P.ly + (t.aimLift || 0), z: t.z + Math.cos(a) * P.ahead }, fov: P.fov,

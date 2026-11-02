@@ -339,3 +339,6 @@ Mobile frame-rate tuning, LOD, final balance.
 ### Phase 11c - Saturn ring disc (DONE)
 - The ground on Saturn's Rings is a finite disc of ice in empty space (`env.ringDisc`, r 116..186) with a visible cliff edge on the outer side and an inner edge toward the planet; scenery stays on the disc; Saturn is bigger (r 100) with its equator level with the road; road radius 150.
 - Next (asked): even bigger Saturn with stronger visible patterns, camera pulled back a little on this stage.
+
+### Phase 11d - Bigger patterned Saturn, camera back (DONE)
+- Saturn r 112 with a banded palette, storm ovals and a polar hexagon; road radius 160 (disc r 124..194); loop vmin 10 (low gravity); camera on this stage pulled further back. Awaiting user feedback on camera distance on the live page.

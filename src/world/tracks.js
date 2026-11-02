@@ -456,7 +456,7 @@ const MOON_DEF = {
 };
 
 // ---------------------------------------------------------------- 8. Saturn's Rings (the road IS the ring: a circular lap round a giant Saturn)
-const SAT = { Rt: 150, gx: 0, gz: 0, gy: 5, gr: 100, r0: 116, r1: 186 };   // the ring plane runs through Saturn's equator; the ground is a disc r0..r1
+const SAT = { Rt: 160, gx: 0, gz: 0, gy: 5, gr: 112, r0: 124, r1: 194 };   // the ring plane runs through Saturn's equator; the ground is a disc r0..r1
 // concentric ring bands across the ice (a dark Cassini gap between the road and the planet), so the whole plain reads as Saturn's rings
 function saturnShade(x, z) {
   const r = Math.hypot(x - SAT.gx, z - SAT.gz);
@@ -491,20 +491,20 @@ const SATURN_DEF = {
     { from: 0.38, to: 0.6, surf: 'dirt' }, { from: 0.6, to: 0.7, surf: 'sand' }, { from: 0.7, to: 0.78, surf: 'ice' },
     { from: 0.78, to: 0.9, surf: 'dirt' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
   ],
-  loops: ({ straightNear }) => [{ s: straightNear(0.68, 16, 0.02), vmin: 14 }],
+  loops: ({ straightNear }) => [{ s: straightNear(0.68, 16, 0.02), vmin: 10 }],
   features(T) {
     const { JUMP, feat } = T;
     return [...JUMP(0.2, 0.8, 7), feat(0.865, 'whoops', { kind: 'whoops', len: 24, w: 11, amp: 0.5, wave: 4.5 })];
   },
   walls({ W }) {
-    W.barrels(0.5, 1, 3); W.tnt(0.33, 2); W.crates(0.42, -1, 3);
-    for (const [a, o, l] of [[0.04, 0, 8], [0.3, 0, 8], [0.8, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.barrels(0.605, 1, 3); W.tnt(0.33, 2); W.crates(0.42, -1, 3);
+    for (const [a, o, l] of [[0.04, 0, 8], [0.3, 0, 8], [0.655, 0, 8], [0.8, 0, 8]]) W.pad(a, o, l, 5.5);
     W.goo(0.58, 3, 9, 5); W.oil(0.93, -3, 10, 5);
     for (const [a, o] of [[0.03, 0], [0.13, 0], [0.24, 0], [0.34, 0], [0.47, 0], [0.56, 0], [0.64, 0], [0.74, 0], [0.84, 0], [0.95, 0]]) W.pickup(a, o);
   },
   hazards({ sampleAt, add }) {
     // floating rocks that slide back and forth across the road; the shadow on the ice shows where each one is
-    const spec = [[0.085, 0], [0.15, 1.6], [0.27, 3.1], [0.365, 0.8], [0.455, 2.4], [0.545, 4.0], [0.62, 1.1], [0.595, 2.9], [0.83, 0.3], [0.915, 1.9]];
+    const spec = [[0.085, 0], [0.15, 1.6], [0.27, 3.1], [0.365, 0.8], [0.455, 2.4], [0.545, 4.0], [0.5, 1.1], [0.575, 2.9], [0.745, 1.7], [0.83, 0.3], [0.915, 1.9]];
     for (const [s, ph] of spec) {
       const p = sampleAt(s);
       add({ kind: 'drifter', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 4.4, r: 1.7, top: 3.4, period: 5.5, phase: ph });
