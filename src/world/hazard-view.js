@@ -29,7 +29,9 @@ export function createHazardView(parent) {
         it.puff = Array.from({ length: 6 }, () => box(group, M.lava));
       } else if (h.kind === 'drifter') {
         it.shadow = box(group, M.blob);
-        it.chunks = [box(group, M.ice1), box(group, M.ice2), box(group, M.ice3), box(group, M.ice2), box(group, M.ice1)];
+        it.chunks = h.oneway
+          ? [box(group, M.rock), box(group, M.stone), box(group, M.rock), box(group, M.stone), box(group, M.lava)]      // a rolling boulder with a glowing seam
+          : [box(group, M.ice1), box(group, M.ice2), box(group, M.ice3), box(group, M.ice2), box(group, M.ice1)];
       } else if (h.kind === 'lavaflow') {
         it.pool = Array.from({ length: 9 }, (_, i) => box(group, i % 3 ? M.lava : M.lavaHot));
         it.rim = Array.from({ length: 7 }, () => box(group, M.shadow));
@@ -84,8 +86,10 @@ export function createHazardView(parent) {
             place(it.rim[i], px + Math.cos(a) * R * 1.05, h.y0 + 0.1, pz + Math.sin(a) * R * 1.05, R * 0.42, 0.45, R * 0.42);
           }
         }
+      } else if (h.kind === 'drifter' && h.live === false) {
+        // a rolling boulder between trips: nothing to draw
       } else if (h.kind === 'drifter') {
-        const bob = 0.7 + 0.3 * Math.sin(time * 1.9 + h.phase * 2); const spin = time * 0.5 + h.phase;
+        const bob = h.oneway ? 0.35 : 0.7 + 0.3 * Math.sin(time * 1.9 + h.phase * 2); const spin = h.oneway ? time * 3 + h.phase : time * 0.5 + h.phase;
         place(it.shadow, h.x, h.y0 + 0.04, h.z, h.r * 2.1, 0.04, h.r * 2.1);          // the shadow on the ice marks where it is
         const r = h.r;
         const parts = [[0, 0, 0, 1.7, 1.3, 1.5], [0.55, 0.9, 0.1, 1.1, 1.0, 1.0], [-0.65, 0.2, 0.5, 0.8, 0.8, 0.8], [0.1, -0.1, -0.7, 0.7, 0.7, 0.8], [-0.3, 1.2, -0.2, 0.6, 0.6, 0.6]];

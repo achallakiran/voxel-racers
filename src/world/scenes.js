@@ -882,6 +882,24 @@ function buildTrack(group, T) {
   // set pieces (the skull cave): bone and rock lit by the stage, glow parts self-lit
   for (const st of T.STRUCTURES || []) {
     if (st.type === 'planet') { group.add(buildGasGiant(st)); continue; }
+    if (st.type === 'gate') {
+      // the great gate at the end of a sprint: two stone pillars, a heavy lintel with a glowing seam, and battlements
+      const p = T.sampleAt((T.OPEN ? T.FINISH_S : 0) + (st.ahead ?? 9) / T.LENGTH);
+      const hd = Math.atan2(p.tx, p.tz); const fx = Math.sin(hd); const fz = Math.cos(hd); const lx = Math.cos(hd); const lz = -Math.sin(hd);
+      const at = (lat, up, ahead = 0) => ({ x: p.x + lx * lat + fx * ahead, y: p.y + up, z: p.z + lz * lat + fz * ahead, rot: hd });
+      const stone = []; const glow = [];
+      const W2 = T.ROAD_HALF + 2.6;
+      for (const side of [-1, 1]) {
+        for (let k = 0; k < 6; k++) stone.push({ ...at(side * W2, 1.1 + k * 2.2), sx: 3.4 - k * 0.12, sy: 2.3, sz: 3.4 - k * 0.12, color: k % 2 ? '#4a4048' : '#3c343c' });
+        glow.push({ ...at(side * (W2 - 1.8), 4.5, 1.8), sx: 0.5, sy: 8, sz: 0.4, color: '#ff6a10' });
+      }
+      stone.push({ ...at(0, 14.2), sx: W2 * 2 + 4.4, sy: 3.0, sz: 4.2, color: '#403840' });
+      glow.push({ ...at(0, 12.55, 2.2), sx: W2 * 2 + 1, sy: 0.5, sz: 0.4, color: '#ff8a20' });
+      for (let k = -4; k <= 4; k += 2) stone.push({ ...at(k * (W2 / 4.4), 16.4), sx: 2.2, sy: 1.8, sz: 3.0, color: '#4a424a' });
+      instanced(group, stone, new THREE.MeshLambertMaterial({ emissive: '#1c1212' }), { cast: true });
+      instanced(group, glow, new THREE.MeshBasicMaterial({ fog: false }), { cast: false });
+      continue;
+    }
     if (st.type === 'lava') {
       // a pool of glowing lava made of flat voxel tiles: bright molten cells, darker crust cells in a patchy pattern
       const tiles = []; const cell = 2;

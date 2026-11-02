@@ -356,3 +356,9 @@ Mobile frame-rate tuning, LOD, final balance.
 - The floating stones are gone. New hazard `lavaflow`: lava puddles that drift from the right (mountain side) across the road to the left, grow and shrink away; inside one you are slowed, shoved left and your nitro burns. Pure function of the stage clock (`lavaflowState`).
 - `W.rocks`: staggered blocks of stone on the LEFT half of the road in six stretches (the right half stays open; the AI keeps right through them).
 - The two lava road zones were removed from the volcano (a truck stalls on the steep slope in them).
+
+### Phase 13 - Inside the Volcano (crater stage) (DONE, awaiting feedback)
+- Second sprint stage: an open-top crater; the road spirals 1.7 turns DOWN the inner wall (wall on the driver's left), ends at a stone gate on a causeway over a lava lake; the finish is out through the gate. Road and wall both come from `craterWall(r)`.
+- Harder than the climb by request: four ditches (kicker + trench + landing, with a pad before each), seven pothole fields, eight stretches of wall-side stone blocks, 17 lava puddles (from either side), 11 one-way rolling boulders (`drifter` with `oneway`), barrels, TNT, crates, oil, goo.
+- New structures `lava` (tile disc) and `gate`; `lavaflow` supports dir -1; `paint` hook recolours the lava lake.
+- Tests: crater geometry/descent/lava below the causeway, hardness counts, one-way boulder, dir -1 lava; lap/pace tests tick hazards on open tracks; every truck finishes at both styles.

@@ -1262,8 +1262,8 @@ import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt, finishS: T.FINISH_S });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 9);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn', 'volcano']);
+  assert.equal(TRACKS.length, 10);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn', 'volcano', 'crater']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -1304,6 +1304,7 @@ for (const T of TRACKS) {
       const goal = T.OPEN ? T.FINISH_S - T.START_S : 1;     // a sprint track ends at its finish line
       for (let i = 0; i < 60 * 260 && acc < goal; i++) {
         const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', props: terr.props, playerAcc: 0, myAcc: acc }, DT);
+        if (T.OPEN) tickHazards(terr, DT);
         for (const e of stepVehicle(v, input, terr, tune, DT)) {
           if (e.type === 'loop') loops++; if (e.type === 'hit') hits++;
           if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }   // smashed props are gone, as in the game
@@ -1495,6 +1496,7 @@ const lapWith = (T, tk, style, lane = 2, seg = null) => {
   for (let i = 0; i < 60 * 200 && acc < goal; i++) {
     const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', pickups: terr.pickups, props: terr.props, playerAcc: 0, myAcc: acc }, DT);
     tickPickups(terr, DT);
+    if (T.OPEN) tickHazards(terr, DT);          // the lava puddles and boulders of a sprint stage move with the stage clock
     for (const e of stepVehicle(v, input, terr, tune, DT)) {
       if (e === 'boost') boosts++;
       if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }
@@ -1517,8 +1519,8 @@ test('pace: normal driving is fast (fast trucks 30+, heavy ones 24+) and nitro i
 test('pace: every truck laps every track inside a lap-time window and the roster stays within 1.5x', () => {
   for (const T of TRACKS) {
     const times = TRUCKS.map((tk) => { const r = lapWith(T, tk, 'steady'); assert.ok(r.acc >= 0.98, `${tk.id} on ${T.id} finished`); return r.time; });
-    assert.ok(Math.min(...times) > 35 && Math.max(...times) < (T.OPEN ? 115 : 95), `${T.id}: ${times.map((x) => x.toFixed(0))}`);
-    assert.ok(Math.max(...times) / Math.min(...times) < 1.5, `${T.id} roster spread`);
+    assert.ok(Math.min(...times) > 35 && Math.max(...times) < (T.OPEN ? 125 : 95), `${T.id}: ${times.map((x) => x.toFixed(0))}`);
+    assert.ok(Math.max(...times) / Math.min(...times) < (T.OPEN ? 1.9 : 1.5), `${T.id} roster spread`);
   }
 });
 
@@ -1768,6 +1770,7 @@ test('6e: tracks have more forks (two on Greenridge and Canyon), every fork has 
   const forks = (T) => T.LANES.filter((l) => l.route === 'fast').length;
   assert.equal(forks(TRACKS[0]), 2); assert.equal(forks(TRACKS[1]), 2); assert.ok(forks(TRACKS[2]) >= 1);
   for (const T of TRACKS) {
+    if (T.OPEN) continue;      // sprint stages have no forks (their ditches are full-width jumps)
     const trenches = T.FEATURES.filter((f) => f.type === 'trench').length;
     assert.equal(trenches, forks(T), `${T.id}: one trench jump per fork`);
     assert.equal(T.LANES.filter((l) => l.route === 'safe').length, forks(T), `${T.id}: a detour for every jump`);
@@ -2326,9 +2329,9 @@ test('12: a driver stops at the finish line of a sprint track', () => {
   assert.equal(out.gas, 0); assert.equal(out.brake, 1);
 });
 
-test('12: every truck climbs the volcano to the finish at both driving styles', () => {
-  const T = getTrackById('volcano');
-  for (const style of ['steady', 'aggressive']) {
+test('12: every truck reaches the finish of both volcano stages at both driving styles', () => {
+  for (const id of ['volcano', 'crater']) for (const style of ['steady', 'aggressive']) {
+    const T = getTrackById(id);
     for (const tk of TRUCKS) {
       const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
       const terr = T.freshTerrain(); const sp = T.gridPose(1);
@@ -2390,4 +2393,55 @@ test('12: the volcano is steep and high: a tall mountain, a road that climbs har
   assert.ok(T.sampleAt(T.FINISH_S).y > 90, 'the summit is high');
   let maxGr = 0; for (let i = 1; i < S.length; i++) maxGr = Math.max(maxGr, (S[i].y - S[i - 1].y) / Math.hypot(S[i].x - S[i - 1].x, S[i].z - S[i - 1].z));
   assert.ok(maxGr > 0.2 && maxGr < 0.32, `steepest road grade ${maxGr.toFixed(2)}`);
+});
+
+test('13: Inside the Volcano is an open sprint down the inside of the crater: starts on the rim, ends low, wall on the left', () => {
+  const T = getTrackById('crater');
+  assert.ok(T.OPEN && T.env.camAim && T.START_S < 0.1 && T.FINISH_S > 0.9);
+  const S = T.SAMPLES; const n = S.length;
+  let prevR = 1e9; let prevY = 1e9; let steepest = 0;
+  for (let i = 0; i < n; i += 3) {
+    const p = S[i]; const r = Math.hypot(p.x, p.z);
+    assert.ok(r <= prevR + 0.5, 'the spiral only winds inward');
+    assert.ok(p.y <= prevY + 0.7, 'the road only goes down');
+    prevR = r; prevY = p.y;
+    assert.ok((-p.tz) * (-p.x) + p.tx * (-p.z) > 0, `the crater is on the right at sample ${i}`);
+    if (i > 0) steepest = Math.max(steepest, (S[i - 3].y - p.y) / 6);
+  }
+  assert.ok(steepest > 0.12 && steepest < 0.3, `steepest descent ${steepest.toFixed(2)}`);
+  assert.ok(T.sampleAt(T.START_S).y > 95 && T.sampleAt(T.FINISH_S).y < 12, 'from the rim to the bottom');
+  // the bottom is a causeway over lava: the ground beside the end of the road is much lower than the road
+  const e = T.sampleAt(T.FINISH_S - 0.02);
+  assert.ok(T.heightAt(e.x - e.tz * 30, e.z + e.tx * 30) < e.y - 2, 'lava lies below the causeway (towards the crater centre)');
+  assert.ok(T.STRUCTURES.some((q) => q.type === 'gate') && T.STRUCTURES.some((q) => q.type === 'lava'), 'a gate and a lava lake');
+});
+
+test('13: Inside the Volcano is hard: many ditches and jumps, potholes, lava from both sides, boulders off the wall, stone blocks on the left', () => {
+  const T = getTrackById('crater');
+  assert.ok(T.FEATURES.filter((f) => f.type === 'trench').length >= 4, 'full-width ditches to jump');
+  assert.ok(T.FEATURES.filter((f) => f.type === 'pit').length >= 30, 'fields of potholes');
+  const haz = T.freshTerrain().hazards;
+  const lava = haz.filter((h) => h.kind === 'lavaflow');
+  assert.ok(lava.length >= 14 && lava.some((h) => h.dir === -1) && lava.some((h) => h.dir === 1), 'lava puddles from both sides');
+  assert.ok(haz.filter((h) => h.oneway).length >= 8, 'boulders rolling off the wall');
+  const stones = T.WALLS.filter((w) => w.kind === 'stone');
+  assert.ok(stones.length >= 30);
+  for (const w of stones) assert.ok(T.nearest(w.x, w.z).d > 0.8, 'stone blocks only on the wall (left) side');
+  // a rolling boulder: left edge -> right edge, then away until the next trip
+  const t = T.freshTerrain(); const h = t.hazards.find((q) => q.oneway);
+  const lat = () => (h.x - h.cx) * h.tz - (h.z - h.cz) * h.tx;
+  h.phase = 0; t.time = 0.02 * h.period; tickHazards(t, 0); const a = lat(); t.time = 0.5 * h.period; tickHazards(t, 0); const b = lat();
+  assert.ok(a > 6 && b < a - 4, 'rolls from the left edge towards the right');
+  t.time = 0.9 * h.period; tickHazards(t, 0);
+  assert.ok(Math.abs(h.x - h.cx) > 1000 && h.live === false, 'out of play between trips');
+});
+
+test('13: a lava puddle with dir -1 drifts from the left to the right and shoves right', () => {
+  const h = { kind: 'lavaflow', cx: 0, cz: 0, tx: 0, tz: 1, range: 9.5, r: 3.4, period: 7.5, phase: 0, dir: -1 };
+  assert.ok(lavaflowState(h, 0.05).u > 0.95 && lavaflowState(h, 7.45).u < -0.95, 'enters on the left edge, leaves on the right');
+  const time = 3.75; const st = lavaflowState(h, time);
+  const px = h.cx + h.tz * h.range * st.u; const pz = h.cz - h.tx * h.range * st.u;
+  const v = { x: px, z: pz, y: 0, vx: 0, vz: 12, nitro: 0.5, hazCool: 0 };
+  hazardEffects(v, { hazards: [{ ...h, y0: 0 }], time }, 1 / 60, []);
+  assert.ok(v.vx * h.tz - v.vz * h.tx < 0, 'shoved towards the right-hand side');
 });

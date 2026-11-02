@@ -3,7 +3,8 @@
 //   avalanche  a wall of snow sweeping across a stretch of road from one side, once per `period` seconds
 //   drifter  a floating rock that slides across the road on a fixed path (a moving solid obstacle)
 //   yak        a slow animal walking back and forth across the road (a moving solid obstacle, see tickHazards)
-//   lavaflow   a puddle of lava drifting across the road from the right to the left: slows, shoves left and burns nitro
+//   lavaflow   a puddle of lava drifting across the road (from the right to the left, or `dir: -1` the other way): slows, shoves sideways and burns nitro
+//   drifter + oneway   a boulder that rolls across the road once per `period` from the left (the wall) to the right and drops away
 // A hazard sits on the road frame of its stage: (x,z) centre, (tx,tz) direction of travel, `len` along, `w` across.
 
 export const AVALANCHE_PUSH = 40;        // sideways acceleration inside the wave
@@ -44,7 +45,8 @@ export const LAVA_BURN = 0.55;           // nitro burned per second inside it
 // frac 0..1 through the trip; u -1 (right edge) .. +1 (left edge); size 0..1 (grows and shrinks at the ends)
 export function lavaflowState(h, time) {
   const frac = (((time / h.period) + h.phase) % 1 + 1) % 1;
-  return { frac, u: -1 + 2 * frac, size: Math.min(1, frac * 7, (1 - frac) * 7) };
+  const dir = h.dir === -1 ? -1 : 1;           // dir -1: the puddle comes from the LEFT (the wall side) and drifts right
+  return { frac, dir, u: dir * (-1 + 2 * frac), size: Math.min(1, frac * 7, (1 - frac) * 7) };
 }
 export const STALACTITE_FALL = 0.9;       // seconds the rock takes to fall (its shadow grows over this time)
 const cyc = (h, time) => ((time - h.offset) % h.period + h.period) % h.period;
@@ -88,7 +90,7 @@ export function hazardEffects(v, terrain, dt, events) {
       const rr = h.r * st.size + 0.8;
       if (st.size < 0.2 || Math.hypot(v.x - px, v.z - pz) > rr || v.y > (h.y0 || 0) + 2.2) continue;
       const sq = Math.exp(-LAVA_DRAG * dt);
-      v.vx = v.vx * sq + h.tz * LAVA_PUSH * dt; v.vz = v.vz * sq - h.tx * LAVA_PUSH * dt;
+      v.vx = v.vx * sq + h.tz * LAVA_PUSH * st.dir * dt; v.vz = v.vz * sq - h.tx * LAVA_PUSH * st.dir * dt;
       if (v.nitro > 0) v.nitro = Math.max(0, v.nitro - LAVA_BURN * dt);
       if (!(v.hazCool > 0)) { v.hazCool = 0.8; events.push({ type: 'lava', hazard: h }); }
       continue;
@@ -117,9 +119,17 @@ export function tickHazards(terrain, dt) {
   for (const h of terrain.hazards) {
     if (h.kind === 'drifter') {
       // a floating rock sliding across the road on a fixed sine path; its solid body is an obstacle that moves with it
-      const u = Math.sin((terrain.time / h.period) * Math.PI * 2 + h.phase);
+      let u = Math.sin((terrain.time / h.period) * Math.PI * 2 + h.phase);
+      let live = true;
+      if (h.oneway) {
+        // a boulder rolling down off the wall: one trip across per period (left edge -> right edge), then it is gone until the next
+        const frac = (((terrain.time / h.period) + h.phase) % 1 + 1) % 1;
+        u = 1 - 2 * Math.min(1, frac / 0.8); live = frac <= 0.8;
+      }
       h.x = h.cx + h.tz * h.range * u; h.z = h.cz - h.tx * h.range * u;
-      h.u = u; h.y0 = terrain.heightAt ? terrain.heightAt(h.x, h.z) : (h.y0 || 0);
+      if (!live) { h.x = h.cx + 1e4; h.z = h.cz + 1e4; }
+      h.live = live;
+      h.u = u; if (live) h.y0 = terrain.heightAt ? terrain.heightAt(h.x, h.z) : (h.y0 || 0);
       if (!h.obstacle || h.obstacle.owner !== terrain) {
         h.obstacle = { type: 'drifter', owner: terrain, x: h.x, z: h.z, r: h.r, h: h.top, y0: h.y0 };
         terrain.obstacles.push(h.obstacle);

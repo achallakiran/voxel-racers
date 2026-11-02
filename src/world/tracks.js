@@ -604,6 +604,111 @@ const VOLCANO_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF), makeTrack(VOLCANO_DEF)];
+// ---------------------------------------------------------------- 10. Inside the Volcano (sprint, part 2: the spiral DOWN the inside of the crater)
+// An open-top crater: the road starts on the rim, spirals down the inner wall (the wall is on your LEFT, the drop into the
+// crater on your right) and ends on a causeway over the lava lake, out through a great gate. Ditches, full-width jumps, lava
+// puddles and boulders from the wall make it a hard one. The wall and the road come from ONE function, craterWall(r).
+const CRA = { r0: 168, rEnd: 50, turns: 1.7, rFloor: 86, rim: 112, floor: 6, lava: 2.2, th0: 2.2 };
+function craterWall(r) {
+  if (r <= CRA.rFloor) return CRA.floor;
+  const t = Math.min(1, (r - CRA.rFloor) / (CRA.r0 - CRA.rFloor));
+  return CRA.floor + (CRA.rim - CRA.floor) * Math.pow(t, 1.2);
+}
+function craterGround(x, z) {
+  const r = Math.hypot(x, z);
+  if (r >= CRA.r0) { const lip = 9 * Math.max(0, 1 - Math.abs(r - (CRA.r0 + 14)) / 16); return Math.max(1.2, CRA.rim + lip - 0.9 * Math.max(0, r - (CRA.r0 + 14))); }
+  if (r >= CRA.rFloor) return craterWall(r);
+  const k = Math.max(0, Math.min(1, (r - (CRA.rFloor - 12)) / 12));
+  return CRA.lava + (CRA.floor - CRA.lava) * k * k * (3 - 2 * k);       // the shore of the lava lake falls away from the causeway level
+}
+const CRATER_DEF = {
+  id: 'crater', name: 'Inside the Volcano', open: true, startS: 0.04, finishS: 0.985,
+  theme: { a: [0.2, 0.17, 0.17], b: [0.16, 0.13, 0.13], edge: [0.38, 0.2, 0.14], far: [0.12, 0.08, 0.08], dirt: [0.34, 0.24, 0.19], rut: [0.25, 0.17, 0.14], sand: [0.5, 0.44, 0.42], sky: 'volcano', wall: [0.3, 0.2, 0.2] },
+  checkpoints: [0, 0.3, 0.55, 0.78],
+  scenery: ['stalagmite', 'stalagmite', 'moonrock'], sceneryCount: 170,
+  keepScenery: (x, z) => { const r = Math.hypot(x, z); return r > CRA.rFloor + 8 && r < CRA.r0 + 6; },
+  ground: craterGround,
+  structures: [{ type: 'lava', x: 0, z: 0, y: CRA.lava + 0.35, r: 96 }, { type: 'gate', ahead: 9 }],
+  paint(x, z, h, smp, c) {
+    const r = Math.hypot(x, z);
+    if (!smp.onRoad && r < CRA.rFloor + 4 && smp.ad > 10) {                      // the lava lake and its glowing shore
+      const g = Math.max(0, Math.min(1, (CRA.rFloor + 4 - r) / 30));
+      return [0.55 + 0.45 * g, 0.2 + 0.25 * g, 0.06];
+    }
+    if (smp.onRoad || smp.ad < 12) return null;
+    const a = Math.atan2(z, x);
+    const vein = Math.sin(a * 11 + r * 0.06) * Math.sin(a * 17 - r * 0.05 + 0.7);
+    return vein > 0.9 ? [0.95, 0.38, 0.08] : null;
+  },
+  env: {
+    openRoad: true, camAim: { yaw: 0.45, lift: 2 }, weather: 'embers', breeze: { x: 3, z: 0 },
+    look: { sky: 'volcano', fog: ['#4a1a12', 150, 700], hemi: ['#ff8a50', '#3a0e08', 1.15], sun: ['#ff9a60', 2.2, -6, 8, 6] },
+  },
+  ctrl() {
+    // an inward spiral again (th grows, r shrinks): the centre of the crater is on the right, the wall on the left
+    const ctrl = []; const n = 50;
+    for (let k = 0; k <= n; k++) {
+      const u = k / n;
+      ctrl.push({ x: (CRA.r0 + (CRA.rEnd - CRA.r0) * u) * Math.cos(CRA.th0 + 2 * Math.PI * CRA.turns * u), z: (CRA.r0 + (CRA.rEnd - CRA.r0) * u) * Math.sin(CRA.th0 + 2 * Math.PI * CRA.turns * u) });
+    }
+    return ctrl;
+  },
+  elevation: (s, p) => craterWall(Math.hypot(p.x, p.z)) + 0.3 * Math.sin(2 * Math.PI * 11 * s),
+  sections: [
+    { from: 0.0, to: 0.1, surf: 'asphalt' }, { from: 0.1, to: 0.35, surf: 'dirt' }, { from: 0.35, to: 0.45, surf: 'sand' },
+    { from: 0.45, to: 0.7, surf: 'dirt' }, { from: 0.7, to: 0.8, surf: 'sand' }, { from: 0.8, to: 1.01, surf: 'asphalt' },
+  ],
+  features(T) {
+    const { feat, lateral, kicker, landing, LENGTH, sampleAt } = T;
+    const F = [];
+    // a full-width ditch: a ramp, a gap you have to jump, a landing
+    const ditch = (s, w = 12.5) => {
+      F.push(feat(s, 'ramp', { kind: 'ramp', w, profile: kicker(5, 2.2) }));
+      F.push(feat(s + 5.4 / LENGTH, 'trench', { kind: 'pit', len: 4.4, w, depth: 2.8 }));
+      F.push(feat(s + 12.4 / LENGTH, 'ramp', { kind: 'ramp', w, profile: landing(10, 1.0) }));
+    };
+    for (const s of [0.2, 0.43, 0.66, 0.82]) ditch(s);
+    // fields of potholes: staggered across the road, so you weave between them
+    const pot = (s0, list) => { for (const [d, off, r, depth] of list) F.push(lateral(s0 + d / LENGTH, off, { type: 'pit', kind: 'pit', r, depth })); };
+    for (const s0 of [0.115, 0.255, 0.33, 0.49, 0.585, 0.715, 0.885]) {
+      pot(s0, [[0, -3.5, 3.4, 1.4], [9, 3.2, 3.0, 1.2], [18, -1.5, 3.6, 1.5], [27, 4.2, 2.6, 1.0], [36, -4.2, 3.0, 1.3], [45, 1.0, 3.2, 1.4]]);
+    }
+    return F;
+  },
+  walls({ W }) {
+    // blocks of stone on the wall side (left), in many stretches; ditches and puddles push you into them
+    for (const [a, l] of [[0.075, 44], [0.15, 40], [0.285, 48], [0.375, 44], [0.52, 48], [0.62, 40], [0.76, 44], [0.855, 44]]) W.rocks(a, l);
+    W.barrels(0.545, 1, 3); W.tnt(0.36, 2); W.crates(0.735, -1, 3); W.oil(0.27, -3, 10, 5); W.goo(0.47, 3, 9, 5); W.goo(0.74, -3, 9, 5);
+    for (const [a, o, l] of [[0.06, 0, 8], [0.18, 0, 9], [0.405, 0, 9], [0.56, 0, 8], [0.635, 0, 9], [0.8, 0, 9], [0.9, 0, 8]]) W.pad(a, o, l, 5.5);   // a pad just before each ditch carries the heavy trucks over
+    for (const [a, o] of [[0.09, 0], [0.18, 0], [0.31, 0], [0.4, 0], [0.5, 0], [0.64, 0], [0.73, 0], [0.8, 0], [0.88, 0]]) W.pickup(a, o);
+  },
+  hazards({ sampleAt, add }) {
+    // lava puddles drift across the road from BOTH sides (dir -1: from the wall on the left; dir 1: from the crater side)
+    const pud = [[0.095, 0, -1], [0.135, 0.4, 1], [0.215, 0.2, -1], [0.23, 0.7, 1], [0.305, 0.5, -1], [0.355, 0.1, 1], [0.415, 0.6, -1], [0.465, 0.3, -1], [0.53, 0.9, 1],
+      [0.57, 0.2, -1], [0.605, 0.5, 1], [0.645, 0.0, -1], [0.7, 0.7, -1], [0.735, 0.3, 1], [0.8, 0.5, -1], [0.87, 0.1, 1], [0.905, 0.6, -1]];
+    for (const [s, ph, dir] of pud) {
+      const p = sampleAt(s);
+      add({ kind: 'lavaflow', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 9.5, r: 3.6, period: 6.5, phase: ph, dir });
+    }
+    // boulders rolling down off the wall: one trip across the road per period, then they drop into the crater
+    const rolls = [[0.055, 0], [0.17, 0.3], [0.27, 0.6], [0.345, 0.15], [0.44, 0.45], [0.505, 0.75], [0.595, 0.05], [0.675, 0.5], [0.755, 0.25], [0.84, 0.65], [0.925, 0.35]];
+    for (const [s, ph] of rolls) {
+      const p = sampleAt(s);
+      add({ kind: 'drifter', oneway: true, cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 9, r: 1.5, top: 3.0, period: 5.2, phase: ph });
+    }
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(71); const out = [];
+    for (let i = 0; i < 30; i++) {
+      const s = 0.05 + rand() * 0.9; const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 6.5 + rand() * 3;
+      const p = sampleAt(s);
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF), makeTrack(VOLCANO_DEF), makeTrack(CRATER_DEF)];
 export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => TRACKS.some((t) => t.id === id);
