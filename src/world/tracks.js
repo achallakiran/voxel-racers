@@ -334,7 +334,7 @@ const MAGMA_DEF = {
   walls({ W }) {
     W.fork(0.075, 52, 1, 'stone', 0.6);
     W.island(0.70, 32, 'stone', 1);
-    W.corridor(0.918, 22, 7.8, 'stone');
+    W.corridor(0.915, 26, 7.8, 'stone');
     W.lava(0.30, 3, 12, 5); W.lava(0.865, 3, 12, 5); W.lava(0.89, -3, 12, 5);
     W.barrels(0.755, -1, 3); W.tnt(0.65, 2); W.crates(0.51, 1, 3);
     for (const [a, o, l] of [[0.03, 0, 8], [0.39, 0, 8], [0.96, 0, 8]]) W.pad(a, o, l, 5.5);
