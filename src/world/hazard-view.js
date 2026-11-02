@@ -1,5 +1,5 @@
 // Draws the timed stage hazards from the same pure functions the physics uses (so what you see is what hits you).
-import * as THREE from 'three';
+import * as THREE from '../../lib/three.module.js';
 import { avalanchePhase, avalancheWarning, avalancheBand, geyserState, stalactiteState, STALACTITE_FALL } from '../physics/hazards.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);

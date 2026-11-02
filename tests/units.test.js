@@ -1262,8 +1262,8 @@ import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 4);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya']);
+  assert.equal(TRACKS.length, 6);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -1983,4 +1983,58 @@ test('7c: Himalaya Pass has snow, ice, planks, avalanche hazards and wind; fresh
   assert.equal(T.terrain.hazards.length, 3);
   assert.ok(T.env.wind && T.env.weather === 'snow');
   const a = T.freshTerrain(); a.time = 9; assert.equal(T.freshTerrain().time, 0);
+});
+
+// ---------------------------------------------------------------- phase 7d: caves, lava, geysers, stalactites
+import { geyserState, stalactiteState, GEYSER_LAUNCH } from '../src/physics/hazards.js';
+
+test('7d: geyser cycles bubbling -> eruption -> rest, exactly by the clock', () => {
+  const h = { period: 8, warn: 3, dur: 1.6, offset: 0 };
+  assert.equal(geyserState(h, 1).state, 'warn');
+  assert.equal(geyserState(h, 3.5).state, 'erupt');
+  assert.equal(geyserState(h, 6).state, 'idle');
+  assert.equal(geyserState(h, 8 + 3.5).state, 'erupt');
+});
+
+test('7d: an erupting geyser launches a truck above it, but not one beside it', () => {
+  const h = { kind: 'geyser', x: 0, z: 10, r: 3, period: 8, warn: 3, dur: 1.6, offset: 0, y0: 0 };
+  const terr = flat7c({ hazards: [h], time: 3.5 });
+  const on = mkV7c(0, 10, 0, terr, 0); on.vx = 0; on.vz = 0;
+  const beside = mkV7c(8, 10, 0, terr, 0);
+  for (let i = 0; i < 20; i++) { stepV7c(on, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60); stepV7c(beside, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60); }
+  assert.ok(on.y > 2.5 && !on.grounded, `launched (y ${on.y.toFixed(1)})`);
+  assert.ok(beside.y < 0.6, 'not launched');
+});
+
+test('7d: a stalactite shows a growing shadow, then crashes and stuns only what is under it', () => {
+  const h = { kind: 'stalactite', x: 0, z: 10, r: 2.8, period: 7, warn: 4, offset: 0, y0: 0 };
+  assert.equal(stalactiteState(h, 2).state, 'idle');
+  assert.equal(stalactiteState(h, 3.5).state, 'falling');
+  assert.equal(stalactiteState(h, 4.05).state, 'impact');
+  assert.equal(stalactiteState(h, 5).state, 'rubble');
+  const terr = flat7c({ hazards: [h], time: 4.05 });
+  const under = mkV7c(0, 10, 0, terr, 0); under.vz = 20; under.vx = 0;
+  stepV7c(under, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60);
+  const clear = mkV7c(9, 10, 0, terr, 0); clear.vz = 20; clear.vx = 0;
+  stepV7c(clear, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60);
+  assert.ok(under.vz < clear.vz * 0.6, 'stunned under the rock');
+});
+
+test('7d: lava is a wade-and-sink surface (very slow, low grip)', async () => {
+  const { SURFACES } = await import('../src/physics/arcade.js');
+  assert.ok(SURFACES.lava.maxMul <= 0.35 && SURFACES.lava.drag > SURFACES.goo.drag);
+});
+
+test('7d: Skull Cavern has falling rocks and a cave look; Magma Peak has lava, geysers and embers', () => {
+  const S = getTrackById('skull'); const M = getTrackById('magma');
+  assert.ok(S.terrain.hazards.filter((h) => h.kind === 'stalactite').length >= 5);
+  assert.equal(S.env.look.sky, 'cave');
+  assert.ok(M.ZONES.filter((z) => z.kind === 'lava').length >= 3, 'lava patches');
+  assert.ok(M.terrain.hazards.filter((h) => h.kind === 'geyser').length >= 4);
+  assert.equal(M.env.weather, 'embers');
+  // the AI is steered around lava: every lava patch has a lane entry that forces the other side
+  for (const z of M.ZONES.filter((z) => z.kind === 'lava')) {
+    const l = M.laneAt(z.s + 4 / M.LENGTH);
+    assert.ok(l.off !== null && Math.sign(l.off) === -Math.sign(z.off), 'avoids lava');
+  }
 });

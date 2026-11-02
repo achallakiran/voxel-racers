@@ -309,6 +309,7 @@ const SKULL_DEF = {
 const MAGMA_DEF = {
   id: 'magma', name: 'Magma Peak',
   theme: { a: [0.2, 0.17, 0.17], b: [0.16, 0.13, 0.13], edge: [0.38, 0.2, 0.14], far: [0.12, 0.08, 0.08], dirt: [0.32, 0.22, 0.18], rut: [0.24, 0.16, 0.13], sand: [0.45, 0.42, 0.42], sky: 'volcano', wall: [0.3, 0.2, 0.2] },
+  checkpoints: [0, 0.26, 0.55, 0.78],
   peaks: 16, peakType: 'cone', scenery: ['stalagmite', 'stalagmite'], sceneryCount: 220,
   env: { weather: 'embers', breeze: { x: 3, z: 0 }, look: { sky: 'volcano', fog: ['#4a1a12', 25, 125], hemi: ['#ff8a50', '#3a0e08', 1.1], sun: ['#ff9a60', 2.0, -6, 8, 6] } },
   ctrl() {
@@ -333,7 +334,7 @@ const MAGMA_DEF = {
   walls({ W }) {
     W.fork(0.075, 52, 1, 'stone', 0.6);
     W.island(0.70, 32, 'stone', 1);
-    W.corridor(0.94, 24, 7.8, 'stone');
+    W.corridor(0.918, 22, 7.8, 'stone');
     W.lava(0.30, 3, 12, 5); W.lava(0.865, 3, 12, 5); W.lava(0.89, -3, 12, 5);
     W.barrels(0.755, -1, 3); W.tnt(0.65, 2); W.crates(0.51, 1, 3);
     for (const [a, o, l] of [[0.03, 0, 8], [0.39, 0, 8], [0.96, 0, 8]]) W.pad(a, o, l, 5.5);
