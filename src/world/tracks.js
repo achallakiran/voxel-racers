@@ -455,21 +455,32 @@ const MOON_DEF = {
   },
 };
 
-// ---------------------------------------------------------------- 8. Saturn's Rings (a lap round a ring of ice, under a giant Saturn)
+// ---------------------------------------------------------------- 8. Saturn's Rings (the road IS the ring: a circular lap round a giant Saturn)
+const SAT = { Rt: 132, gx: 0, gz: 0, gy: 78, gr: 80 };
+// concentric ring bands across the ice (a dark Cassini gap between the road and the planet), so the whole plain reads as Saturn's rings
+function saturnShade(x, z) {
+  const r = Math.hypot(x - SAT.gx, z - SAT.gz);
+  const off = Math.abs(r - SAT.Rt);
+  if (off < 17) return 1;                                   // the road and its shoulders keep their own colour
+  let k = 0.9 + 0.12 * Math.sin(r * 0.9) * Math.sin(r * 0.23 + 1);
+  if (r < SAT.Rt - 28 && r > SAT.Rt - 52) k *= 0.62;           // a dark gap just inside the road
+  return k;
+}
 const SATURN_DEF = {
   id: 'saturn', name: "Saturn's Rings",
-  theme: { a: [0.86, 0.82, 0.74], b: [0.8, 0.76, 0.68], edge: [0.97, 0.94, 0.86], far: [0.46, 0.42, 0.4], dirt: [0.7, 0.66, 0.6], rut: [0.58, 0.54, 0.5], sand: [0.9, 0.86, 0.78], sky: 'space', wall: [0.6, 0.64, 0.74] },
-  scenery: ['icechunk', 'icechunk', 'iceshard', 'iceshard', 'moonrock'], sceneryCount: 260,
-  env: { openRoad: true, ring: { a: '#e8f2ff', b: '#bcd2f0', rail1: '#ffd36a', rail2: '#3a3020', glow: '#5a4410' }, gravity: 9, weather: null,
-    look: { sky: 'space', saturn: true, sunDisc: [-0.79, 0.4, 0.51], fog: ['#05060f', 150, 420], hemi: ['#9fb4e8', '#3a3228', 0.85], sun: ['#fff0d8', 3.2, -14, 7, 9] } },
+  theme: { a: [0.86, 0.82, 0.74], b: [0.8, 0.76, 0.68], edge: [0.97, 0.94, 0.86], far: [0.74, 0.68, 0.58], dirt: [0.7, 0.66, 0.6], rut: [0.58, 0.54, 0.5], sand: [0.9, 0.86, 0.78], sky: 'space', wall: [0.6, 0.64, 0.74] },
+  scenery: ['icechunk', 'icechunk', 'iceshard', 'iceshard', 'moonrock'], sceneryCount: 300,
+  structures: [{ type: 'planet', x: SAT.gx, y: SAT.gy, z: SAT.gz, r: SAT.gr }],
+  shade: saturnShade,
+  env: { openRoad: true, hideBarriers: true, camAim: { yaw: 0.75, lift: 5 }, ring: { a: '#e8f2ff', b: '#bcd2f0', rail1: '#ffd36a', rail2: '#3a3020', glow: '#5a4410' }, gravity: 9, weather: null,
+    look: { sky: 'space', sunDisc: [-0.79, 0.4, 0.51], fog: ['#05060f', 300, 900], hemi: ['#9fb4e8', '#5a4a38', 1.0], sun: ['#fff0d8', 3.2, -14, 7, 9] } },
   ctrl() {
+    // a circle round Saturn, driven so the planet is always on your right (on screen: the camera's right is (-tz, tx))
     const ctrl = [];
-    // a rounded-square lap: broad enough that Saturn swings round the sky as you go
     for (let k = 0; k < 28; k++) {
       const th = (2 * Math.PI * k) / 28;
-      const c = Math.cos(th); const sn = Math.sin(th); const n = 2.7;
-      const r = 1 + 0.05 * Math.sin(3 * th + 0.6);
-      ctrl.push({ x: 128 * Math.sign(c) * Math.pow(Math.abs(c), 2 / n) * r, z: 94 * Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n) * r });
+      const r = SAT.Rt * (1 + 0.012 * Math.sin(3 * th + 0.6));
+      ctrl.push({ x: SAT.gx + r * Math.cos(th), z: SAT.gz + r * Math.sin(th) });
     }
     return ctrl;
   },

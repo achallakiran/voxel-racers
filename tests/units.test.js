@@ -2183,8 +2183,24 @@ test('10: the Moon set pieces: big craters on the road, huge ones beside it, a l
 test('11: Saturn has an open ring road, low gravity, a Saturn sky and no divider walls', () => {
   const T = getTrackById('saturn');
   assert.equal(T.name, "Saturn's Rings");
-  assert.ok(T.env.openRoad && T.env.gravity < 14 && T.env.look.sky === 'space' && T.env.look.saturn, 'open road, low gravity, space sky with Saturn');
+  assert.ok(T.env.openRoad && T.env.gravity < 14 && T.env.look.sky === 'space', 'open road, low gravity, space sky');
   assert.ok(!T.env.planet, 'a flat ring plane (no planet warp)');
+  // the road is the ring: a circle round a giant Saturn that stands in the world and is always on the driver's RIGHT
+  const sat = T.STRUCTURES.find((q) => q.type === 'planet');
+  assert.ok(sat && sat.r >= 50, 'a giant planet');
+  let minR = 1e9; let maxR = 0; let right = 0;
+  for (let i = 0; i < 200; i++) {
+    const p = T.sampleAt(i / 200);
+    const r = Math.hypot(p.x - sat.x, p.z - sat.z); minR = Math.min(minR, r); maxR = Math.max(maxR, r);
+    const rx = -p.tz; const rz = p.tx;                                   // the screen's right-hand side as the chase camera sees it (forward x up)
+    if (rx * (sat.x - p.x) + rz * (sat.z - p.z) > 0) right++;
+  }
+  assert.ok(maxR - minR < 6 && minR > sat.r + 40, `a circular road well clear of the planet (${minR.toFixed(0)}..${maxR.toFixed(0)})`);
+  assert.equal(right, 200, 'Saturn is on the right all the way round');
+  assert.ok(T.env.hideBarriers && T.env.camAim, 'no visible fence on the ring (the invisible wall still holds), and a camera that turns toward Saturn');
+  const edge = T.sampleAt(0.3); const out = T.constrain(edge.x - edge.tz * 30, edge.z + edge.tx * 30, 1.6);   // 30 units out to the left of the road
+  assert.ok(out, 'trucks cannot leave the ring: the invisible wall pushes them back');
+  assert.ok(T.shade && T.shade(sat.x + 100, sat.z) !== T.shade(sat.x + 104, sat.z), 'ring bands across the ice');
   assert.ok(T.WALLS.length < 150, 'no median/divider walls');
   const kinds = new Set(T.sceneryLayout().map((x) => x.type));
   assert.ok(kinds.has('icechunk') && kinds.has('iceshard'), 'ice scenery');

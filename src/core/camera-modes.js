@@ -42,6 +42,16 @@ export function cameraGoal(mode, t, state) {
   if (t.loop) return loopCameraGoal(t.loop, t);
   const h = t.heading || 0;
   const sp = t.speed || 0;
+  // a stage built round a centrepiece (Saturn, always on the driver's right) wants the follow camera to turn with the
+  // truck and look a little toward the centre: same distance and height as the isometric view, but heading-relative
+  if (t.aim != null && (mode === 'iso-follow' || mode === 'chase')) {
+    const a = h - t.aim;                              // the view direction: heading turned toward the right-hand side
+    const P = mode === 'chase' ? { back: 8, up: 3.6, ahead: 6, ly: 1.2, fov: 62 } : { back: 11, up: 5, ahead: 8, ly: 1.6, fov: 52 };
+    return {
+      pos: { x: t.x - Math.sin(a) * P.back, y: t.y + P.up, z: t.z - Math.cos(a) * P.back },
+      look: { x: t.x + Math.sin(a) * P.ahead, y: t.y + P.ly + (t.aimLift || 0), z: t.z + Math.cos(a) * P.ahead }, fov: P.fov,
+    };
+  }
   switch (mode) {
     case 'iso-fixed': {
       const dead = 5;

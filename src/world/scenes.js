@@ -246,8 +246,6 @@ function buildSpace() {
   sunG.lookAt(0, 0, 0);
   g.add(sunG);
   g.userData.sunG = sunG;
-  g.userData.saturn = buildSaturn();
-  g.add(g.userData.saturn);
   // meteors: thin additive streaks that cross the sky (a small pool, recycled)
   const mGeo = new THREE.BoxGeometry(0.4, 0.4, 1, 1, 1, 6);
   {
@@ -265,53 +263,27 @@ function buildSpace() {
   return g;
 }
 
-// Saturn: a banded gas giant with a broad ring system, hanging huge over the ring road. Lit from the Sun's side (baked into
-// vertex colours, so it needs no light and costs one draw call for the globe and one for the rings).
-export const SATURN_SUN = [-0.79, 0.4, 0.51];
-function buildSaturn() {
-  const g = new THREE.Group();
-  const R = 32;
-  const sg = new THREE.SphereGeometry(R, 40, 26);
+// a giant banded gas planet standing in the world (Saturn, in the middle of the ring road), lit by the stage's sun
+function buildGasGiant(st) {
+  const R = st.r;
+  const sg = new THREE.SphereGeometry(R, 48, 32);
   const pos = sg.attributes.position; const col = new Float32Array(pos.count * 3);
-  const bands = [[0.93, 0.85, 0.66], [0.86, 0.74, 0.52], [0.95, 0.88, 0.7], [0.8, 0.66, 0.45], [0.9, 0.8, 0.6], [0.74, 0.6, 0.42], [0.88, 0.78, 0.58]];
-  const sd = new THREE.Vector3(...SATURN_SUN).normalize();
+  const bands = [[0.93, 0.85, 0.66], [0.84, 0.7, 0.48], [0.96, 0.89, 0.7], [0.78, 0.62, 0.42], [0.9, 0.8, 0.6], [0.72, 0.57, 0.4], [0.88, 0.78, 0.58], [0.8, 0.66, 0.46]];
   for (let i = 0; i < pos.count; i++) {
-    const nx = pos.getX(i) / R; const ny = pos.getY(i) / R; const nz = pos.getZ(i) / R;
-    const bi = Math.min(bands.length - 1, Math.floor(((ny + 1) / 2) * bands.length * 1.0 + Math.sin(ny * 25) * 0.18));
-    const b = bands[Math.max(0, bi)];
-    const light = Math.max(0.1, Math.min(1, 0.16 + 1.0 * (nx * sd.x + ny * sd.y + nz * sd.z)));
-    col[i * 3] = b[0] * light; col[i * 3 + 1] = b[1] * light; col[i * 3 + 2] = b[2] * light;
+    const ny = pos.getY(i) / R; const nx = pos.getX(i) / R; const nz = pos.getZ(i) / R;
+    const wob = Math.sin(nx * 7 + nz * 5) * 0.035 + Math.sin(ny * 31 + nx * 3) * 0.02;
+    const bi = Math.max(0, Math.min(bands.length - 1, Math.floor(((ny + wob + 1) / 2) * bands.length)));
+    const q = Math.abs(ny) > 0.82 ? 0.82 : 1;
+    const b = bands[bi];
+    col[i * 3] = b[0] * q; col[i * 3 + 1] = b[1] * q; col[i * 3 + 2] = b[2] * q * (Math.abs(ny) > 0.82 ? 1.1 : 1);
   }
   sg.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const globe = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
-  // rings: concentric bands with the Cassini gap, darker where the planet's shadow falls across them
-  const rg = new THREE.RingGeometry(R * 1.35, R * 2.45, 96, 14);
-  const rp = rg.attributes.position; const rc = new Float32Array(rp.count * 3); const ra = new Float32Array(rp.count);
-  for (let i = 0; i < rp.count; i++) {
-    const x = rp.getX(i); const y = rp.getY(i); const d = Math.hypot(x, y) / R;
-    const t = (d - 1.35) / 1.1;
-    let k = 0.82 + 0.18 * Math.sin(d * 46) * Math.sin(d * 13 + 1);
-    let a = 0.92;
-    if (t > 0.52 && t < 0.6) a = 0.12;                  // the Cassini division
-    if (t < 0.14) { a = 0.45; k *= 0.8; }               // faint inner ring
-    if (t > 0.94) a = 0.4;
-    rc[i * 3] = 0.9 * k; rc[i * 3 + 1] = 0.82 * k; rc[i * 3 + 2] = 0.68 * k; ra[i] = a;
-  }
-  rg.setAttribute('color', new THREE.BufferAttribute(rc, 3));
-  const rm = new THREE.ShaderMaterial({
-    vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false, fog: false,
-    vertexShader: 'attribute float alpha; varying vec3 vC; varying float vA; void main(){ vC = color; vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'varying vec3 vC; varying float vA; void main(){ gl_FragColor = vec4(vC, vA); }',
-  });
-  rg.setAttribute('alpha', new THREE.BufferAttribute(ra, 1));
-  const rings = new THREE.Mesh(rg, rm);
-  rings.rotation.x = -Math.PI / 2;
-  const tilt = new THREE.Group(); tilt.add(globe, rings); tilt.rotation.set(0.95, 0, -0.35);
-  g.add(tilt);
-  g.position.set(0.18 * 112, 0.30 * 112, -0.93 * 112);
-  g.userData.tilt = tilt;
-  g.visible = false;
-  return g;
+  const globe = new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#4a3720' }));
+  globe.position.set(st.x, st.y, st.z);
+  globe.rotation.z = -0.3;
+  globe.frustumCulled = false;
+  globe.userData.noShadow = true;
+  return globe;
 }
 
 function buildSun() {
@@ -739,7 +711,7 @@ function buildTrack(group, T) {
   group.add(meshFrom(coarse, mat));
 
   // barriers
-  const bar = T.barrierLayout();
+  const bar = T.env.hideBarriers ? [] : T.barrierLayout();   // a stage can keep the invisible wall but draw no fence (the ring road)
   instanced(group, bar.map((b) => ({ x: b.x, y: b.y + 0.45, z: b.z, sx: 0.6, sy: 0.9, sz: 1.62, rot: b.rot, color: b.c ? '#e63946' : '#f1f1f1' })),
     new THREE.MeshLambertMaterial(), { cast: false });
 
@@ -887,6 +859,7 @@ function buildTrack(group, T) {
 
   // set pieces (the skull cave): bone and rock lit by the stage, glow parts self-lit
   for (const st of T.STRUCTURES || []) {
+    if (st.type === 'planet') { group.add(buildGasGiant(st)); continue; }
     if (st.type !== 'skullcave') continue;
     const sc = skullCave(T, st);
     const shade = (list, base) => list.map((b) => ({ ...b, color: new THREE.Color(base).multiplyScalar(b.tone || 1) }));
@@ -1213,7 +1186,6 @@ export function createWorld(scene, lights) {
     space.visible = racing && look.sky === 'space';
     if (space.visible) {                         // each space stage shows its own sky furniture: Earth + Sun (Moon), or Saturn + Sun
       for (const o of space.userData.earthSet) o.visible = !!look.earthWorld;
-      space.userData.saturn.visible = !!look.saturn;
       const sd = look.sunWorld || look.sunDisc;
       space.userData.sunG.visible = !!sd;
       if (sd) { space.userData.sunG.position.set(sd[0] * 108, sd[1] * 108, sd[2] * 108); space.userData.sunG.lookAt(0, 0, 0); }
@@ -1269,7 +1241,6 @@ export function createWorld(scene, lights) {
     if (space.visible) {
       if (skyAnchor) space.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z); else space.position.set(focus.x, 0, focus.z);
       if (space.userData.earth.visible) space.userData.earth.rotation.y += dt * 0.05;
-      if (space.userData.saturn.visible) space.userData.saturn.userData.tilt.rotation.y += dt * 0.02;
       if (skyAnchor && skyAnchor.f) animateMeteors(space.userData.meteors, dt, skyAnchor);
     }
     if (mode !== 'garage') {

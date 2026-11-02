@@ -1027,7 +1027,7 @@ function start() {
     sun.intensity += flash - flashApplied; flashApplied = flash;
 
     // camera
-    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null, loopTh: v.loop ? v.loop.th : 0, loopLat: v.loop ? v.loop.lat : 0 }, camState);
+    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null, loopTh: v.loop ? v.loop.th : 0, loopLat: v.loop ? v.loop.lat : 0, aim: driveMode === 'race' && TR.env.camAim ? TR.env.camAim.yaw : null, aimLift: driveMode === 'race' && TR.env.camAim ? TR.env.camAim.lift : 0 }, camState);
     const kp = v.loop ? 6 : camMode === 'iso-fixed' ? 7 : (camMode === 'chase' ? 6 : 5);
     camPos.lerp(tmp.set(g.pos.x, g.pos.y, g.pos.z), 1 - Math.exp(-kp * dt));
     camLook.lerp(tmp.set(g.look.x, g.look.y, g.look.z), 1 - Math.exp(-(kp + 2) * dt));

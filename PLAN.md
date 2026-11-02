@@ -329,3 +329,9 @@ Mobile frame-rate tuning, LOD, final balance.
 - Fixed: the flat-stage sun mesh no longer stays hidden after visiting a planet stage.
 - Tests: roster 8, Saturn set pieces, drifter motion/solidity/fresh-race reset, every truck laps at steady + aggressive.
 - Parked by request: Skull neon tunnel. Queue: real two-road forks, Dragon's Spine, Magma climb, Sea Bridge, Football, Neon Night City.
+
+### Phase 11b - Saturn rebuilt as a real ring road (DONE)
+- The road is a circle round a giant Saturn standing in the world (r 80, hovering over the centre); the plain is shaded in concentric ring bands with a dark gap inside the road. Saturn is always on the driver's right.
+- Ring road has no visible fence (`env.hideBarriers`); the invisible wall still keeps trucks on the ring.
+- `env.camAim`: iso-follow and chase cameras turn with the truck and look toward Saturn on this stage only (the default iso camera is fixed to the world, so it could not keep Saturn on the right).
+- Sky-backdrop Saturn removed.
