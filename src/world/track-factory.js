@@ -17,19 +17,24 @@ const SPACING = 2;
 const CELL = 30;
 const smooth = (t) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 
-function buildCenterline(ctrl) {
+function buildCenterline(ctrl, open = false) {
   const dense = [];
   const n = ctrl.length;
-  for (let i = 0; i < n; i++) {
-    const p0 = ctrl[(i + n - 1) % n]; const p1 = ctrl[i]; const p2 = ctrl[(i + 1) % n]; const p3 = ctrl[(i + 2) % n];
+  const segs = open ? n - 1 : n;
+  // an open (sprint) track does not wrap: the end points repeat so the curve starts and ends on the first / last point
+  const cp = (i) => (open ? ctrl[Math.max(0, Math.min(n - 1, i))] : ctrl[((i % n) + n) % n]);
+  for (let i = 0; i < segs; i++) {
+    const p0 = cp(i - 1); const p1 = cp(i); const p2 = cp(i + 1); const p3 = cp(i + 2);
     for (let t = 0; t < 1; t += 1 / 40) {
       const t2 = t * t; const t3 = t2 * t;
       const f = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
       dense.push({ x: f(p0.x, p1.x, p2.x, p3.x), z: f(p0.z, p1.z, p2.z, p3.z) });
     }
   }
+  if (open) dense.push({ x: ctrl[n - 1].x, z: ctrl[n - 1].z });
   const cum = [0];
-  for (let i = 1; i <= dense.length; i++) {
+  const last = open ? dense.length - 1 : dense.length;
+  for (let i = 1; i <= last; i++) {
     const a = dense[i - 1]; const b = dense[i % dense.length];
     cum.push(cum[i - 1] + Math.hypot(b.x - a.x, b.z - a.z));
   }
@@ -38,24 +43,32 @@ function buildCenterline(ctrl) {
   const ds = total / m;
   const out = [];
   let j = 0;
-  for (let i = 0; i < m; i++) {
-    const target = i * ds;
+  const count = open ? m + 1 : m;                 // an open track keeps the end point too
+  for (let i = 0; i < count; i++) {
+    const target = Math.min(i * ds, total - 1e-9);
     while (cum[j + 1] < target) j++;
     const a = dense[j]; const b = dense[(j + 1) % dense.length];
     const f = (target - cum[j]) / ((cum[j + 1] - cum[j]) || 1);
     out.push({ x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f });
   }
-  return { pts: out, length: total, ds };
+  // lap fractions are i / N, so an open track's length is N * ds (one spacing more than the path itself)
+  return { pts: out, length: open ? ds * count : total, ds };
 }
 
 export function makeTrack(def) {
-  const { pts, length: LENGTH, ds: DS } = buildCenterline(def.ctrl());
+  const OPEN = !!def.open;       // a SPRINT track: one run from the start to a finish line, no laps, no wrap-around
+  const { pts, length: LENGTH, ds: DS } = buildCenterline(def.ctrl(), OPEN);
   const N = pts.length;
-  const START_S = def.startS ?? 0.985;
+  const SMAX = OPEN ? (N - 1) / N : 1;     // the last lap fraction that has road
+  const clampS = (s) => (OPEN ? Math.max(0, Math.min(SMAX, s)) : s);
+  const START_S = def.startS ?? (OPEN ? 0.03 : 0.985);
+  const FINISH_S = OPEN ? (def.finishS ?? SMAX - 0.01) : null;
+  const LINE_S = OPEN ? START_S + (def.lineAhead ?? 14) / LENGTH : 0;      // where the start line is painted (the grid is behind it)
   const CHECKPOINTS = def.checkpoints ?? [0, 0.25, 0.5, 0.75];
 
   // raw centre line lookup (before elevation exists), used to place loops and find straights
   const rawAt = (s) => {
+    s = clampS(s);
     const f = (((s % 1) + 1) % 1) * N; const i = Math.floor(f); const t = f - i;
     const a = pts[i % N]; const b = pts[(i + 1) % N];
     return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
@@ -102,8 +115,8 @@ export function makeTrack(def) {
   }
 
   const SAMPLES = pts.map((p, i) => {
-    const q = pts[(i + 1) % N];
-    const o = pts[(i + N - 1) % N];
+    const q = OPEN ? pts[Math.min(N - 1, i + 1)] : pts[(i + 1) % N];
+    const o = OPEN ? pts[Math.max(0, i - 1)] : pts[(i + N - 1) % N];
     let tx = q.x - o.x; let tz = q.z - o.z;
     const l = Math.hypot(tx, tz) || 1;
     tx /= l; tz /= l;
@@ -140,6 +153,7 @@ export function makeTrack(def) {
     const cx = Math.floor(x / CELL); const cz = Math.floor(z / CELL);
     let best = null;
     const consider = (i) => {
+      if (OPEN && i >= N - 1) return;           // no segment joins the end to the start
       const info = segInfo(x, z, i);
       if (!best || info.dist < best.dist) best = { ...info, i };
     };
@@ -159,9 +173,11 @@ export function makeTrack(def) {
   }
 
   function sampleAt(s) {
+    s = clampS(s);
     const f = (((s % 1) + 1) % 1) * N;
     const i = Math.floor(f);
     const t = f - i;
+    if (OPEN && i >= N - 1) { const e = SAMPLES[N - 1]; return { x: e.x, z: e.z, y: e.y, tx: e.tx, tz: e.tz, s }; }
     const a = SAMPLES[i % N];
     const b = SAMPLES[(i + 1) % N];
     const tx = a.tx + (b.tx - a.tx) * t; const tz = a.tz + (b.tz - a.tz) * t;
@@ -435,6 +451,7 @@ export function makeTrack(def) {
     const out = [];
     const m = Math.round(LENGTH / spacing);
     for (let i = 0; i < m; i++) {
+      if (OPEN && i / m > SMAX) break;
       const p = sampleAt(i / m);
       for (const side of [-1, 1]) {
         const x = p.x + p.tz * side * (BARRIER - 0.4);
@@ -465,8 +482,8 @@ export function makeTrack(def) {
   }
 
   return {
-    id: def.id, name: def.name, theme: def.theme, env: ENV, STRUCTURES: def.structures || [], shade: def.shade || null, ROAD_HALF, SHOULDER, BARRIER,
-    LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, PICKUPS, ZONES, LOOPS, LANES,
+    id: def.id, name: def.name, theme: def.theme, env: ENV, STRUCTURES: def.structures || [], shade: def.shade || null, paint: def.paint || null, ROAD_HALF, SHOULDER, BARRIER,
+    LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, OPEN, FINISH_S, LINE_S, SMAX, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, PICKUPS, ZONES, LOOPS, LANES,
     nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear,
     sceneryLayout, barrierLayout, startPose, gridPose, terrain, freshTerrain, featureHeightAt: featureHeight,
     TRACK: { name: def.name, length: LENGTH, halfWidth: ROAD_HALF, barrier: BARRIER, samples: SAMPLES, checkpoints: CHECKPOINTS },

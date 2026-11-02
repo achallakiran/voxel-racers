@@ -330,7 +330,7 @@ function start() {
   let place = 1;
   let TR = getTrackById(save.track);
   let TRACK_API = null;
-  const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
+  const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt, finishS: T.FINISH_S });
   TRACK_API = apiFor(TR);
   function selectTrack(id) {
     TR = getTrackById(id);
@@ -400,7 +400,7 @@ function start() {
     $('results').classList.remove('show');
     $('countdown').classList.remove('show');
     $('wrongway').classList.remove('show');
-    race = racing ? createRace({ laps: 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S }) : null;
+    race = racing ? createRace({ laps: TR.OPEN ? 1 : 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S, finishS: TR.FINISH_S }) : null;
     goTimer = 0; wrongWay = 0;
     if (racing) buildMinimap();
     Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, far: 60 });
@@ -503,7 +503,11 @@ function start() {
     for (const r of rivals) {
       const v = r.v;
       const n = TR.nearest(v.x, v.z);
-      r.acc += wrapDelta(r.prevS, n.s); r.prevS = n.s;
+      if (TR.OPEN) {
+        // sprint: crossing the finish line freezes progress just past the player's finishing value, so earlier finishers stay ahead
+        if (!r.finished) { r.acc += wrapDelta(r.prevS, n.s); if (n.s >= TR.FINISH_S) { r.finished = true; r.acc = TR.FINISH_S - TR.START_S + 1e-4; } }
+        r.prevS = n.s;
+      } else { r.acc += wrapDelta(r.prevS, n.s); r.prevS = n.s; }
       const m = r.mesh;
       m.position.set(v.x, v.y - (v.loop ? 0 : r.tune.ride), v.z);
       m.rotation.set(-v.pitch, v.heading, v.roll);
@@ -779,7 +783,7 @@ function start() {
     const ox = (MW - (maxX - minX) * sc) / 2 - minX * sc;
     const oz = (MH - (maxZ - minZ) * sc) / 2 - minZ * sc;
     g.lineJoin = 'round'; g.lineCap = 'round';
-    const path = () => { g.beginPath(); S.forEach((p, i) => (i ? g.lineTo(p.x * sc + ox, MH - (p.z * sc + oz)) : g.moveTo(p.x * sc + ox, MH - (p.z * sc + oz)))); g.closePath(); };
+    const path = () => { g.beginPath(); S.forEach((p, i) => (i ? g.lineTo(p.x * sc + ox, MH - (p.z * sc + oz)) : g.moveTo(p.x * sc + ox, MH - (p.z * sc + oz)))); if (!TR.OPEN) g.closePath(); };
     g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 7; path(); g.stroke();
     g.strokeStyle = '#3b3d44'; g.lineWidth = 4.5; path(); g.stroke();
     const sp = TR.startPose();
@@ -959,6 +963,7 @@ function start() {
       const n = TR.nearest(v.x, v.z);
       race.update(n.s);
       playerAcc += wrapDelta(playerPrevS, n.s); playerPrevS = n.s;
+      if (TR.OPEN && race.phase === 'finished') playerAcc = TR.FINISH_S - TR.START_S;
       rivalPose(dt);
       tickPickups(courseTerrain, dt); tickHazards(courseTerrain, dt); world.hazards.update(courseTerrain, clock); world.follow(v.x, v.y, v.z); world.pickups.sync(courseTerrain.pickups || [], clock);
       if (race.phase === 'racing') {

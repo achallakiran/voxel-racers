@@ -20,7 +20,8 @@ export function crossedForward(from, to, c) {
   return rel > 0 && rel <= d + 1e-9;
 }
 
-export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], startS = 0.985 } = {}) {
+// finishS (sprint tracks): the finish line is that fraction of the way along an OPEN track, not the lap line at 0.
+export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], startS = 0.985, finishS = null } = {}) {
   const r = {
     laps, checkpoints,
     phase: 'countdown',          // countdown | racing | finished
@@ -52,7 +53,7 @@ export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], start
     const from = r.prevS;
     r.prevS = s;
     if (r.phase !== 'racing') return;
-    const target = checkpoints[r.next % checkpoints.length];
+    const target = r.next === 0 && finishS !== null ? finishS : checkpoints[r.next % checkpoints.length];
     if (!crossedForward(from, s, target)) return;
     if (r.next !== 0) {
       r.next = (r.next + 1) % checkpoints.length;

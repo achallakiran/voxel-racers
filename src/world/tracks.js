@@ -522,6 +522,87 @@ const SATURN_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF)];
+// ---------------------------------------------------------------- 9. Volcano Climb (a SPRINT: one run up a spiral road to the summit)
+// The road starts on the ash plain and winds round the volcano (always on the driver's right) up to the crater rim,
+// where the finish arch stands. The mountain and the road come from ONE function, coneHeight(r), so they can not drift apart.
+const VOL = { r0: 172, r1: 54, turns: 1.75, plain: 1.2, rise: 66, bowl: 28, th0: -0.6 };
+function coneHeight(r) {
+  if (r >= VOL.r0 + 4) return VOL.plain;
+  if (r >= VOL.r1) { const t = Math.max(0, (VOL.r0 + 4 - r) / (VOL.r0 + 4 - VOL.r1)); return VOL.plain + VOL.rise * Math.pow(t, 1.25); }
+  // inside the rim: the crater bowl falls away to a lava floor
+  const rim = VOL.plain + VOL.rise; const u = Math.max(0, Math.min(1, (VOL.r1 - r) / 30));
+  return rim - VOL.bowl * u * u * (3 - 2 * u);
+}
+const volcanoGround = (x, z) => coneHeight(Math.hypot(x, z));
+const VOLCANO_DEF = {
+  id: 'volcano', name: 'Volcano Climb', open: true, startS: 0.04, finishS: 0.985,
+  theme: { a: [0.2, 0.17, 0.17], b: [0.16, 0.13, 0.13], edge: [0.38, 0.2, 0.14], far: [0.12, 0.08, 0.08], dirt: [0.34, 0.24, 0.19], rut: [0.25, 0.17, 0.14], sand: [0.5, 0.44, 0.42], sky: 'volcano', wall: [0.3, 0.2, 0.2] },
+  checkpoints: [0, 0.3, 0.55, 0.78],
+  scenery: ['stalagmite', 'stalagmite', 'moonrock'], sceneryCount: 160,
+  keepScenery: (x, z) => { const r = Math.hypot(x, z); return r > VOL.r1 + 8 && r < 300; },
+  ground: volcanoGround,
+  structures: [{ type: 'lava', x: 0, z: 0, y: coneHeight(0) + 0.5, r: 26 }],
+  paint(x, z, h, smp, c) {
+    const r = Math.hypot(x, z);
+    if (r < VOL.r1 + 3) {                                   // the crater glows towards the middle
+      const g = Math.max(0, Math.min(1, (VOL.r1 + 3 - r) / 30));
+      return [0.28 + 0.72 * g, 0.12 + 0.3 * g, 0.08];
+    }
+    if (smp.onRoad || smp.ad < 12 || r > VOL.r0 + 6) return null;
+    const a = Math.atan2(z, x);
+    const vein = Math.sin(a * 9 + r * 0.07) * Math.sin(a * 15 - r * 0.045 + 1.3);   // glowing lava veins down the flanks
+    return vein > 0.9 ? [0.95, 0.38, 0.08] : null;
+  },
+  env: {
+    openRoad: true, camAim: { yaw: 0.5, lift: 4 }, weather: 'embers', breeze: { x: 3, z: 0 },
+    look: { sky: 'volcano', fog: ['#4a1a12', 140, 620], hemi: ['#ff8a50', '#3a0e08', 1.1], sun: ['#ff9a60', 2.2, -6, 8, 6] },
+  },
+  ctrl() {
+    // an inward spiral: th grows, r shrinks, so the centre (the volcano) is on the right of the direction of travel
+    const ctrl = []; const n = 52;
+    for (let k = 0; k <= n; k++) {
+      const u = k / n;
+      const th = VOL.th0 + 2 * Math.PI * VOL.turns * u;
+      const r = VOL.r0 + (VOL.r1 - VOL.r0) * u;
+      ctrl.push({ x: r * Math.cos(th), z: r * Math.sin(th) });
+    }
+    return ctrl;
+  },
+  elevation: (s, p) => coneHeight(Math.hypot(p.x, p.z)) + 0.3 * Math.sin(2 * Math.PI * 9 * s),
+  sections: [
+    { from: 0.0, to: 0.12, surf: 'asphalt' }, { from: 0.12, to: 0.5, surf: 'dirt' }, { from: 0.5, to: 0.62, surf: 'asphalt' },
+    { from: 0.62, to: 0.8, surf: 'sand' }, { from: 0.8, to: 0.9, surf: 'dirt' }, { from: 0.9, to: 1.01, surf: 'asphalt' },
+  ],
+  features(T) {
+    const { JUMP } = T;
+    return [...JUMP(0.2, 1.4, 8)];
+  },
+  walls({ W }) {
+    W.barrels(0.535, 1, 3); W.tnt(0.35, 2); W.crates(0.7, -1, 3);
+    for (const [a, o, l] of [[0.07, 0, 8], [0.27, 0, 8], [0.52, 0, 8], [0.74, 0, 8], [0.9, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.6, 3, 9, 5); W.oil(0.4, -3, 10, 5); W.lava(0.65, 3, 12, 5); W.lava(0.84, -3, 12, 5);
+    for (const [a, o] of [[0.1, 0], [0.19, 0], [0.31, 0], [0.42, 0], [0.5, 0], [0.62, 0], [0.72, 0], [0.8, 0], [0.88, 0]]) W.pickup(a, o);
+  },
+  hazards({ sampleAt, add }) {
+    // boulders that roll back and forth across the road
+    const spec = [[0.16, 0], [0.24, 2.0], [0.38, 3.1], [0.47, 0.8], [0.57, 2.4], [0.68, 4.0], [0.77, 1.1], [0.86, 2.9]];
+    for (const [s, ph] of spec) {
+      const p = sampleAt(s);
+      add({ kind: 'drifter', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 4.4, r: 1.7, top: 3.4, period: 5.5, phase: ph });
+    }
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(67); const out = [];
+    for (let i = 0; i < 30; i++) {
+      const s = 0.05 + rand() * 0.9; const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
+      const p = sampleAt(s);
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF), makeTrack(VOLCANO_DEF)];
 export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => TRACKS.some((t) => t.id === id);

@@ -1259,11 +1259,11 @@ test('loop: you can steer inside it (stay within the ring) and trucks not headin
 // ---------- Phase 3: track roster, loops on tracks, wall passages
 import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 
-const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
+const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt, finishS: T.FINISH_S });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 8);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn']);
+  assert.equal(TRACKS.length, 9);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn', 'volcano']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -1271,6 +1271,7 @@ test('tracks: roster of three, unique ids, lookup falls back to the first', () =
 
 for (const T of TRACKS) {
   test(`track ${T.id}: closed, even spacing, gentle corners, level enough, grid on the road`, () => {
+    if (T.OPEN) return;       // sprint tracks have their own checks (Phase 12)
     const S = T.SAMPLES; const n = S.length;
     assert.ok(T.LENGTH > 650 && T.LENGTH < (T.id === 'saturn' ? 1050 : 950));
     let minR = 1e9;
@@ -1300,7 +1301,8 @@ for (const T of TRACKS) {
       const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride);
       const d = createDriver({ skill: 0.95, lane: 2 });
       let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let stuck = 0; let loops = 0; let hits = 0;
-      for (let i = 0; i < 60 * 260 && acc < 1; i++) {
+      const goal = T.OPEN ? T.FINISH_S - T.START_S : 1;     // a sprint track ends at its finish line
+      for (let i = 0; i < 60 * 260 && acc < goal; i++) {
         const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', props: terr.props, playerAcc: 0, myAcc: acc }, DT);
         for (const e of stepVehicle(v, input, terr, tune, DT)) {
           if (e.type === 'loop') loops++; if (e.type === 'hit') hits++;
@@ -1310,7 +1312,7 @@ for (const T of TRACKS) {
         acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
         if ((v.grounded || v.loop) && Math.abs(v.f) < 0.5) stuck += DT;
       }
-      assert.ok(acc >= 0.98, `${tk.id} on ${T.id}: ${(acc * 100).toFixed(0)}% in ${time.toFixed(0)}s`);
+      assert.ok(acc >= 0.98 * goal, `${tk.id} on ${T.id}: ${(acc * 100).toFixed(0)}% in ${time.toFixed(0)}s`);
       assert.ok(time < 170, `${tk.id} on ${T.id}: lap ${time.toFixed(0)}s`);
       assert.ok(stuck < 8, `${tk.id} on ${T.id}: stuck ${stuck.toFixed(1)}s`);
       assert.equal(loops, T.LOOPS.length, `${tk.id} on ${T.id}: rode every loop (${loops})`);
@@ -1320,6 +1322,7 @@ for (const T of TRACKS) {
 
 test('tracks: new tracks have loops on dead-straight road, level under the ring, entry on the road', () => {
   for (const T of TRACKS.slice(1)) {
+    if (T.OPEN) continue;       // a spiral has no dead-straight stretch for a loop
     assert.ok(T.LOOPS.length >= 1);
     for (const L of T.LOOPS) {
       for (let k = 0; k <= 10; k++) {
@@ -1488,7 +1491,8 @@ const lapWith = (T, tk, style, lane = 2, seg = null) => {
   const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride); v.nitro = 0.6;
   const d = createDriver({ skill: 0.95, lane, style });
   let acc = 0; let prev = T.nearest(v.x, v.z).s; let time = 0; let boosts = 0; let t0 = null; let t1 = null;
-  for (let i = 0; i < 60 * 200 && acc < 1; i++) {
+  const goal = T.OPEN ? T.FINISH_S - T.START_S : 1;       // a sprint track ends at its finish line
+  for (let i = 0; i < 60 * 200 && acc < goal; i++) {
     const input = driverInput(d, v, tune, apiFor(T), { phase: 'racing', pickups: terr.pickups, props: terr.props, playerAcc: 0, myAcc: acc }, DT);
     tickPickups(terr, DT);
     for (const e of stepVehicle(v, input, terr, tune, DT)) {
@@ -1498,7 +1502,7 @@ const lapWith = (T, tk, style, lane = 2, seg = null) => {
     const n = T.nearest(v.x, v.z); acc += wrapDelta(prev, n.s); prev = n.s; time += DT;
     if (seg) { if (t0 === null && acc >= seg[0]) t0 = time; if (t1 === null && acc >= seg[1]) t1 = time; }
   }
-  return { time, acc, boosts, segTime: t1 !== null && t0 !== null ? t1 - t0 : null };
+  return { time, acc: acc / goal, boosts, segTime: t1 !== null && t0 !== null ? t1 - t0 : null };
 };
 
 test('pace: normal driving is fast (fast trucks 30+, heavy ones 24+) and nitro is a ~1.4x surge, not a doubling', () => {
@@ -1513,7 +1517,7 @@ test('pace: normal driving is fast (fast trucks 30+, heavy ones 24+) and nitro i
 test('pace: every truck laps every track inside a lap-time window and the roster stays within 1.5x', () => {
   for (const T of TRACKS) {
     const times = TRUCKS.map((tk) => { const r = lapWith(T, tk, 'steady'); assert.ok(r.acc >= 0.98, `${tk.id} on ${T.id} finished`); return r.time; });
-    assert.ok(Math.min(...times) > 35 && Math.max(...times) < 95, `${T.id}: ${times.map((x) => x.toFixed(0))}`);
+    assert.ok(Math.min(...times) > 35 && Math.max(...times) < (T.OPEN ? 115 : 95), `${T.id}: ${times.map((x) => x.toFixed(0))}`);
     assert.ok(Math.max(...times) / Math.min(...times) < 1.5, `${T.id} roster spread`);
   }
 });
@@ -2261,6 +2265,83 @@ test('11: every truck laps Saturn at both driving styles, rocks and all', () => 
         const n = T.nearest(v.x, v.z); acc += wrap(prev, n.s); prev = n.s;
       }
       assert.ok(acc >= 1, `${tk.id} (${style}) finished a lap on saturn (${acc.toFixed(2)})`);
+    }
+  }
+});
+
+// ---------- Phase 12: sprint (open) tracks and the Volcano Climb
+import { createRace as createRace12 } from '../src/core/race.js';
+
+test('12: a sprint race finishes when the finish line is crossed after every checkpoint, never at the lap line', () => {
+  const r = createRace12({ laps: 1, checkpoints: [0, 0.3, 0.55, 0.78], startS: 0.04, finishS: 0.985 });
+  r.tick(4); r.tick(0.1);
+  assert.equal(r.phase, 'racing');
+  r.update(0.2); assert.equal(r.next, 1);
+  r.update(0.99); assert.equal(r.phase, 'racing', 'skipping the checkpoints does not finish the race');
+  const q = createRace12({ laps: 1, checkpoints: [0, 0.3, 0.55, 0.78], startS: 0.04, finishS: 0.985 });
+  q.tick(4); q.tick(0.1);
+  for (const s of [0.2, 0.35, 0.6, 0.8, 0.9, 0.99]) q.update(s);
+  assert.equal(q.phase, 'finished');
+  assert.ok(q.drainEvents().includes('finish'));
+});
+
+test('12: the Volcano Climb is an open sprint: no wrap-around, start low, finish on the summit, volcano always on the right', () => {
+  const T = getTrackById('volcano');
+  assert.ok(T.OPEN && T.FINISH_S > 0.9 && T.START_S < 0.1 && T.env.camAim);
+  const S = T.SAMPLES; const n = S.length;
+  // the end of the road is far from the start: no segment joins them, and the nearest point to the start is near the start
+  assert.ok(Math.hypot(S[0].x - S[n - 1].x, S[0].z - S[n - 1].z) > 60);
+  const a = T.nearest(S[1].x, S[1].z); assert.ok(a.s < 0.01, 'start side');
+  const b = T.nearest(S[n - 2].x, S[n - 2].z); assert.ok(b.s > 0.99, 'end side');
+  // the road clamps at both ends (the AI looks ahead past the finish)
+  const e = T.sampleAt(5); const e0 = T.sampleAt(-5);
+  assert.ok(Math.hypot(e.x - S[n - 1].x, e.z - S[n - 1].z) < 1e-6 && Math.hypot(e0.x - S[0].x, e0.z - S[0].z) < 1e-6);
+  let prevR = 1e9; let maxY = -1;
+  for (let i = 0; i < n; i += 3) {
+    const p = S[i];
+    const r = Math.hypot(p.x, p.z);
+    assert.ok(r <= prevR + 0.5, 'the spiral only winds inward');
+    prevR = r; maxY = Math.max(maxY, p.y);
+    // the centre of the volcano is on the driver's screen-right (-tz, tx)
+    const inward = (-p.tz) * (-p.x) + p.tx * (-p.z);
+    assert.ok(inward > 0, `volcano on the right at sample ${i}`);
+    if (i > 0) assert.ok(Math.abs(p.y - S[i - 3].y) / 6 < 0.25, 'no cliff on the road');
+  }
+  assert.ok(T.sampleAt(T.FINISH_S).y > T.sampleAt(T.START_S).y + 45, 'the finish is far above the start');
+  assert.ok(T.sampleAt(T.FINISH_S).y > maxY - 3, 'the finish is the highest part of the road');
+  // the mountain and the road come from one function: ground beside the road is never lower than the road shoulder minus the slope
+  const mid = T.sampleAt(0.5);
+  assert.ok(T.heightAt(mid.x, mid.z) > 15, 'the road is high up the mountain');
+  assert.ok(Math.abs(T.heightAt(mid.x, mid.z) - mid.y) < 0.5, 'the road surface matches the track height');
+  // the crater floor is below the rim and the plain is low
+  assert.ok(T.heightAt(0, 0) < T.sampleAt(T.FINISH_S).y - 15 && T.heightAt(300, 0) < 3);
+});
+
+test('12: a driver stops at the finish line of a sprint track', () => {
+  const T = getTrackById('volcano');
+  const tk = TRUCKS[0]; const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+  const terr = T.freshTerrain(); const p = T.sampleAt(T.FINISH_S + 0.005);
+  const v = createVehicle(p.x, p.z, Math.atan2(p.tx, p.tz), terr, tune.ride); v.f = 12;
+  const out = driverInput(createDriver({ style: 'steady' }), v, tune, apiFor(T), { phase: 'racing', pickups: [], props: [], playerAcc: 0, myAcc: 0 }, DT);
+  assert.equal(out.gas, 0); assert.equal(out.brake, 1);
+});
+
+test('12: every truck climbs the volcano to the finish at both driving styles', () => {
+  const T = getTrackById('volcano');
+  for (const style of ['steady', 'aggressive']) {
+    for (const tk of TRUCKS) {
+      const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+      const terr = T.freshTerrain(); const sp = T.gridPose(1);
+      const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride); v.nitro = 0.6;
+      const d = createDriver({ skill: 0.95, lane: 2, style });
+      let done = false; let time = 0;
+      for (let i = 0; i < 60 * 180 && !done; i++) {
+        const inp = driverInput(d, v, tune, apiFor(T), { phase: 'racing', pickups: terr.pickups, props: terr.props, playerAcc: 0, myAcc: 0 }, DT);
+        tickPickups(terr, DT); tickHazards(terr, DT);
+        for (const e of stepVehicle(v, inp, terr, tune, DT)) if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }
+        time += DT; if (T.nearest(v.x, v.z).s >= T.FINISH_S) done = true;
+      }
+      assert.ok(done, `${tk.id} (${style}) reached the summit (${time.toFixed(0)}s)`);
     }
   }
 });

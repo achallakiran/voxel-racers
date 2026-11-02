@@ -673,7 +673,10 @@ function makeTrackColor(T) {
       if (Math.abs(Math.abs(smp.d) - 2.2) < 0.7) c = th.rut;   // tyre ruts
     }
     // start / finish line
-    if (smp.s > 1 - 2.6 / T.LENGTH || smp.s < 1.2 / T.LENGTH) {
+    const onLine = T.OPEN
+      ? (smp.s > T.LINE_S - 2.6 / T.LENGTH && smp.s < T.LINE_S + 1.2 / T.LENGTH) || (smp.s > T.FINISH_S - 2.6 / T.LENGTH && smp.s < T.FINISH_S + 1.2 / T.LENGTH)
+      : (smp.s > 1 - 2.6 / T.LENGTH || smp.s < 1.2 / T.LENGTH);
+    if (onLine) {
       c = (Math.floor((x + z) * 0.8) & 1) ? [0.95, 0.95, 0.95] : [0.08, 0.08, 0.1];
     }
   } else {
@@ -682,6 +685,7 @@ function makeTrackColor(T) {
     if (nearRoad) c = th.edge;                    // dusty road edge
     if (smp.ad > T.BARRIER + 4) c = th.far;
   }
+  if (T.paint) { const pc = T.paint(x, z, h, smp, c); if (pc) c = pc; }           // a stage can recolour its ground (lava veins, a glowing crater)
   const k = j * (0.9 + Math.min(1, h * 0.012)) * (T.shade ? T.shade(x, z) : 1);   // a stage can shade its ground (Moon craters)
   return [c[0] * k, c[1] * k, c[2] * k];
   };
@@ -878,6 +882,18 @@ function buildTrack(group, T) {
   // set pieces (the skull cave): bone and rock lit by the stage, glow parts self-lit
   for (const st of T.STRUCTURES || []) {
     if (st.type === 'planet') { group.add(buildGasGiant(st)); continue; }
+    if (st.type === 'lava') {
+      // a pool of glowing lava made of flat voxel tiles: bright molten cells, darker crust cells in a patchy pattern
+      const tiles = []; const cell = 2;
+      for (let gx = -st.r; gx <= st.r; gx += cell) for (let gz = -st.r; gz <= st.r; gz += cell) {
+        if (Math.hypot(gx, gz) > st.r) continue;
+        const h = hash2(Math.round(gx * 0.7), Math.round(gz * 0.7));
+        const crust = h > 0.72;
+        tiles.push({ x: st.x + gx, y: st.y + (crust ? 0.18 : 0), z: st.z + gz, sx: cell, sy: 0.5, sz: cell, color: crust ? '#5a1a08' : (h > 0.4 ? '#ff7a12' : '#ff4a06') });
+      }
+      instanced(group, tiles, new THREE.MeshBasicMaterial({ fog: false }), { cast: false });
+      continue;
+    }
     if (st.type !== 'skullcave') continue;
     const sc = skullCave(T, st);
     const shade = (list, base) => list.map((b) => ({ ...b, color: new THREE.Color(base).multiplyScalar(b.tone || 1) }));
@@ -953,7 +969,9 @@ function buildTrack(group, T) {
 
   // gates: start/finish arch + three checkpoint arches
   const gateMat = (c) => lambert(c);
-  T.CHECKPOINTS.forEach((cs, idx) => {
+  const gates = T.CHECKPOINTS.map((cs, idx) => ({ cs: T.OPEN && idx === 0 ? T.LINE_S : cs, idx }));
+  if (T.OPEN) gates.push({ cs: T.FINISH_S, idx: 0 });        // a sprint track also has a finish arch
+  gates.forEach(({ cs, idx }) => {
     const p = T.sampleAt(cs);
     const g = new THREE.Group();
     g.position.set(p.x, p.y, p.z);

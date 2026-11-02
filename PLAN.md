@@ -345,3 +345,8 @@ Mobile frame-rate tuning, LOD, final balance.
 
 ### Phase 11e - Moon camera (DONE)
 - The Moon follow camera now turns with the truck (`env.camAim` yaw 0), like Saturn, instead of a fixed world angle. The fixed isometric view is still available from the camera icon (iso-fixed).
+
+### Phase 12 - Sprint tracks and Volcano Climb (part 1) (DONE, awaiting feedback)
+- New track kind: SPRINT (`def.open`): an open centreline with no wrap, a start grid and a finish line (`finishS`), one run, AI drivers stop at the finish; race rules take `finishS`; minimap/start line/finish arch handle open tracks.
+- Volcano Climb: the road spirals 1.75 turns up a cone to the crater rim (volcano always on the driver's right); the mountain and the road both come from `coneHeight(r)`; lava veins, a glowing crater with a lava pool, embers, rolling boulders. Tests: open-track geometry, right-hand side, finish highest, every truck finishes at both styles.
+- Next: Part 2, "Inside the Volcano": an open-top crater, spiral descent, a gate at the bottom with lava below, finish out through the gate.

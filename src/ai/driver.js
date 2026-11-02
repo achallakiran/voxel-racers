@@ -41,6 +41,8 @@ export function rubberBand(playerAcc, myAcc, level = 'easy') {
 export function driverInput(d, v, tune, track, ctx, dt) {
   const n = track.nearest(v.x, v.z);
   const speed = Math.max(0, v.f);
+  // a sprint track ends at its finish line: past it the driver just rolls to a stop
+  if (track.finishS != null && n.s >= track.finishS) return { steer: 0, gas: 0, brake: 1, boost: false, hold: true };
   // personal lane drifts a little so the pack does not move in a line
   const st = STYLES[d.style] || STYLES.steady;
   const wobble = Math.sin(n.s * Math.PI * 2 * 7 + d.phase) * 1.6 * st.wobble * (DIFFICULTY[ctx.difficulty] || DIFFICULTY.easy).wobble;
