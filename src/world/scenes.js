@@ -10,7 +10,7 @@ import {
 import { loopWorld } from '../physics/loop.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
 import { createHazardView } from './hazard-view.js';
-import { PLANET_U } from './planet.js';
+import { PLANET_U, MOON_SUN, MOON_EARTH } from './planet.js';
 import { skullCave } from './structures.js';
 import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
@@ -224,12 +224,41 @@ function buildSpace() {
   }
   eg.setAttribute('color', new THREE.BufferAttribute(ec, 3));
   const earth = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
-  // hangs ahead and above the start line of the little Moon; it sets below the horizon on the far side of the planet
-  earth.position.set(-75, 40, 54); earth.rotation.set(0.3, 1.0, 0.2);
+  // hangs over the right-hand end of the little Moon's lap and sets below the horizon on the other side of the planet
+  earth.position.set(MOON_EARTH[0] * 100, MOON_EARTH[1] * 100, MOON_EARTH[2] * 100); earth.rotation.set(0.3, 1.0, 0.2);
   const halo = new THREE.Mesh(new THREE.SphereGeometry(16.6, 24, 14), new THREE.MeshBasicMaterial({ color: '#5aa8ff', transparent: true, opacity: 0.22, side: THREE.BackSide, fog: false, depthWrite: false }));
   halo.position.copy(earth.position);
   g.add(earth, halo);
   g.userData.earth = earth;
+  // the Sun: a bright voxel disc with soft glow rings, facing the middle of the sky
+  const sunG = new THREE.Group();
+  const sunCubes = [];
+  for (let x = -5; x <= 5; x++) for (let y = -5; y <= 5; y++) {
+    const d = Math.hypot(x, y); if (d > 5.1) continue;
+    sunCubes.push({ x: x * 1.5, y: y * 1.5, z: 0, sx: 1.5, sy: 1.5, sz: 1.5, color: d < 3.2 ? '#fffbe8' : (d < 4.4 ? '#ffe9a8' : '#ffc860') });
+  }
+  instanced(sunG, sunCubes, new THREE.MeshBasicMaterial({ fog: false }), { receive: false });
+  for (const [r, o] of [[13, 0.2], [19, 0.1], [28, 0.05]]) {
+    const halo = new THREE.Mesh(new THREE.CircleGeometry(r, 40), new THREE.MeshBasicMaterial({ color: '#ffd890', transparent: true, opacity: o, blending: THREE.AdditiveBlending, fog: false, depthWrite: false }));
+    halo.position.z = -0.5; sunG.add(halo);
+  }
+  sunG.position.set(MOON_SUN[0] * 108, MOON_SUN[1] * 108, MOON_SUN[2] * 108);
+  sunG.lookAt(0, 0, 0);
+  g.add(sunG);
+  // meteors: thin additive streaks that cross the sky (a small pool, recycled)
+  const mGeo = new THREE.BoxGeometry(0.4, 0.4, 1, 1, 1, 6);
+  {
+    const p = mGeo.attributes.position; const c = new Float32Array(p.count * 3);
+    for (let i = 0; i < p.count; i++) { const k = 1 - (p.getZ(i) + 0.5); const b = Math.pow(1 - k, 2.2); c.set([1.0 * b, 0.82 * b, 0.55 * b], i * 3); }   // z = +0.5 is the head
+    mGeo.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  }
+  const meteors = [];
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(mGeo, new THREE.MeshBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, fog: false, depthWrite: false }));
+    m.visible = false; m.frustumCulled = false; m.userData = { life: 0, max: 1, dir: new THREE.Vector3(), tan: new THREE.Vector3(), len: 14 };
+    g.add(m); meteors.push(m);
+  }
+  g.userData.meteors = meteors;
   return g;
 }
 
@@ -650,9 +679,9 @@ function buildTrack(group, T) {
   const cc = PL ? 4 : 6;
   // on a little planet the flat map wraps all the way round the ball (x = +-pi R) and is squashed away from the equator,
   // so the distant ground only covers that one wrap and a band of latitudes; the smooth ball underneath fills the rest
-  const cx0 = PL ? -Math.PI * PL.R : Math.floor((minX - far) / cc) * cc; const cz0 = PL ? -52 : Math.floor((minZ - far) / cc) * cc;
+  const cx0 = PL ? -Math.PI * PL.R : Math.floor((minX - far) / cc) * cc; const cz0 = PL ? -80 : Math.floor((minZ - far) / cc) * cc;
   const coarse = buildColumns({
-    x0: cx0, z0: cz0, nx: PL ? Math.floor((2 * Math.PI * PL.R) / cc) : Math.ceil((maxX + far - cx0) / cc), nz: PL ? 26 : Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
+    x0: cx0, z0: cz0, nx: PL ? Math.floor((2 * Math.PI * PL.R) / cc) : Math.ceil((maxX + far - cx0) / cc), nz: PL ? 40 : Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
     heightAt: T.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => T.nearest(x, z).dist >= R - 4,
   });
   group.add(meshFrom(coarse, mat));
@@ -720,6 +749,25 @@ function buildTrack(group, T) {
       put(-2.2, 6.4, 4.1, 2.3, 2.3, 0.6, dark); put(2.2, 6.4, 4.1, 2.3, 2.3, 0.6, dark);   // eye sockets
       put(0, 4.4, 4.2, 1.1, 1.5, 0.6, dark);                                     // nose
       for (const x of [-2.2, -0.7, 0.7, 2.2]) put(x, 1.6, 3.7, 1.0, 1.6, 0.5, dark);   // teeth gaps
+      continue;
+    }
+    if (t.type === 'lander') {
+      // a little moon lander: gold-foil body, four splayed legs, a dish and a flag
+      const foil = new THREE.Color('#d9a441').multiplyScalar(0.85 + t.tint * 0.25); const metal = new THREE.Color('#b9bfcc'); const c = Math.cos(t.tint * 6); const sn = Math.sin(t.tint * 6);
+      const at = (lx, ly, lz) => ({ x: t.x + (lx * c - lz * sn) * sc, z: t.z + (lx * sn + lz * c) * sc, y: t.y + ly * sc });
+      const put = (lx, ly, lz, sx, sy, sz, color) => { const q = at(lx, ly, lz); trunks.push({ x: q.x, y: q.y, z: q.z, sx: sx * sc, sy: sy * sc, sz: sz * sc, color, rot: t.tint * 6 }); };
+      put(0, 2.6, 0, 3.4, 2.2, 3.4, foil); put(0, 4.1, 0, 2.2, 1.0, 2.2, metal);
+      for (const [lx, lz] of [[-1.9, -1.9], [1.9, -1.9], [-1.9, 1.9], [1.9, 1.9]]) { put(lx * 0.8, 1.3, lz * 0.8, 0.35, 2.6, 0.35, metal); put(lx * 1.25, 0.12, lz * 1.25, 1.1, 0.24, 1.1, metal); }
+      put(0, 5.7, 0, 0.18, 2.2, 0.18, metal); put(0.6, 6.6, 0, 1.2, 0.8, 0.1, new THREE.Color('#e63946'));
+      continue;
+    }
+    if (t.type === 'dish') {
+      // a radio dish on a mast
+      const metal = new THREE.Color('#cfd5e2').multiplyScalar(0.9 + t.tint * 0.15); const dark = new THREE.Color('#5d6577');
+      const put = (lx, ly, lz, sx, sy, sz, color) => trunks.push({ x: t.x + lx * sc, y: t.y + ly * sc, z: t.z + lz * sc, sx: sx * sc, sy: sy * sc, sz: sz * sc, color });
+      put(0, 0.5, 0, 2.4, 1.0, 2.4, dark); put(0, 3.0, 0, 0.7, 4.0, 0.7, metal);
+      for (const [lx, ly, w] of [[0, 5.6, 5.4], [0.7, 6.2, 4.4], [1.3, 6.8, 3.2]]) put(lx, ly, 0, 1.0, w, w * 0.9, metal);
+      put(2.1, 7.2, 0, 0.3, 0.3, 0.3, new THREE.Color('#e63946'));
       continue;
     }
     if (t.type === 'cone') {
@@ -823,6 +871,7 @@ function buildTrack(group, T) {
 
   // loops: a ribbon ring with striped rails and a boost pad on the approach
   const ring = []; const rails = []; const pads = [];
+  const RL = T.env && T.env.ring;   // a stage can restyle its loop (the Moon: a pale lunar-base ring with cyan lights)
   T.LOOPS.forEach((L) => {
     const hd = Math.atan2(L.tx, L.tz);
     const seg = 64;
@@ -834,17 +883,17 @@ function buildTrack(group, T) {
       const len = (pt.ds * Math.PI * 2 / seg) * 1.15;
       const at = (off, lat) => ({ x: pt.x + L.tx * nIn.f * off + L.tz * lat, y: pt.y + nIn.y * off, z: pt.z + L.tz * nIn.f * off - L.tx * lat });
       const c = at(-0.3, 0);
-      ring.push({ x: c.x, y: c.y, z: c.z, sx: L.halfW * 2 + 1.0, sy: 0.6, sz: len, rx: -ph, ry: hd, color: i % 2 ? '#2d2f36' : '#34363e' });
+      ring.push({ x: c.x, y: c.y, z: c.z, sx: L.halfW * 2 + 1.0, sy: 0.6, sz: len, rx: -ph, ry: hd, color: RL ? (i % 2 ? RL.a : RL.b) : (i % 2 ? '#2d2f36' : '#34363e') });
       for (const side of [-1, 1]) {
         const r = at(0.55, side * (L.halfW + 0.35));
-        rails.push({ x: r.x, y: r.y, z: r.z, sx: 0.5, sy: 1.3, sz: len, rx: -ph, ry: hd, color: (i >> 1) & 1 ? '#ffd60a' : '#1d1d22' });
+        rails.push({ x: r.x, y: r.y, z: r.z, sx: 0.5, sy: 1.3, sz: len, rx: -ph, ry: hd, color: RL ? ((i >> 1) & 1 ? RL.rail1 : RL.rail2) : ((i >> 1) & 1 ? '#ffd60a' : '#1d1d22') });
       }
     }
     for (let k = 0; k < 4; k++) pads.push({ x: L.x - L.tx * (3 + k * 2.2) + L.tz * L.c0, y: L.y0 + 0.06, z: L.z - L.tz * (3 + k * 2.2) - L.tx * L.c0, sx: L.halfW * 2 - 1, sy: 0.12, sz: 1.1, rot: hd, color: k % 2 ? '#ffd60a' : '#ff8a00' });
   });
   const ringMat = new THREE.MeshLambertMaterial();
   instanced(group, ring, ringMat, { cast: true, receive: true });
-  instanced(group, rails, new THREE.MeshLambertMaterial(), { cast: true });
+  instanced(group, rails, new THREE.MeshLambertMaterial(RL ? { emissive: new THREE.Color(RL.glow) } : {}), { cast: true });
   instanced(group, pads, new THREE.MeshLambertMaterial({ emissive: new THREE.Color('#553300') }), { receive: true });
 
   // gates: start/finish arch + three checkpoint arches
@@ -969,6 +1018,38 @@ function buildPickupMeshes(group) {
 }
 
 // ------------------------------------------------------------------ world
+// meteors: every second or so a streak appears in the part of the sky the camera is looking at, slides across it and fades
+const _mv = new THREE.Vector3(); const _mz = new THREE.Vector3(0, 0, 1);
+let meteorWait = 0.6;
+function animateMeteors(meteors, dt, a) {
+  meteorWait -= dt;
+  if (meteorWait <= 0) {
+    const m = meteors.find((q) => q.userData.life <= 0);
+    meteorWait = 0.5 + Math.random() * 1.3;
+    if (m) {
+      const f = new THREE.Vector3(a.f[0], a.f[1], a.f[2]); const u = new THREE.Vector3(a.u[0], a.u[1], a.u[2]); const r = new THREE.Vector3().crossVectors(f, u).normalize();
+      const yaw = (Math.random() - 0.5) * 1.5; const pit = 0.12 + Math.random() * 0.6;
+      const d = f.clone().multiplyScalar(Math.cos(yaw) * Math.cos(pit)).addScaledVector(r, Math.sin(yaw) * Math.cos(pit)).addScaledVector(u, Math.sin(pit)).normalize();
+      const rnd = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
+      const t = new THREE.Vector3().crossVectors(rnd, d).normalize();
+      Object.assign(m.userData, { life: 1, max: 0.7 + Math.random() * 0.8, len: 10 + Math.random() * 12 });
+      m.userData.dir.copy(d); m.userData.tan.copy(t); m.userData.speed = 55 + Math.random() * 60;
+      m.scale.set(1, 1, m.userData.len); m.visible = true;
+    }
+  }
+  for (const m of meteors) {
+    const q = m.userData;
+    if (q.life <= 0) continue;
+    q.life -= dt / q.max;
+    if (q.life <= 0) { m.visible = false; continue; }
+    q.dir.addScaledVector(q.tan, (q.speed * dt) / 95).normalize();
+    m.position.copy(q.dir).multiplyScalar(95);
+    _mv.copy(q.tan).normalize();
+    m.quaternion.setFromUnitVectors(_mz, _mv);
+    m.material.opacity = Math.min(1, q.life * 3, (1 - q.life) * 6 + 0.2);
+  }
+}
+
 export function createWorld(scene, lights) {
   const outdoor = new THREE.Group();
   const garage = new THREE.Group();
@@ -994,6 +1075,10 @@ export function createWorld(scene, lights) {
   outdoor.add(sunMesh);
   const arena = buildArena(outdoor);
   noWarp(arena.ground); noWarp(arena.clouds);
+  // earthshine: a faint blue light from the Earth, only on stages that ask for it (intensity 0 elsewhere)
+  const earthLight = new THREE.DirectionalLight('#6f9cff', 0);
+  scene.add(earthLight, earthLight.target);
+  let sunWorld = null; let earthWorld = null;
   // the little planet: a rough ball just under the flat map's ground, so the world has a floor off the road
   const planets = new Map();
   const planetFor = (R) => {
@@ -1056,6 +1141,9 @@ export function createWorld(scene, lights) {
     sunMesh.visible = !planet && sunMesh.visible;
     const look = racing ? { ...LOOK_DEFAULT, ...(env.look || {}) } : null;
     arena.clouds.visible = !(racing && look.sky === 'space');   // no clouds in the vacuum
+    sunWorld = racing && look.sunWorld ? look.sunWorld : null; earthWorld = racing && look.earthWorld ? look.earthWorld : null;
+    earthLight.intensity = racing && look.earthshine ? look.earthshine[1] : 0;
+    if (racing && look.earthshine) earthLight.color.set(look.earthshine[0]);
     for (const [k, m] of skies) m.visible = false;
     if (racing) skyFor(SKY_STOPS[look.sky] || DAY, look.sky).visible = true;
     space.visible = racing && look.sky === 'space';
@@ -1107,7 +1195,11 @@ export function createWorld(scene, lights) {
   function update(dt, t, spin) {
     if (snow.mesh.visible) snow.update(dt, t, focus.x, focus.y, focus.z, weatherWind);
     if (skyAnchor) for (const [, sk] of skies) sk.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z);
-    if (space.visible) { if (skyAnchor) space.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z); else space.position.set(focus.x, 0, focus.z); space.userData.earth.rotation.y += dt * 0.05; }
+    if (space.visible) {
+      if (skyAnchor) space.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z); else space.position.set(focus.x, 0, focus.z);
+      space.userData.earth.rotation.y += dt * 0.05;
+      if (skyAnchor && skyAnchor.f) animateMeteors(space.userData.meteors, dt, skyAnchor);
+    }
     if (mode !== 'garage') {
       arena.clouds.position.x = ((t * 0.6 + 70) % 140) - 70;
       // dust drifts on the wind and wraps (title only)
@@ -1133,6 +1225,9 @@ export function createWorld(scene, lights) {
     follow(x, y, z) { focus = { x, y, z }; },
     // planet stages only: where the camera really is, so the sky follows it (pass null to go back to the flat map)
     skyTo(p) { skyAnchor = p; if (!p) for (const [, sk] of skies) sk.position.set(0, 0, 0); },
+    get sunWorld() { return sunWorld; },
+    get earthWorld() { return earthWorld; },
+    earthLight,
     // what is actually switched on right now (guards against a stage whose ground or props never get shown)
     get shown() { return { track: !!(activeTrack && trackGroups.get(activeTrack.id) && trackGroups.get(activeTrack.id).group.visible), arena: sandbox.visible, hazards: hazardView.count }; },
     hazards: hazardView,

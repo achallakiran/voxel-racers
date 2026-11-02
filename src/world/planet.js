@@ -9,6 +9,11 @@
 // flat ground touches the sphere by construction (a truck can't hover). The same function runs in the vertex shader
 // (GLSL below) and on the CPU (camera, tests), and they are kept identical.
 
+// where the Sun and the Earth hang over the little Moon (unit vectors in the ball's own space): the Sun sits over longitude -45
+// degrees, the Earth over +60, so the lap starts in daylight, crosses the terminator, and finishes under earthshine
+export const MOON_SUN = [-0.69, 0.208, 0.69];
+export const MOON_EARTH = [0.81, 0.34, 0.47];
+
 export const PLANET_U = { value: 0 };   // sphere radius, 0 = warp off (every other stage)
 
 export function planetPoint(R, x, y, z, out = [0, 0, 0]) {

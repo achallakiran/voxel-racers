@@ -402,7 +402,7 @@ export function makeTrack(def) {
       const z = p.z - p.tx * side * off + (rand() - 0.5) * 6;
       const n = nearest(x, z);
       if (Math.abs(n.d) < BARRIER + 2) continue;
-      out.push({ x, z, y: heightAt(x, z), type: rand() < 0.65 ? kinds[0] : kinds[1], scale: 0.8 + rand() * 0.9, tint: rand() });
+      out.push({ x, z, y: heightAt(x, z), type: kinds.length > 2 ? kinds[Math.floor(rand() * kinds.length)] : (rand() < 0.65 ? kinds[0] : kinds[1]), scale: 0.8 + rand() * 0.9, tint: rand() });
     }
     if (def.skulls) {
       const sr = rng(93);

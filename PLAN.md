@@ -309,3 +309,11 @@ Mobile frame-rate tuning, LOD, final balance.
 - 9b DONE: the Moon is a tiny planet (R=70). A stadium lap runs ~250 degrees round the ball, craters on and beside the road,
   stars on the whole sphere, Earth rises and sets, no clouds.
 - 9c: minimap polish, perf check, tests + smoke, push.
+
+## Phase 10 - Moon rework
+- 10a DONE: gravity 8 (about a quarter of Earth), jump heights reduced; all 9 trucks lap in both AI styles.
+- 10b DONE: big craters ON the road (three deep bowls), huge craters beside it, two infield craters, loop restyled as a lunar-base ring,
+  landers and radio dishes beside the road, fork/jump/whoops re-laid.
+- 10c DONE: a fixed Sun (voxel disc with glow) in the sky: the lap starts in daylight, crosses the terminator, finishes on the night side lit
+  by earthshine; meteor streaks cross the sky (visual only).
+- 10d: tests + smoke + push.

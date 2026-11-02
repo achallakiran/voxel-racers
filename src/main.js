@@ -1048,7 +1048,8 @@ function start() {
       camera.position.set(planetTmp[0], planetTmp[1], planetTmp[2]);
       camera.up.set(fr.up[0], fr.up[1], fr.up[2]);
       camera.lookAt(lp[0], lp[1], lp[2]);
-      world.skyTo({ x: planetTmp[0], y: planetTmp[1], z: planetTmp[2] });
+      const fw = [lp[0] - planetTmp[0], lp[1] - planetTmp[1], lp[2] - planetTmp[2]]; const fl = Math.hypot(fw[0], fw[1], fw[2]) || 1;
+      world.skyTo({ x: planetTmp[0], y: planetTmp[1], z: planetTmp[2], f: [fw[0] / fl, fw[1] / fl, fw[2] / fl], u: fr.up });
     } else {
       camera.up.set(0, 1, 0);
       world.skyTo(null);
@@ -1060,9 +1061,14 @@ function start() {
     if (PR > 0) {
       // the sun and the sky light keep the same angle to the ground under the truck, so every side of the planet is lit
       const ps = planetPoint(PR, v.x, 0, v.z, planetTmp);
-      const sd = planetDir(PR, v.x, 0, v.z, world.sunDir);
+      // a stage with a fixed sun (the Moon) is lit like the real thing: one sun in the sky, day on one side and night on the other,
+      // with earthshine on the dark side. Otherwise the sun keeps the same angle to the ground under the truck.
+      const sw = world.sunWorld;
+      const sd = sw ? [sw[0] * 60, sw[1] * 60, sw[2] * 60] : planetDir(PR, v.x, 0, v.z, world.sunDir);
       sun.target.position.set(ps[0], ps[1], ps[2]);
       sun.position.set(ps[0] + sd[0], ps[1] + sd[1], ps[2] + sd[2]);
+      const ew = world.earthWorld;
+      if (ew) { world.earthLight.target.position.set(ps[0], ps[1], ps[2]); world.earthLight.position.set(ps[0] + ew[0] * 60, ps[1] + ew[1] * 60, ps[2] + ew[2] * 60); }
       const up = planetFrame(PR, v.x, 0, v.z).up;
       hemi.position.set(up[0], up[1], up[2]);
       sun.castShadow = false;

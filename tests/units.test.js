@@ -2067,7 +2067,7 @@ test('8a: the skull cave leaves the road, barriers and a truck-tall gap clear, a
 // ---------------------------------------------------------------- phase 8b: Moon Crater stage
 test('8b/9b: the Moon is a tiny planet: low gravity, a space sky, a lap that stays where the map is undistorted, craters on the road', () => {
   const T = getTrackById('moon');
-  assert.equal(T.terrain.gravity, 14);
+  assert.equal(T.terrain.gravity, 8, 'about a quarter of earth gravity: long floaty jumps');
   assert.equal(T.env.look.sky, 'space');
   assert.ok(T.env.planet && T.env.planet.R >= 40 && T.env.planet.R <= 120, 'a small ball');
   const R = T.env.planet.R;
@@ -2080,7 +2080,7 @@ test('8b/9b: the Moon is a tiny planet: low gravity, a space sky, a lap that sta
     assert.ok(Number.isFinite(p.y) && Math.abs(p.y - prev) < 3, 'smooth road at ' + i);
     prev = p.y; minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
   }
-  assert.ok(maxY - minY > 1.5, 'craters dip the road');
+  assert.ok(maxY - minY > 4, 'big craters dip the road by several units');
   assert.ok((T.env.elevRange ?? 5) >= maxY - minY, 'declared elevation range covers the craters');
   // the lap really goes a long way round the ball: over 200 degrees of longitude from end to end
   const xs = []; for (let i = 0; i < 200; i++) xs.push(T.sampleAt(i / 200).x);
@@ -2088,7 +2088,7 @@ test('8b/9b: the Moon is a tiny planet: low gravity, a space sky, a lap that sta
 });
 
 // ---------------------------------------------------------------- phase 9a: tiny-planet warp
-import { planetPoint, planetFrame, planetDir, PLANET_GLSL } from '../src/world/planet.js';
+import { planetPoint, planetFrame, planetDir, PLANET_GLSL, MOON_SUN, MOON_EARTH } from '../src/world/planet.js';
 
 test('9a: planet warp keeps height exact: a wheel on the flat ground is on the sphere surface', () => {
   const R = 80;
@@ -2138,4 +2138,39 @@ test('9a: planet frame is orthogonal on the road and directions map to unit dire
     assert.ok(dot(cr, f.north) > 0, 'right-handed: the map is not mirrored, so triangles are not culled as back faces');
     assert.ok(/uPlanetR/.test(PLANET_GLSL));
   }
+});
+
+// ---------------------------------------------------------------- phase 10: Moon rework (low gravity, fixed sun, earthshine)
+test('10: the Moon has a fixed sun: the lap starts in daylight, crosses into the night side and is lit by earthshine there', () => {
+  const T = getTrackById('moon');
+  const R = T.env.planet.R;
+  for (const d of [MOON_SUN, MOON_EARTH]) assert.ok(Math.abs(Math.hypot(...d) - 1) < 0.01, 'sky directions are unit vectors');
+  assert.deepEqual(T.env.look.sunWorld, MOON_SUN);
+  assert.ok(T.env.look.earthshine && T.env.look.earthshine[1] > 0);
+  let day = 0; let night = 0; let earth = 0;
+  for (let i = 0; i < 200; i++) {
+    const p = T.sampleAt(i / 200); const w = planetPoint(R, p.x, 0, p.z); const l = Math.hypot(...w);
+    const dot = (d) => (w[0] * d[0] + w[1] * d[1] + w[2] * d[2]) / l;
+    if (dot(MOON_SUN) > 0.05) day++; else if (dot(MOON_SUN) < -0.05) { night++; if (dot(MOON_EARTH) > 0.05) earth++; }
+  }
+  assert.ok(day > 60, 'a good part of the lap is in sunlight');
+  assert.ok(night > 30, 'and a good part is on the night side');
+  assert.ok(earth >= night * 0.7, 'the Earth is up for most of the night stretch (earthshine)');
+  const st = T.gridPose(1); const sw = planetPoint(R, st.x, 0, st.z);
+  assert.ok((sw[0] * MOON_SUN[0] + sw[1] * MOON_SUN[1] + sw[2] * MOON_SUN[2]) / Math.hypot(...sw) > 0.05, 'the grid is in daylight');
+});
+
+test('10: the Moon set pieces: big craters on the road, huge ones beside it, a loop styled as a lunar ring, landers beside the road', () => {
+  const T = getTrackById('moon');
+  assert.ok(T.env.ring && T.env.ring.rail1, 'lunar-base loop look');
+  const kinds = new Set(T.sceneryLayout().map((s) => s.type));
+  assert.ok(kinds.has('lander') && kinds.has('dish') && kinds.has('moonrock'), 'lunar scenery');
+  // big crater dips: sample the road bottoms out several units below its base level somewhere in each of 3 stretches
+  const ys = []; for (let i = 0; i <= 700; i++) ys.push(T.sampleAt(i / 700).y);
+  const base = 7; const dips = []; let inDip = false;
+  for (const y of ys) { if (y < base - 3 && !inDip) { dips.push(1); inDip = true; } else if (y >= base - 1.5) inDip = false; }
+  assert.ok(dips.length >= 3, `at least three deep craters on the road (${dips.length})`);
+  // the huge beside-the-road craters are real terrain: ground well below the base level just behind the barriers
+  let deep = 0; for (let i = 0; i < 100; i++) { const p = T.sampleAt(i / 100); for (const side of [-1, 1]) { const x = p.x + p.tz * side * 55; const z = p.z - p.tx * side * 55; if (T.heightAt(x, z) < base - 3) deep++; } }
+  assert.ok(deep >= 6, `huge craters beside the road (${deep})`);
 });
