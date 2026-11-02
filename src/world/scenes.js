@@ -9,6 +9,7 @@ import {
 } from './arena-layout.js';
 import { loopWorld } from '../physics/loop.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
+import { createHazardView } from './hazard-view.js';
 import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
   mesasLayout, cloudsLayout, dustLayout, rampLayout, carPileLayout,
@@ -115,27 +116,54 @@ function buildSky(stopsDef = SUNSET) {
   return sky;
 }
 
+// default stage look (Greenridge): sky stops, fog [colour, near, far], hemisphere [sky, ground, intensity], sun [colour, intensity, x, y, z]
+export const LOOK_DEFAULT = { sky: 'day', fog: ['#cfe6f5', 40, 170], hemi: ['#e3f0ff', '#6a8f4e', 1.25], sun: ['#fff2d8', 2.4, 8, 12, 5] };
 const ALPINE = [[-1, '#e9f1fa'], [0.0, '#e9f1fa'], [0.1, '#cfdcec'], [0.35, '#9db6d4'], [0.7, '#6e8fb8'], [1, '#4a6c9a']];
+const GOLDEN = [[-1, '#ffd9a0'], [0.0, '#ffd9a0'], [0.08, '#ffb870'], [0.28, '#f08a5a'], [0.6, '#b8607a'], [1, '#5a3c6e']];
+const STORM = [[-1, '#8f98a6'], [0.0, '#8f98a6'], [0.12, '#7a8494'], [0.4, '#5c6678'], [0.75, '#434b5c'], [1, '#2c3242']];
+const VOLCANO = [[-1, '#ff7a30'], [0.0, '#ff7a30'], [0.1, '#d6401c'], [0.35, '#7a1f18'], [0.7, '#3a1114'], [1, '#1a0809']];
+const CAVE = [[-1, '#1c2230'], [0.0, '#1c2230'], [0.5, '#10141e'], [1, '#080a10']];
+const SKY_STOPS = { day: DAY, alpine: ALPINE, golden: GOLDEN, storm: STORM, volcano: VOLCANO, cave: CAVE };
 
-// falling snow: a box of flakes that follows the truck and wraps, so it is cheap and always around the camera
-function buildSnow(parent) {
-  const N = 380; const BOX = 46; const H = 26;
-  const geo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
-  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false }), N);
+// weather particles: a box of specks that follows the truck and wraps, so it is cheap and always around the camera
+const WEATHER = {
+  snow: { color: '#ffffff', size: 0.16, fall: [3, 6], drift: 1.2, count: 380 },
+  rain: { color: '#a9c4e8', size: 0.07, fall: [26, 34], drift: 0.6, count: 420, tall: 0.9 },
+  dust: { color: '#e8c48a', size: 0.14, fall: [-0.3, 0.6], drift: 6, count: 320 },
+  embers: { color: '#ff9a3c', size: 0.13, fall: [-4, -1.5], drift: 0.8, count: 320, glow: true },
+  ash: { color: '#8a8a92', size: 0.13, fall: [0.8, 2], drift: 1.5, count: 300 },
+  spores: { color: '#7dffb0', size: 0.12, fall: [-0.8, -0.2], drift: 0.8, count: 260 },
+  stars: { color: '#ffffff', size: 0.09, fall: [0, 0.2], drift: 0.2, count: 260 },
+};
+function buildWeather(parent) {
+  const MAXN = 440; const BOX = 46; const H = 26;
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const mat = new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false });
+  const mesh = new THREE.InstancedMesh(geo, mat, MAXN);
   mesh.frustumCulled = false;
   const fl = [];
-  for (let i = 0; i < N; i++) fl.push({ x: (hash2(i, 1) - 0.5) * BOX, y: hash2(i, 2) * H, z: (hash2(i, 3) - 0.5) * BOX, v: 3 + hash2(i, 4) * 3, ph: hash2(i, 5) * 6 });
+  for (let i = 0; i < MAXN; i++) fl.push({ x: (hash2(i, 1) - 0.5) * BOX, y: hash2(i, 2) * H, z: (hash2(i, 3) - 0.5) * BOX, r: hash2(i, 4), ph: hash2(i, 5) * 6 });
   mesh.visible = false;
   parent.add(mesh);
   const mm = new THREE.Matrix4();
+  let kind = WEATHER.snow;
   return {
     mesh, flakes: fl, BOX, H,
+    set(name) {
+      kind = WEATHER[name] || null;
+      mesh.visible = !!kind;
+      if (kind) { mat.color.set(kind.color); mesh.count = kind.count; }
+    },
     update(dt, t, cx, cy, cz, wind) {
-      for (let i = 0; i < N; i++) {
+      if (!kind) return;
+      const sx = kind.size; const sy = kind.size * (kind.tall ? 9 : 1);
+      for (let i = 0; i < kind.count; i++) {
         const f = fl[i];
-        f.y -= f.v * dt; f.x += ((wind ? wind.x : 0) * 1.2 + Math.sin(t + f.ph) * 0.6) * dt;
-        if (f.y < 0) f.y += H;
+        const v = kind.fall[0] + (kind.fall[1] - kind.fall[0]) * f.r;
+        f.y -= v * dt; f.x += ((wind ? wind.x : 0) * kind.drift + Math.sin(t + f.ph) * 0.6) * dt;
+        if (f.y < 0) f.y += H; else if (f.y > H) f.y -= H;
         if (f.x > BOX / 2) f.x -= BOX; else if (f.x < -BOX / 2) f.x += BOX;
+        mm.makeScale(sx, sy, sx);
         mm.setPosition(cx + f.x, cy - 4 + f.y, cz + f.z);
         mesh.setMatrixAt(i, mm);
       }
@@ -498,6 +526,8 @@ function makeTrackColor(T) {
       c = Math.floor(sAlong / 2 + smp.d) % 2 ? [0.4, 0.78, 0.2] : [0.3, 0.64, 0.16];
     } else if (smp.surf === 'oil') {
       c = (Math.floor(sAlong / 2) + Math.floor(smp.d / 2)) & 1 ? [0.06, 0.05, 0.09] : [0.14, 0.11, 0.2];
+    } else if (smp.surf === 'lava') {
+      c = (Math.floor(sAlong / 1.4) + Math.floor(smp.d / 1.4)) & 1 ? [1, 0.45, 0.08] : [0.95, 0.25, 0.04];
     } else if (smp.surf === 'snow') {
       c = [0.92, 0.95, 0.99];
       if (Math.abs(Math.abs(smp.d) - 2.2) < 0.6) c = [0.8, 0.86, 0.94];
@@ -588,6 +618,38 @@ function buildTrack(group, T) {
       trunks.push({ x: t.x, y: t.y + 1.4 * sc, z: t.z, sx: 8 * sc, sy: 2.8 * sc, sz: 6 * sc, color: rock });
       trunks.push({ x: t.x, y: t.y + 3.6 * sc, z: t.z, sx: 6 * sc, sy: 1.8 * sc, sz: 4.6 * sc, color: rock.clone().multiplyScalar(1.1) });
       trunks.push({ x: t.x, y: t.y + 5.0 * sc, z: t.z, sx: 4 * sc, sy: 1.2 * sc, sz: 3.2 * sc, color: rock.clone().multiplyScalar(1.2) });
+      continue;
+    }
+    if (t.type === 'stalagmite') {
+      const rock = new THREE.Color('#5a5470').multiplyScalar(0.85 + t.tint * 0.3);
+      for (const [w, h, y] of [[2.6, 2.2, 1.1], [1.9, 2.2, 3.3], [1.2, 2.2, 5.5], [0.6, 1.6, 7.4]]) trunks.push({ x: t.x, y: t.y + y * sc, z: t.z, sx: w * sc, sy: h * sc, sz: w * sc, color: rock });
+      continue;
+    }
+    if (t.type === 'crystal') {
+      const cols = ['#4be3ff', '#c05cff', '#5cff9a'];
+      const col = new THREE.Color(cols[Math.floor(t.tint * 3) % 3]);
+      for (const [ox, oz, h, w] of [[0, 0, 3.4, 0.9], [0.9, 0.4, 2.2, 0.7], [-0.8, 0.5, 2.6, 0.7], [0.2, -0.9, 1.8, 0.6]]) leaves.push({ x: t.x + ox * sc, y: t.y + (h / 2) * sc, z: t.z + oz * sc, sx: w * sc, sy: h * sc, sz: w * sc, color: col });
+      continue;
+    }
+    if (t.type === 'skullrock') {
+      const bone = new THREE.Color('#d8d2bf').multiplyScalar(0.9 + t.tint * 0.15); const dark = new THREE.Color('#0b0912');
+      const c = Math.cos(t.face); const sn = Math.sin(t.face);
+      const at = (lx, ly, lz) => ({ x: t.x + (lx * c - lz * sn) * sc, z: t.z + (lx * sn + lz * c) * sc, y: t.y + ly * sc });
+      const put = (lx, ly, lz, sx, sy, sz, color, arr = trunks) => { const q = at(lx, ly, lz); arr.push({ x: q.x, y: q.y, z: q.z, sx: sx * sc, sy: sy * sc, sz: sz * sc, color, rot: t.face }); };
+      put(0, 6.2, 0, 9, 7, 8, bone); put(0, 10, 0, 7, 1.6, 6.4, bone);          // cranium
+      put(0, 2.2, 0.6, 6.6, 3.4, 6, bone);                                       // jaw
+      put(-2.2, 6.4, 4.1, 2.3, 2.3, 0.6, dark); put(2.2, 6.4, 4.1, 2.3, 2.3, 0.6, dark);   // eye sockets
+      put(0, 4.4, 4.2, 1.1, 1.5, 0.6, dark);                                     // nose
+      for (const x of [-2.2, -0.7, 0.7, 2.2]) put(x, 1.6, 3.7, 1.0, 1.6, 0.5, dark);   // teeth gaps
+      continue;
+    }
+    if (t.type === 'cone') {
+      // volcano: dark basalt cone, glowing crater
+      let y = t.y - 1;
+      for (const [w, h, c] of [[22, 6, '#2c2326'], [17, 6, '#372a2a'], [12, 5, '#463230'], [8, 4, '#5a3a32'], [5.2, 2.4, '#ff6a1c'], [3.4, 2, '#ffc23c']]) {
+        trunks.push({ x: t.x, y: y + (h * t.scale) / 2, z: t.z, sx: w * t.scale, sy: h * t.scale, sz: w * t.scale, color: new THREE.Color(c) });
+        y += h * t.scale;
+      }
       continue;
     }
     if (t.type === 'peak') {
@@ -825,14 +887,12 @@ export function createWorld(scene, lights) {
   const sky = buildSky();
   sky.userData.backdrop = true;
   outdoor.add(sky);
-  const skyDay = buildSky(DAY);
-  skyDay.userData.backdrop = true;
-  skyDay.visible = false;
-  outdoor.add(skyDay);
-  const skyAlpine = buildSky(ALPINE);
-  skyAlpine.userData.backdrop = true;
-  skyAlpine.visible = false;
-  outdoor.add(skyAlpine);
+  const skies = new Map();            // sky key -> mesh (built once, per stage look)
+  const skyFor = (stops, key) => {
+    if (!skies.has(key)) { const m = buildSky(stops); m.userData.backdrop = true; m.visible = false; outdoor.add(m); skies.set(key, m); }
+    return skies.get(key);
+  };
+  skyFor(DAY, 'day');
   const sunMesh = buildSun();
   sunMesh.userData.backdrop = true;
   outdoor.add(sunMesh);
@@ -858,9 +918,9 @@ export function createWorld(scene, lights) {
   const fogOut = new THREE.Fog('#f4a96b', 26, 110);
   const fogGar = new THREE.Fog('#16161e', 14, 40);
   const fogDay = new THREE.Fog('#cfe6f5', 40, 170);
-  const fogAlpine = new THREE.Fog('#dfe9f5', 30, 135);
   let mode = 'outdoor';
-  const snow = buildSnow(scene);
+  const snow = buildWeather(scene);
+  const hazardView = createHazardView(scene);
   let focus = { x: 0, y: 0, z: 0 };
   let weatherWind = null;
 
@@ -876,25 +936,23 @@ export function createWorld(scene, lights) {
     sky.visible = !racing;
     arena.cloudMat.color.set(racing ? '#ffffff' : '#ffd9e0');
     const env = racing && activeTrack ? activeTrack.env || {} : {};
-    const alpine = racing && activeTrack && activeTrack.theme.sky === 'alpine';
-    skyDay.visible = racing && !alpine;
-    skyAlpine.visible = alpine;
-    snow.mesh.visible = racing && env.weather === 'snow';
-    weatherWind = env.wind || null;
-    sandbox.visible = d && course === 'arena';
-    for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
+    const look = racing ? { ...LOOK_DEFAULT, ...(env.look || {}) } : null;
+    for (const [k, m] of skies) m.visible = false;
+    if (racing) skyFor(SKY_STOPS[look.sky] || DAY, look.sky).visible = true;
+    snow.set(racing ? env.weather : null);
+    weatherWind = env.breeze || env.wind || null;
     groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
-    scene.background = new THREE.Color(g ? '#16161e' : (alpine ? '#cfdcec' : racing ? '#bfe3fb' : '#ffb35a'));
-    if (alpine && env.fog) { fogAlpine.color.set(env.fog.color); fogAlpine.near = env.fog.near; fogAlpine.far = env.fog.far; }
-    scene.fog = g ? fogGar : (alpine ? fogAlpine : racing ? fogDay : fogOut);
+    scene.background = new THREE.Color(g ? '#16161e' : (racing ? look.fog[0] : '#ffb35a'));
+    if (racing) { fogDay.color.set(look.fog[0]); fogDay.near = look.fog[1]; fogDay.far = look.fog[2]; }
+    scene.fog = g ? fogGar : (racing ? fogDay : fogOut);
     if (g) {
       hemi.color.set('#8fa0ff'); hemi.groundColor.set('#2a2230'); hemi.intensity = 0.9;
       sun.color.set('#ffe9c8'); sun.intensity = 1.5; sun.position.set(4, 9, 6);
       spot.visible = true;
     } else if (racing) {
-      hemi.color.set('#e3f0ff'); hemi.groundColor.set('#6a8f4e'); hemi.intensity = 1.25;
-      sun.color.set('#fff2d8'); sun.intensity = 2.4; sun.position.set(8, 12, 5);
+      hemi.color.set(look.hemi[0]); hemi.groundColor.set(look.hemi[1]); hemi.intensity = look.hemi[2];
+      sun.color.set(look.sun[0]); sun.intensity = look.sun[1]; sun.position.set(look.sun[2], look.sun[3], look.sun[4]);
       spot.visible = false;
     } else {
       hemi.color.set('#ffd2a0'); hemi.groundColor.set('#8a4b2a'); hemi.intensity = 1.35;
@@ -948,6 +1006,7 @@ export function createWorld(scene, lights) {
     setMode,
     setCourse,
     follow(x, y, z) { focus = { x, y, z }; },
+    hazards: hazardView,
     props: propMeshes,
     pickups: pickupMeshes,
     get trackStats() { return trackStats; },

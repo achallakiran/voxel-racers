@@ -33,9 +33,43 @@ export function inRect(h, x, z) {
   return { along, lat, inside: Math.abs(along) <= h.len / 2 && Math.abs(lat) <= h.w / 2 };
 }
 
+export const GEYSER_LAUNCH = 15;
+export const STALACTITE_FALL = 0.9;       // seconds the rock takes to fall (its shadow grows over this time)
+const cyc = (h, time) => ((time - h.offset) % h.period + h.period) % h.period;
+
+// geyser: erupts for `dur` seconds after `warn` seconds of bubbling; launches anything above it
+export function geyserState(h, time) {
+  const t = cyc(h, time);
+  if (t < h.warn) return { state: 'warn', k: t / h.warn };
+  if (t < h.warn + h.dur) return { state: 'erupt', k: (t - h.warn) / h.dur };
+  return { state: 'idle', k: 0 };
+}
+// stalactite: shadow grows for the last STALACTITE_FALL seconds before `warn`, then it crashes down at t = warn
+export function stalactiteState(h, time) {
+  const t = cyc(h, time);
+  if (t >= h.warn - STALACTITE_FALL && t < h.warn) return { state: 'falling', k: (t - (h.warn - STALACTITE_FALL)) / STALACTITE_FALL };
+  if (t >= h.warn && t < h.warn + 0.12) return { state: 'impact', k: 0 };
+  if (t >= h.warn + 0.12 && t < h.warn + 2.5) return { state: 'rubble', k: 0 };
+  return { state: 'idle', k: 0 };
+}
+
 export function hazardEffects(v, terrain, dt, events) {
   const time = terrain.time || 0;
+  if (v.hazCool > 0) v.hazCool -= dt;
   for (const h of terrain.hazards) {
+    if (h.kind === 'geyser') {
+      if (geyserState(h, time).state !== 'erupt') continue;
+      if (Math.hypot(v.x - h.x, v.z - h.z) > h.r || v.y > (h.y0 || 0) + 8) continue;
+      v.vy = Math.max(v.vy, GEYSER_LAUNCH); v.grounded = false;
+      if (!(v.hazCool > 0)) { v.hazCool = 1; events.push({ type: 'geyser', hazard: h }); }
+      continue;
+    }
+    if (h.kind === 'stalactite') {
+      if (stalactiteState(h, time).state !== 'impact' || v.y > (h.y0 || 0) + 3) continue;
+      if (Math.hypot(v.x - h.x, v.z - h.z) > h.r || v.hazCool > 0) continue;
+      v.vx *= 0.3; v.vz *= 0.3; v.hazCool = 1; events.push({ type: 'stalactite', hazard: h });
+      continue;
+    }
     if (h.kind !== 'avalanche') continue;
     const k = avalanchePhase(h, time);
     if (k < 0) continue;

@@ -284,6 +284,10 @@ export function makeTrack(def) {
   const W = {
     pad(s, off, len = 7, w = 5) { ZONES.push({ kind: 'pad', s, off, len, w }); },
     goo(s, off, len = 9, w = 5) { ZONES.push({ kind: 'goo', s, off, len, w }); },
+    lava(s, off, len = 12, w = 5) {
+      ZONES.push({ kind: 'lava', s, off, len, w });
+      LANES.push({ from: s - 8 / LENGTH, to: s + (len + 4) / LENGTH, limit: 2.2, off: off >= 0 ? -3.4 : 3.4 });
+    },
     oil(s, off, len = 9, w = 5) { ZONES.push({ kind: 'oil', s, off, len, w }); },
     pickup(s, off) { PICKUPS.push({ id: PICKUPS.length, ...lateral(s, off, {}), r: 1.3, taken: false, cool: 0 }); },
     // a FORK: a median wall splits the road in two lanes with different risk and reward.
@@ -397,6 +401,17 @@ export function makeTrack(def) {
       if (Math.abs(n.d) < BARRIER + 2) continue;
       out.push({ x, z, y: heightAt(x, z), type: rand() < 0.65 ? kinds[0] : kinds[1], scale: 0.8 + rand() * 0.9, tint: rand() });
     }
+    if (def.skulls) {
+      const sr = rng(93);
+      for (let i = 0; i < def.skulls; i++) {
+        const p = sampleAt((i + 0.3 + sr() * 0.4) / def.skulls);
+        const side = i % 2 ? -1 : 1;
+        const off = BARRIER + 9 + sr() * 14;
+        const x = p.x + p.tz * side * off; const z = p.z - p.tx * side * off;
+        if (Math.abs(nearest(x, z).d) < BARRIER + 6) continue;
+        out.push({ x, z, y: heightAt(x, z), type: 'skullrock', scale: 1.0 + sr() * 0.8, tint: sr(), face: Math.atan2(-p.tz * side, p.tx * side) });
+      }
+    }
     // distant mountains ringing the stage (stages that ask for them)
     if (def.peaks) {
       const pr = rng(91);
@@ -406,7 +421,7 @@ export function makeTrack(def) {
         const off = BARRIER + 34 + pr() * 55;
         const x = p.x + p.tz * side * off; const z = p.z - p.tx * side * off;
         if (Math.abs(nearest(x, z).d) < BARRIER + 30) continue;
-        out.push({ x, z, y: heightAt(x, z), type: 'peak', scale: 1.2 + pr() * 1.6, tint: pr() });
+        out.push({ x, z, y: heightAt(x, z), type: def.peakType || 'peak', scale: 1.2 + pr() * 1.6, tint: pr() });
       }
     }
     return out;
@@ -437,7 +452,7 @@ export function makeTrack(def) {
 
   const ENV = { gravity: undefined, wind: null, weather: 'none', ...(def.env || {}) };
   const HAZARDS = [];
-  if (def.hazards) def.hazards({ W: null, sampleAt, LENGTH, ROAD_HALF, add: (h) => HAZARDS.push(h) });
+  if (def.hazards) def.hazards({ W: null, sampleAt, LENGTH, ROAD_HALF, add: (h) => HAZARDS.push({ y0: heightAt(h.x, h.z), ...h }) });
   const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true, gravity: ENV.gravity, wind: ENV.wind, hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {

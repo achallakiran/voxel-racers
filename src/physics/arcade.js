@@ -18,6 +18,7 @@ export const SURFACES = {
   grass: { grip: 0.65, drag: 0.5, maxMul: 0.82 },
   sand: { grip: 0.55, drag: 0.8, maxMul: 0.7 },
   mud: { grip: 0.42, drag: 1.4, maxMul: 0.55 },
+  lava: { grip: 0.4, drag: 2.8, maxMul: 0.3 },    // molten rock: you wade, sink and respawn
   goo: { grip: 0.5, drag: 2.2, maxMul: 0.4 },      // sticky slow patch
   oil: { grip: 0.16, drag: 0.05, maxMul: 1.0 },     // slippery patch
   pad: { grip: 1.2, drag: 0, maxMul: 1.0 },         // accelerator strip (kick handled in stepVehicle)

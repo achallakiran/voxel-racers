@@ -335,6 +335,12 @@ function start() {
     save.track = TR.id;
     storage.save(save);
     drawTrackThumb();
+    showTrackName();
+  }
+  function showTrackName() {
+    const el = $('trk-name');
+    el.querySelector('b').textContent = TR.name;
+    el.querySelector('span').textContent = `${TRACKS.indexOf(TR) + 1} / ${TRACKS.length}`;
   }
   let goTimer = 0;
   let wrongWay = 0;
@@ -369,6 +375,7 @@ function start() {
     prevVy = 0; prevF = 0;
     const racing = driveMode === 'race';
     courseTerrain = racing ? TR.freshTerrain() : ARENA_TERRAIN;
+    world.hazards.set(racing ? courseTerrain.hazards : []);
     if (racing) { world.props.set(courseTerrain.props); world.pickups.set(courseTerrain.pickups || []); } else world.pickups.clear();
     clearRivals();
     debris.life.fill(0); debris.alive = 0;
@@ -475,7 +482,7 @@ function start() {
       handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
       r.pitT = inPit(r.v) ? (r.pitT || 0) + dt : 0;
       if (r.pitT > 1.2) {
-        const p = safePose(TR.nearest(r.v.x, r.v.z).s, 10);
+        const p = safePose(TR.nearest(r.v.x, r.v.z).s, inLava(r.v) ? 22 : 10);
         const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, r.tune.ride);
         nv.nitro = r.v.nitro; Object.assign(r.v, nv); r.pitT = 0;
       }
@@ -707,7 +714,8 @@ function start() {
   }
 
   // dropped into a trench: the truck is put back on the safe lane a few metres before the lip
-  const inPit = (v) => !v.loop && v.grounded && courseTerrain.heightAt(v.x, v.z) < TR.sampleAt(TR.nearest(v.x, v.z).s).y - 2;
+  const inLava = (v) => !v.loop && v.grounded && v.surface === 'lava';
+  const inPit = (v) => !v.loop && v.grounded && (inLava(v) || courseTerrain.heightAt(v.x, v.z) < TR.sampleAt(TR.nearest(v.x, v.z).s).y - 2);
   function safePose(s, back) {
     const q = s - back / TR.LENGTH;
     const p = TR.sampleAt(q);
@@ -718,7 +726,7 @@ function start() {
   function respawn() {
     if (!race || !vehicle || race.phase !== 'racing') return;
     const n = TR.nearest(vehicle.x, vehicle.z);
-    const p = safePose(n.s, inPit(vehicle) ? 10 : 0);
+    const p = safePose(n.s, inLava(vehicle) ? 22 : inPit(vehicle) ? 10 : 0);
     const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, tune.ride);
     nv.nitro = vehicle.nitro;
     Object.assign(vehicle, nv);
@@ -753,7 +761,7 @@ function start() {
   }
   $('trk-prev').addEventListener('click', () => { audio.click(); selectTrack(TRACKS[(TRACKS.indexOf(TR) + TRACKS.length - 1) % TRACKS.length].id); });
   $('trk-next').addEventListener('click', () => { audio.click(); selectTrack(TRACKS[(TRACKS.indexOf(TR) + 1) % TRACKS.length].id); });
-  drawTrackThumb();
+  drawTrackThumb(); showTrackName();
 
   // ---- minimap (track outline drawn once, then the truck dot each frame)
   const MW = 160; const MH = 110;
@@ -949,7 +957,7 @@ function start() {
       race.update(n.s);
       playerAcc += wrapDelta(playerPrevS, n.s); playerPrevS = n.s;
       rivalPose(dt);
-      tickPickups(courseTerrain, dt); tickHazards(courseTerrain, dt); world.follow(v.x, v.y, v.z); world.pickups.sync(courseTerrain.pickups || [], clock);
+      tickPickups(courseTerrain, dt); tickHazards(courseTerrain, dt); world.hazards.update(courseTerrain, clock); world.follow(v.x, v.y, v.z); world.pickups.sync(courseTerrain.pickups || [], clock);
       if (race.phase === 'racing') {
         const wedged = input.gas > 0.5 && v.grounded && !v.loop && Math.abs(v.f) < 1.0;
         stuckT = wedged ? stuckT + dt : Math.max(0, stuckT - dt * 2);

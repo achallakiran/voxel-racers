@@ -88,6 +88,7 @@ const CANYON_DEF = {
   id: 'canyon', name: 'Looper Canyon',
   theme: { a: [0.86, 0.58, 0.34], b: [0.8, 0.52, 0.3], edge: [0.78, 0.6, 0.38], far: [0.7, 0.44, 0.27], dirt: [0.82, 0.55, 0.32], rut: [0.7, 0.44, 0.25], sand: [0.93, 0.8, 0.5], sky: 'day', wall: [0.7, 0.36, 0.25] },
   scenery: ['cactus', 'mesa'], sceneryCount: 380,
+  env: { weather: 'dust', breeze: { x: 5, z: 0 }, look: { sky: 'golden', fog: ['#f0b48a', 28, 150], hemi: ['#ffd6b0', '#a55a3a', 1.2], sun: ['#ffb070', 2.7, -10, 6, 8] } },
   checkpoints: [0, 0.2, 0.5, 0.8],
   ctrl() {
     const ctrl = [];
@@ -145,6 +146,7 @@ const FORTRESS_DEF = {
   id: 'fortress', name: 'Brick Fortress',
   theme: { a: [0.5, 0.56, 0.5], b: [0.45, 0.5, 0.45], edge: [0.6, 0.57, 0.5], far: [0.4, 0.46, 0.4], dirt: [0.62, 0.55, 0.45], rut: [0.52, 0.45, 0.36], sand: [0.88, 0.78, 0.55], sky: 'day', wall: [0.52, 0.5, 0.52] },
   scenery: ['tower', 'round'], sceneryCount: 300,
+  env: { weather: 'rain', breeze: { x: 3, z: 0 }, look: { sky: 'storm', fog: ['#8a929e', 20, 105], hemi: ['#9fb0c8', '#4a4f58', 1.0], sun: ['#c8d4e8', 1.6, 4, 10, 3] } },
   checkpoints: [0, 0.22, 0.52, 0.76],
   ctrl() {
     const ctrl = [];
@@ -200,7 +202,7 @@ const HIMALAYA_DEF = {
   id: 'himalaya', name: 'Himalaya Pass',
   theme: { a: [0.93, 0.96, 1.0], b: [0.86, 0.9, 0.97], edge: [0.74, 0.78, 0.86], far: [0.72, 0.78, 0.9], dirt: [0.55, 0.5, 0.47], rut: [0.45, 0.4, 0.38], sand: [0.8, 0.82, 0.88], sky: 'alpine', snow: true },
   peaks: 30, scenery: ['pine', 'pine'], sceneryCount: 380,
-  env: { weather: 'snow', wind: { x: 9, z: 0 }, fog: { color: '#dfe9f5', near: 30, far: 135 } },
+  env: { weather: 'snow', wind: { x: 9, z: 0 }, look: { sky: 'alpine', fog: ['#dfe9f5', 30, 135], hemi: ['#e8f0ff', '#9aa8c0', 1.3], sun: ['#fff6e8', 2.2, 6, 12, 4] } },
   ctrl() {
     const ctrl = [];
     for (let k = 0; k < 20; k++) {
@@ -249,6 +251,112 @@ const HIMALAYA_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF)];
+// lateral placement helper for hazards: a point `off` to the right of the road centre at lap fraction s
+const roadPoint = (sampleAt, s, off) => { const p = sampleAt(s); return { x: p.x + p.tz * off, z: p.z - p.tx * off, tx: p.tx, tz: p.tz }; };
+
+// ---------------------------------------------------------------- 5. Skull Cavern (dark cave, stalactites, glowing crystals)
+const SKULL_DEF = {
+  id: 'skull', name: 'Skull Cavern',
+  theme: { a: [0.2, 0.17, 0.26], b: [0.17, 0.14, 0.22], edge: [0.32, 0.27, 0.38], far: [0.1, 0.08, 0.14], dirt: [0.34, 0.3, 0.36], rut: [0.26, 0.22, 0.3], sand: [0.74, 0.72, 0.66], sky: 'cave', wall: [0.42, 0.38, 0.48] },
+  scenery: ['stalagmite', 'crystal'], sceneryCount: 420, skulls: 7,
+  env: { weather: 'spores', breeze: { x: 1.5, z: 0 }, look: { sky: 'cave', fog: ['#0d1020', 12, 78], hemi: ['#7a68d8', '#1c1630', 0.95], sun: ['#9fb8ff', 0.9, 6, 12, 4] } },
+  ctrl() {
+    const ctrl = [];
+    for (let k = 0; k < 20; k++) {
+      const th = (2 * Math.PI * k) / 20;
+      const r = 1 + 0.10 * Math.sin(3 * th + 0.4) + 0.05 * Math.sin(2 * th + 1.1);
+      ctrl.push({ x: 118 * Math.cos(th) * r, z: 96 * Math.sin(th) * r });
+    }
+    return ctrl;
+  },
+  elevation: (s) => 4.4 + 1.4 * Math.sin(2 * Math.PI * 2 * s + 0.2) + 0.7 * Math.sin(2 * Math.PI * 5 * s + 1.0),
+  sections: [
+    { from: 0.0, to: 0.12, surf: 'asphalt' }, { from: 0.12, to: 0.3, surf: 'dirt' }, { from: 0.3, to: 0.45, surf: 'sand' },
+    { from: 0.45, to: 0.6, surf: 'dirt' }, { from: 0.6, to: 0.66, surf: 'mud' }, { from: 0.66, to: 0.82, surf: 'dirt' }, { from: 0.82, to: 1.0, surf: 'asphalt' },
+  ],
+  loops: ({ straightNear }) => [{ s: straightNear(0.855, 16, 0.02) }],
+  features(T) {
+    const { JUMP, feat } = T;
+    return [...JUMP(0.285, 2.4, 9), feat(0.66, 'whoops', { kind: 'whoops', len: 24, w: 11, amp: 0.55, wave: 4 })];
+  },
+  walls({ W }) {
+    W.fork(0.165, 52, -1, 'stone', 0.6);
+    W.island(0.50, 32, 'stone', -1);
+    W.corridor(0.565, 28, 7.8, 'stone');
+    W.barrels(0.13, 1, 3); W.tnt(0.46, 2); W.crates(0.89, -1, 3);
+    for (const [a, o, l] of [[0.03, 0, 8], [0.34, 0, 8], [0.77, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.40, 3, 9, 5); W.oil(0.31, -3, 10, 5);
+    for (const [a, o] of [[0.02, 0], [0.12, 0], [0.26, 0], [0.37, 0], [0.47, 0], [0.62, 0], [0.74, 0], [0.80, 0], [0.95, 0]]) W.pickup(a, o);
+  },
+  hazards({ sampleAt, add }) {
+    // rocks drop from the ceiling on a fixed rhythm; a growing shadow shows where
+    const spec = [[0.09, 3, 0], [0.34, -3, 2], [0.43, 2.5, 4], [0.69, -2, 1], [0.745, 3, 3.5], [0.915, -2.5, 5]];
+    for (const [s, off, o] of spec) add({ kind: 'stalactite', ...roadPoint(sampleAt, s, off), r: 2.8, period: 7, warn: 4, offset: o });
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(51); const out = [];
+    for (let i = 0; i < 30; i++) {
+      const s = rand(); const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
+      const p = sampleAt(s); if (s < 0.02 || s > 0.98) continue;
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+// ---------------------------------------------------------------- 6. Magma Peak (lava, geysers, embers)
+const MAGMA_DEF = {
+  id: 'magma', name: 'Magma Peak',
+  theme: { a: [0.2, 0.17, 0.17], b: [0.16, 0.13, 0.13], edge: [0.38, 0.2, 0.14], far: [0.12, 0.08, 0.08], dirt: [0.32, 0.22, 0.18], rut: [0.24, 0.16, 0.13], sand: [0.45, 0.42, 0.42], sky: 'volcano', wall: [0.3, 0.2, 0.2] },
+  peaks: 16, peakType: 'cone', scenery: ['stalagmite', 'stalagmite'], sceneryCount: 220,
+  env: { weather: 'embers', breeze: { x: 3, z: 0 }, look: { sky: 'volcano', fog: ['#4a1a12', 25, 125], hemi: ['#ff8a50', '#3a0e08', 1.1], sun: ['#ff9a60', 2.0, -6, 8, 6] } },
+  ctrl() {
+    const ctrl = [];
+    for (let k = 0; k < 20; k++) {
+      const th = (2 * Math.PI * k) / 20;
+      const r = 1 + 0.08 * Math.sin(3 * th + 2.0) + 0.05 * Math.sin(5 * th + 0.3);
+      ctrl.push({ x: 112 * Math.cos(th) * r, z: 100 * Math.sin(th) * r });
+    }
+    return ctrl;
+  },
+  elevation: (s) => 4.8 + 1.5 * Math.sin(2 * Math.PI * s + 1.4) + 0.8 * Math.sin(2 * Math.PI * 4 * s + 0.3),
+  sections: [
+    { from: 0.0, to: 0.14, surf: 'asphalt' }, { from: 0.14, to: 0.44, surf: 'dirt' }, { from: 0.44, to: 0.54, surf: 'asphalt' },
+    { from: 0.54, to: 0.68, surf: 'sand' }, { from: 0.68, to: 0.9, surf: 'dirt' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
+  ],
+  loops: ({ straightNear }) => [{ s: straightNear(0.475, 16, 0.02) }],
+  features(T) {
+    const { JUMP, feat } = T;
+    return [...JUMP(0.20, 2.4, 9), feat(0.775, 'whoops', { kind: 'whoops', len: 26, w: 11, amp: 0.55, wave: 4.2 })];
+  },
+  walls({ W }) {
+    W.fork(0.075, 52, 1, 'stone', 0.6);
+    W.island(0.70, 32, 'stone', 1);
+    W.corridor(0.94, 24, 7.8, 'stone');
+    W.lava(0.30, 3, 12, 5); W.lava(0.865, 3, 12, 5); W.lava(0.89, -3, 12, 5);
+    W.barrels(0.755, -1, 3); W.tnt(0.65, 2); W.crates(0.51, 1, 3);
+    for (const [a, o, l] of [[0.03, 0, 8], [0.39, 0, 8], [0.96, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.58, 3, 9, 5); W.oil(0.36, -3, 10, 5);
+    for (const [a, o] of [[0.02, 0], [0.065, 0], [0.18, 0], [0.26, 0], [0.34, 0], [0.45, 0], [0.62, 0], [0.665, 0], [0.76, 0], [0.80, 0], [0.915, 0]]) W.pickup(a, o);
+  },
+  hazards({ sampleAt, add }) {
+    // geysers beside the racing line: erupt, then rest; the bubbling is the warning
+    const spec = [[0.22, 4, 0], [0.34, -4, 3], [0.62, 4, 5], [0.79, -4, 2], [0.865, 4, 6]];
+    for (const [s, off, o] of spec) add({ kind: 'geyser', ...roadPoint(sampleAt, s, off), r: 3.0, period: 8, warn: 3, dur: 1.6, offset: o });
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(61); const out = [];
+    for (let i = 0; i < 30; i++) {
+      const s = rand(); const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
+      const p = sampleAt(s); if (s < 0.02 || s > 0.98) continue;
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF)];
 export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => TRACKS.some((t) => t.id === id);
