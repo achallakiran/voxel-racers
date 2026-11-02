@@ -644,7 +644,7 @@ function makeTrackColor(T) {
     if (nearRoad) c = th.edge;                    // dusty road edge
     if (smp.ad > T.BARRIER + 4) c = th.far;
   }
-  const k = j * (0.9 + Math.min(1, h * 0.012));
+  const k = j * (0.9 + Math.min(1, h * 0.012)) * (T.shade ? T.shade(x, z) : 1);   // a stage can shade its ground (Moon craters)
   return [c[0] * k, c[1] * k, c[2] * k];
   };
 }

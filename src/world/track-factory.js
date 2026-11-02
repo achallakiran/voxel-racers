@@ -464,7 +464,7 @@ export function makeTrack(def) {
   }
 
   return {
-    id: def.id, name: def.name, theme: def.theme, env: ENV, STRUCTURES: def.structures || [], ROAD_HALF, SHOULDER, BARRIER,
+    id: def.id, name: def.name, theme: def.theme, env: ENV, STRUCTURES: def.structures || [], shade: def.shade || null, ROAD_HALF, SHOULDER, BARRIER,
     LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, PICKUPS, ZONES, LOOPS, LANES,
     nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear,
     sceneryLayout, barrierLayout, startPose, gridPose, terrain, freshTerrain, featureHeightAt: featureHeight,

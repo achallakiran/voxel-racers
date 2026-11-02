@@ -379,7 +379,7 @@ const moonP = (u) => {
   const weave = 4.2 * Math.sin(u * Math.PI * 2 * 5 + 0.6) * (z < 0 ? 1 : -1) * Math.min(1, Math.max(0, (MOON_HALF - Math.abs(x)) / 40 + 0.15));
   return [x, z + weave];
 };
-const moonDome = () => 7;    // flat base level; the ball itself does the curving
+const moonDome = () => 10;    // flat base level; the ball itself does the curving
 // craters: { x, z, r, d } - a bowl with a raised rim. Big ones sit ON the road (the road dips through them and climbs out),
 // huge ones sit beside it, and two more fill the infield.
 const MOON_CRATERS = [];
@@ -390,7 +390,7 @@ const MOON_CRATERS = [];
     const nx = tz / l; const nz = -tx / l; const sgn = (nx * x + nz * z) >= 0 ? 1 : -1;
     MOON_CRATERS.push({ x: x + nx * sgn * off, z: z + nz * sgn * off, r, d });
   };
-  for (const [u, r, d] of [[0.075, 20, 5.0], [0.685, 24, 6.0], [0.94, 14, 3.4], [0.43, 12, 3.0]]) at(u, 0, r, d);   // on the road
+  for (const [u, r, d] of [[0.075, 22, 7.0], [0.685, 26, 8.0], [0.94, 16, 5.0], [0.43, 13, 3.6]]) at(u, 0, r, d);   // on the road
   // the bowl wall rises just behind the barriers and the rim peak (1.1 r) stays beyond them: centre at 14 + 1.15 r
   for (const [u, r] of [[0.03, 26], [0.12, 32], [0.21, 24], [0.30, 34], [0.37, 28], [0.46, 30], [0.56, 34], [0.65, 26], [0.75, 32], [0.84, 28], [0.92, 34]]) at(u, 14 + 1.15 * r, r, r * 0.2);
   MOON_CRATERS.push({ x: 48, z: 0, r: 11, d: 3.0 }, { x: -48, z: 0, r: 11, d: 3.0 });                     // infield
@@ -405,17 +405,28 @@ function moonGround(x, z) {
   }
   return Math.max(0.3, h);
 }
+// ground colour for the craters: dark floors with faint rings, a bright raised rim, so a crater reads from a long way off
+function moonShade(x, z) {
+  let k = 1;
+  for (const c of MOON_CRATERS) {
+    const t = Math.hypot(x - c.x, z - c.z) / c.r;
+    if (t < 1) { k *= 1 - 0.42 * Math.pow(1 - t * t, 0.7) + 0.05 * Math.sin(t * 16) * (1 - t); }
+    else if (t < 1.5) k *= 1 + 0.32 * Math.exp(-(((t - 1.12) / 0.16) ** 2));
+  }
+  return k;
+}
 const MOON_DEF = {
   id: 'moon', name: 'Moon Crater',
   theme: { a: [0.56, 0.56, 0.59], b: [0.5, 0.5, 0.54], edge: [0.68, 0.68, 0.7], far: [0.38, 0.38, 0.42], dirt: [0.62, 0.62, 0.65], rut: [0.5, 0.5, 0.54], sand: [0.72, 0.72, 0.74], sky: 'space', pit: [0.3, 0.3, 0.34], wall: [0.45, 0.45, 0.5] },
   scenery: ['moonrock', 'moonrock', 'moonrock', 'moonrock', 'moonrock', 'moonrock', 'lander', 'dish'], sceneryCount: 170,
-  env: { ring: { a: '#d5dcec', b: '#a9b4cc', rail1: '#4cf0ff', rail2: '#17323a', glow: '#0c4a58' }, planet: { R: MOON_R }, gravity: 8, elevRange: 10, weather: null, look: { sky: 'space', fog: ['#03040a', 160, 460], hemi: ['#7a88b8', '#2c2c34', 0.75], sun: ['#fff6e0', 3.6, -14, 7, 9], sunWorld: MOON_SUN, earthWorld: MOON_EARTH, earthshine: ['#6f9cff', 0.9] } },
+  env: { openRoad: true, ring: { a: '#d5dcec', b: '#a9b4cc', rail1: '#4cf0ff', rail2: '#17323a', glow: '#0c4a58' }, planet: { R: MOON_R }, gravity: 8, elevRange: 14, weather: null, look: { sky: 'space', fog: ['#03040a', 160, 460], hemi: ['#7a88b8', '#2c2c34', 0.75], sun: ['#fff6e0', 3.6, -14, 7, 9], sunWorld: MOON_SUN, earthWorld: MOON_EARTH, earthshine: ['#6f9cff', 0.9] } },
   ctrl() {
     const ctrl = [];
     for (let k = 0; k < 36; k++) { const [x, z] = moonP(k / 36); ctrl.push({ x, z }); }
     return ctrl;
   },
   ground: moonGround,
+  shade: moonShade,
   elevation: (s, p) => moonGround(p.x, p.z),
   sections: [
     { from: 0.0, to: 0.1, surf: 'asphalt' }, { from: 0.1, to: 0.45, surf: 'dirt' }, { from: 0.45, to: 0.6, surf: 'sand' },
@@ -427,9 +438,6 @@ const MOON_DEF = {
     return [...JUMP(0.275, 0.6, 6), feat(0.33, 'whoops', { kind: 'whoops', len: 24, w: 11, amp: 0.5, wave: 4.5 })];
   },
   walls({ W }) {
-    W.fork(0.17, 52, 1, 'stone', 0.6);
-    W.island(0.74, 32, 'stone', -1);
-    W.corridor(0.80, 28, 7.8, 'stone');
     W.barrels(0.15, 1, 3); W.tnt(0.615, 2); W.crates(0.565, -1, 3);
     for (const [a, o, l] of [[0.04, 0, 8], [0.40, 0, 8], [0.87, 0, 8]]) W.pad(a, o, l, 5.5);
     W.goo(0.63, 3, 9, 5); W.oil(0.46, -3, 10, 5);

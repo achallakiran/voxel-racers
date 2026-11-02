@@ -317,3 +317,7 @@ Mobile frame-rate tuning, LOD, final balance.
 - 10c DONE: a fixed Sun (voxel disc with glow) in the sky: the lap starts in daylight, crosses the terminator, finishes on the night side lit
   by earthshine; meteor streaks cross the sky (visual only).
 - 10d: tests + smoke + push.
+
+### Phase 10e - Moon open road (DONE)
+- Moon has no median/divider walls (`env.openRoad`); craters on the track are deeper and shaded dark (`T.shade` hook) so they read from the chase camera.
+- Dividers were never the intended fork: a real two-parallel-road fork is queued (see next steps).
