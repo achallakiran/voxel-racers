@@ -419,7 +419,7 @@ const MOON_DEF = {
   id: 'moon', name: 'Moon Crater',
   theme: { a: [0.56, 0.56, 0.59], b: [0.5, 0.5, 0.54], edge: [0.68, 0.68, 0.7], far: [0.38, 0.38, 0.42], dirt: [0.62, 0.62, 0.65], rut: [0.5, 0.5, 0.54], sand: [0.72, 0.72, 0.74], sky: 'space', pit: [0.3, 0.3, 0.34], wall: [0.45, 0.45, 0.5] },
   scenery: ['moonrock', 'moonrock', 'moonrock', 'moonrock', 'moonrock', 'moonrock', 'lander', 'dish'], sceneryCount: 170,
-  env: { openRoad: true, ring: { a: '#d5dcec', b: '#a9b4cc', rail1: '#4cf0ff', rail2: '#17323a', glow: '#0c4a58' }, planet: { R: MOON_R }, gravity: 8, elevRange: 14, weather: null, look: { sky: 'space', fog: ['#03040a', 160, 460], hemi: ['#7a88b8', '#2c2c34', 0.75], sun: ['#fff6e0', 3.6, -14, 7, 9], sunWorld: MOON_SUN, earthWorld: MOON_EARTH, earthshine: ['#6f9cff', 0.9] } },
+  env: { openRoad: true, camAim: { yaw: 0, lift: 0 }, ring: { a: '#d5dcec', b: '#a9b4cc', rail1: '#4cf0ff', rail2: '#17323a', glow: '#0c4a58' }, planet: { R: MOON_R }, gravity: 8, elevRange: 14, weather: null, look: { sky: 'space', fog: ['#03040a', 160, 460], hemi: ['#7a88b8', '#2c2c34', 0.75], sun: ['#fff6e0', 3.6, -14, 7, 9], sunWorld: MOON_SUN, earthWorld: MOON_EARTH, earthshine: ['#6f9cff', 0.9] } },
   ctrl() {
     const ctrl = [];
     for (let k = 0; k < 36; k++) { const [x, z] = moonP(k / 36); ctrl.push({ x, z }); }

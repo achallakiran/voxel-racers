@@ -342,3 +342,6 @@ Mobile frame-rate tuning, LOD, final balance.
 
 ### Phase 11d - Bigger patterned Saturn, camera back (DONE)
 - Saturn r 112 with a banded palette, storm ovals and a polar hexagon; road radius 160 (disc r 124..194); loop vmin 10 (low gravity); camera on this stage pulled further back. Awaiting user feedback on camera distance on the live page.
+
+### Phase 11e - Moon camera (DONE)
+- The Moon follow camera now turns with the truck (`env.camAim` yaw 0), like Saturn, instead of a fixed world angle. The fixed isometric view is still available from the camera icon (iso-fixed).
