@@ -123,7 +123,7 @@ Order: 6a -> 6b -> 6c -> 6d -> 6e. Each step ends with tests, a push to main and
 - Rivals choose gap or detour by style and speed; one shortcut per track that needs nitro.
 - Tests: forks rejoin with correct progress and checkpoints, trench jump clears at normal speed and nitro, a miss respawns correctly, detour lane completable by every truck, AI never stuck, minimap draws both routes.
 
-**Phase 7 — Fix pass, difficulty, football, and very different stages** (7a, 7b, 7c DONE, rest planned; goes before 5d)
+**Phase 7 — Fix pass, difficulty, football, and very different stages** (7a, 7b, 7c, 7d DONE, rest planned; goes before 5d)
 Your feedback: still overpowered, loop pillars and side view, easy to drive round obstacles, arena hits, football missing, stages too alike.
 
 **7a — Race fixes + difficulty setting**
