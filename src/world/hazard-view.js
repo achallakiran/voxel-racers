@@ -4,7 +4,7 @@ import { avalanchePhase, avalancheWarning, avalancheBand, geyserState, stalactit
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const mat = (c, basic = false) => (basic ? new THREE.MeshBasicMaterial({ color: c, fog: false }) : new THREE.MeshLambertMaterial({ color: c }));
-const M = { snow: mat('#f4f8ff'), snowShade: mat('#cfdcee'), flag: mat('#ff3b30', true), rock: mat('#4a4650'), lava: mat('#ff7a1a', true), lavaHot: mat('#ffd24a', true), shadow: mat('#2a0a0a', true), stone: mat('#6a6470'), dust: mat('#cfc6b8') };
+const M = { snow: mat('#f4f8ff'), snowShade: mat('#cfdcee'), flag: mat('#ff3b30', true), rock: mat('#4a4650'), ice1: mat('#c9d6e8'), ice2: mat('#8fa4c4'), ice3: mat('#e9eef8'), blob: mat('#0a0d18', true), lava: mat('#ff7a1a', true), lavaHot: mat('#ffd24a', true), shadow: mat('#2a0a0a', true), stone: mat('#6a6470'), dust: mat('#cfc6b8') };
 
 function box(group, m) { const b = new THREE.Mesh(BOX, m); b.visible = false; group.add(b); return b; }
 const place = (b, x, y, z, sx, sy, sz) => { b.visible = true; b.position.set(x, y + sy / 2, z); b.scale.set(sx, sy, sz); };
@@ -27,6 +27,9 @@ export function createHazardView(parent) {
         it.ring = Array.from({ length: 8 }, () => box(group, M.rock));
         it.col = Array.from({ length: 12 }, (_, i) => box(group, i % 2 ? M.lava : M.lavaHot));
         it.puff = Array.from({ length: 6 }, () => box(group, M.lava));
+      } else if (h.kind === 'drifter') {
+        it.shadow = box(group, M.blob);
+        it.chunks = [box(group, M.ice1), box(group, M.ice2), box(group, M.ice3), box(group, M.ice2), box(group, M.ice1)];
       } else if (h.kind === 'stalactite') {
         it.shadow = box(group, M.shadow);
         it.spike = [box(group, M.stone), box(group, M.stone), box(group, M.rock)];
@@ -41,7 +44,7 @@ export function createHazardView(parent) {
     const time = terrain.time || 0;
     for (const it of items) {
       const h = it.h;
-      for (const b of [...(it.blocks || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
+      for (const b of [...(it.blocks || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.chunks || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
       if (h.kind === 'avalanche') {
         const k = avalanchePhase(h, time);
         const warn = avalancheWarning(h, time);
@@ -59,6 +62,17 @@ export function createHazardView(parent) {
             const hh = 1.4 + o.r2 * 2.2 + Math.sin(time * 9 + o.r * 20) * 0.4;
             place(o.b, x, h.y0, z, 2.6, hh, 2.6);
           }
+        }
+      } else if (h.kind === 'drifter') {
+        const bob = 0.7 + 0.3 * Math.sin(time * 1.9 + h.phase * 2); const spin = time * 0.5 + h.phase;
+        place(it.shadow, h.x, h.y0 + 0.04, h.z, h.r * 2.1, 0.04, h.r * 2.1);          // the shadow on the ice marks where it is
+        const r = h.r;
+        const parts = [[0, 0, 0, 1.7, 1.3, 1.5], [0.55, 0.9, 0.1, 1.1, 1.0, 1.0], [-0.65, 0.2, 0.5, 0.8, 0.8, 0.8], [0.1, -0.1, -0.7, 0.7, 0.7, 0.8], [-0.3, 1.2, -0.2, 0.6, 0.6, 0.6]];
+        for (let i = 0; i < parts.length; i++) {
+          const [px, py, pz, sx, sy, sz] = parts[i];
+          const c = Math.cos(spin); const sn = Math.sin(spin);
+          place(it.chunks[i], h.x + (px * c - pz * sn) * r * 0.75, h.y0 + bob + 0.55 + py * r * 0.7, h.z + (px * sn + pz * c) * r * 0.75, sx * r * 0.95, sy * r * 0.95, sz * r * 0.95);
+          it.chunks[i].rotation.y = spin * (1 + i * 0.15);
         }
       } else if (h.kind === 'geyser') {
         const g = geyserState(h, time);

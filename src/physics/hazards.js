@@ -1,6 +1,7 @@
 // Timed stage hazards. Everything is a pure function of the stage clock `terrain.time`, so physics, AI, the renderer
 // and the tests all agree. Hazard kinds:
 //   avalanche  a wall of snow sweeping across a stretch of road from one side, once per `period` seconds
+//   drifter  a floating rock that slides across the road on a fixed path (a moving solid obstacle)
 //   yak        a slow animal walking back and forth across the road (a moving solid obstacle, see tickHazards)
 // A hazard sits on the road frame of its stage: (x,z) centre, (tx,tz) direction of travel, `len` along, `w` across.
 
@@ -92,6 +93,17 @@ export function tickHazards(terrain, dt) {
   if (!terrain.hazards) return;
   terrain.time = (terrain.time || 0) + dt;
   for (const h of terrain.hazards) {
+    if (h.kind === 'drifter') {
+      // a floating rock sliding across the road on a fixed sine path; its solid body is an obstacle that moves with it
+      const u = Math.sin((terrain.time / h.period) * Math.PI * 2 + h.phase);
+      h.x = h.cx + h.tz * h.range * u; h.z = h.cz - h.tx * h.range * u;
+      h.u = u; h.y0 = terrain.heightAt ? terrain.heightAt(h.x, h.z) : (h.y0 || 0);
+      if (!h.obstacle || h.obstacle.owner !== terrain) {
+        h.obstacle = { type: 'drifter', owner: terrain, x: h.x, z: h.z, r: h.r, h: h.top, y0: h.y0 };
+        terrain.obstacles.push(h.obstacle);
+      } else { h.obstacle.x = h.x; h.obstacle.z = h.z; h.obstacle.y0 = h.y0; }
+      continue;
+    }
     if (h.kind !== 'yak') continue;
     const u = Math.sin((terrain.time / h.period) * Math.PI * 2 + h.phase);     // -1..1 across the road
     h.x = h.cx + h.tz * h.range * u; h.z = h.cz - h.tx * h.range * u;

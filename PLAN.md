@@ -321,3 +321,11 @@ Mobile frame-rate tuning, LOD, final balance.
 ### Phase 10e - Moon open road (DONE)
 - Moon has no median/divider walls (`env.openRoad`); craters on the track are deeper and shaded dark (`T.shade` hook) so they read from the chase camera.
 - Dividers were never the intended fork: a real two-parallel-road fork is queued (see next steps).
+
+## Phase 11 - Saturn's Rings (DONE locally, pushed after tests + smoke)
+- New stage `saturn`: rounded-square lap on a flat ring plane (no planet warp), gravity 9, open road (no dividers), icy sections, a gold-lit loop, ice chunk / ice shard scenery.
+- Giant banded Saturn with tilted ring system in the sky (`look.saturn`), plus a voxel sun disc (`look.sunDisc`); Earth/Sun furniture is now chosen per stage look.
+- New hazard kind `drifter`: floating rock sliding across the road on a fixed sine path; solid obstacle that moves with it (created lazily per race, deterministic from the stage clock); rendered with a ground shadow.
+- Fixed: the flat-stage sun mesh no longer stays hidden after visiting a planet stage.
+- Tests: roster 8, Saturn set pieces, drifter motion/solidity/fresh-race reset, every truck laps at steady + aggressive.
+- Parked by request: Skull neon tunnel. Queue: real two-road forks, Dragon's Spine, Magma climb, Sea Bridge, Football, Neon Night City.

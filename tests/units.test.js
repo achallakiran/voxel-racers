@@ -1262,8 +1262,8 @@ import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 7);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon']);
+  assert.equal(TRACKS.length, 8);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -2176,4 +2176,70 @@ test('10: the Moon set pieces: big craters on the road, huge ones beside it, a l
   // the huge beside-the-road craters are real terrain: ground well below the base level just behind the barriers
   let deep = 0; for (let i = 0; i < 100; i++) { const p = T.sampleAt(i / 100); for (const side of [-1, 1]) { const x = p.x + p.tz * side * 55; const z = p.z - p.tx * side * 55; if (T.heightAt(x, z) < base - 3) deep++; } }
   assert.ok(deep >= 6, `huge craters beside the road (${deep})`);
+});
+
+
+// ---------------------------------------------------------------- phase 11: Saturn's Rings (drifting rocks, ring road, Saturn in the sky)
+test('11: Saturn has an open ring road, low gravity, a Saturn sky and no divider walls', () => {
+  const T = getTrackById('saturn');
+  assert.equal(T.name, "Saturn's Rings");
+  assert.ok(T.env.openRoad && T.env.gravity < 14 && T.env.look.sky === 'space' && T.env.look.saturn, 'open road, low gravity, space sky with Saturn');
+  assert.ok(!T.env.planet, 'a flat ring plane (no planet warp)');
+  assert.ok(T.WALLS.length < 150, 'no median/divider walls');
+  const kinds = new Set(T.sceneryLayout().map((x) => x.type));
+  assert.ok(kinds.has('icechunk') && kinds.has('iceshard'), 'ice scenery');
+});
+
+test('11: drifting rocks slide across the road on a fixed path and are solid while they move', () => {
+  const T = getTrackById('saturn');
+  const rocks = T.terrain.hazards.filter((h) => h.kind === 'drifter');
+  assert.ok(rocks.length >= 8, `several drifting rocks (${rocks.length})`);
+  const terr = T.freshTerrain();
+  const h = terr.hazards.find((q) => q.kind === 'drifter');
+  const base = terr.obstacles.length;
+  const seen = new Set(); let minU = 1; let maxU = -1;
+  for (let i = 0; i < 600; i++) {
+    tickHazards(terr, 1 / 60);
+    seen.add(Math.round(h.x));
+    minU = Math.min(minU, h.u); maxU = Math.max(maxU, h.u);
+    assert.ok(h.obstacle && h.obstacle.x === h.x && h.obstacle.z === h.z, 'the solid body follows the rock');
+    const lat = (h.x - h.cx) * h.tz - (h.z - h.cz) * h.tx;
+    assert.ok(Math.abs(Math.abs(lat) - h.range * Math.abs(h.u)) < 1e-6, 'moves across the road along its path');
+  }
+  assert.ok(terr.obstacles.length === base + terr.hazards.filter((q) => q.kind === 'drifter').length, 'each rock adds exactly one obstacle');
+  assert.ok(minU < -0.95 && maxU > 0.95, 'sweeps the full width of its path');
+  assert.ok(seen.size > 6, 'actually moves');
+  const again = T.freshTerrain();
+  assert.equal(again.hazards.find((q) => q.kind === 'drifter').obstacle, undefined, 'a fresh race starts clean');
+});
+
+test('11: the moving rocks never close the road: a gap of at least a truck width is always open', () => {
+  const T = getTrackById('saturn');
+  const terr = T.freshTerrain();
+  for (const h of terr.hazards.filter((q) => q.kind === 'drifter')) {
+    assert.ok(h.range + h.r < T.ROAD_HALF, 'the rock stays on the road');
+    assert.ok(2 * T.ROAD_HALF - 2 * (h.range + h.r) > 2.2 || h.range * 2 > h.r * 2 + 3, 'a lane is always free');
+  }
+});
+
+test('11: every truck laps Saturn at both driving styles, rocks and all', () => {
+  const T = getTrackById('saturn');
+  const api = apiFor(T);
+  const wrap = (a, b) => { let d = b - a; if (d < -0.5) d += 1; if (d > 0.5) d -= 1; return d; };
+  for (const style of ['steady', 'aggressive']) {
+    for (const tk of TRUCKS) {
+      const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+      const terr = T.freshTerrain(); const sp = T.gridPose(1);
+      const v = createVehicle(sp.x, sp.z, sp.heading, terr, tune.ride); v.nitro = 0.6;
+      const d = createDriver({ skill: 0.95, lane: 2, style });
+      let acc = 0; let prev = T.nearest(v.x, v.z).s;
+      for (let i = 0; i < 16000 && acc < 1; i++) {
+        const inp = driverInput(d, v, tune, api, { phase: 'racing', pickups: terr.pickups, props: terr.props, playerAcc: 0, myAcc: acc }, 1 / 60);
+        tickPickups(terr, 1 / 60); tickHazards(terr, 1 / 60);
+        for (const e of stepVehicle(v, inp, terr, tune, 1 / 60)) if (e.type === 'smash') { const k = terr.obstacles.indexOf(e.obj); if (k >= 0) terr.obstacles.splice(k, 1); }
+        const n = T.nearest(v.x, v.z); acc += wrap(prev, n.s); prev = n.s;
+      }
+      assert.ok(acc >= 1, `${tk.id} (${style}) finished a lap on saturn (${acc.toFixed(2)})`);
+    }
+  }
 });

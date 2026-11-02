@@ -229,7 +229,7 @@ function buildSpace() {
   const halo = new THREE.Mesh(new THREE.SphereGeometry(16.6, 24, 14), new THREE.MeshBasicMaterial({ color: '#5aa8ff', transparent: true, opacity: 0.22, side: THREE.BackSide, fog: false, depthWrite: false }));
   halo.position.copy(earth.position);
   g.add(earth, halo);
-  g.userData.earth = earth;
+  g.userData.earth = earth; g.userData.earthSet = [earth, halo];
   // the Sun: a bright voxel disc with soft glow rings, facing the middle of the sky
   const sunG = new THREE.Group();
   const sunCubes = [];
@@ -245,6 +245,9 @@ function buildSpace() {
   sunG.position.set(MOON_SUN[0] * 108, MOON_SUN[1] * 108, MOON_SUN[2] * 108);
   sunG.lookAt(0, 0, 0);
   g.add(sunG);
+  g.userData.sunG = sunG;
+  g.userData.saturn = buildSaturn();
+  g.add(g.userData.saturn);
   // meteors: thin additive streaks that cross the sky (a small pool, recycled)
   const mGeo = new THREE.BoxGeometry(0.4, 0.4, 1, 1, 1, 6);
   {
@@ -259,6 +262,55 @@ function buildSpace() {
     g.add(m); meteors.push(m);
   }
   g.userData.meteors = meteors;
+  return g;
+}
+
+// Saturn: a banded gas giant with a broad ring system, hanging huge over the ring road. Lit from the Sun's side (baked into
+// vertex colours, so it needs no light and costs one draw call for the globe and one for the rings).
+export const SATURN_SUN = [-0.79, 0.4, 0.51];
+function buildSaturn() {
+  const g = new THREE.Group();
+  const R = 32;
+  const sg = new THREE.SphereGeometry(R, 40, 26);
+  const pos = sg.attributes.position; const col = new Float32Array(pos.count * 3);
+  const bands = [[0.93, 0.85, 0.66], [0.86, 0.74, 0.52], [0.95, 0.88, 0.7], [0.8, 0.66, 0.45], [0.9, 0.8, 0.6], [0.74, 0.6, 0.42], [0.88, 0.78, 0.58]];
+  const sd = new THREE.Vector3(...SATURN_SUN).normalize();
+  for (let i = 0; i < pos.count; i++) {
+    const nx = pos.getX(i) / R; const ny = pos.getY(i) / R; const nz = pos.getZ(i) / R;
+    const bi = Math.min(bands.length - 1, Math.floor(((ny + 1) / 2) * bands.length * 1.0 + Math.sin(ny * 25) * 0.18));
+    const b = bands[Math.max(0, bi)];
+    const light = Math.max(0.1, Math.min(1, 0.16 + 1.0 * (nx * sd.x + ny * sd.y + nz * sd.z)));
+    col[i * 3] = b[0] * light; col[i * 3 + 1] = b[1] * light; col[i * 3 + 2] = b[2] * light;
+  }
+  sg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const globe = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
+  // rings: concentric bands with the Cassini gap, darker where the planet's shadow falls across them
+  const rg = new THREE.RingGeometry(R * 1.35, R * 2.45, 96, 14);
+  const rp = rg.attributes.position; const rc = new Float32Array(rp.count * 3); const ra = new Float32Array(rp.count);
+  for (let i = 0; i < rp.count; i++) {
+    const x = rp.getX(i); const y = rp.getY(i); const d = Math.hypot(x, y) / R;
+    const t = (d - 1.35) / 1.1;
+    let k = 0.82 + 0.18 * Math.sin(d * 46) * Math.sin(d * 13 + 1);
+    let a = 0.92;
+    if (t > 0.52 && t < 0.6) a = 0.12;                  // the Cassini division
+    if (t < 0.14) { a = 0.45; k *= 0.8; }               // faint inner ring
+    if (t > 0.94) a = 0.4;
+    rc[i * 3] = 0.9 * k; rc[i * 3 + 1] = 0.82 * k; rc[i * 3 + 2] = 0.68 * k; ra[i] = a;
+  }
+  rg.setAttribute('color', new THREE.BufferAttribute(rc, 3));
+  const rm = new THREE.ShaderMaterial({
+    vertexColors: true, transparent: true, side: THREE.DoubleSide, depthWrite: false, fog: false,
+    vertexShader: 'attribute float alpha; varying vec3 vC; varying float vA; void main(){ vC = color; vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'varying vec3 vC; varying float vA; void main(){ gl_FragColor = vec4(vC, vA); }',
+  });
+  rg.setAttribute('alpha', new THREE.BufferAttribute(ra, 1));
+  const rings = new THREE.Mesh(rg, rm);
+  rings.rotation.x = -Math.PI / 2;
+  const tilt = new THREE.Group(); tilt.add(globe, rings); tilt.rotation.set(0.95, 0, -0.35);
+  g.add(tilt);
+  g.position.set(0.18 * 112, 0.30 * 112, -0.93 * 112);
+  g.userData.tilt = tilt;
+  g.visible = false;
   return g;
 }
 
@@ -720,6 +772,18 @@ function buildTrack(group, T) {
       trunks.push({ x: t.x - 1.7 * sc, y: t.y + 0.35 * sc, z: t.z + 0.9 * sc, sx: 1.1 * sc, sy: 0.7 * sc, sz: 1.0 * sc, color: g2.clone().multiplyScalar(0.9) });
       continue;
     }
+    if (t.type === 'icechunk') {
+      const ice = new THREE.Color('#cfdcf0').multiplyScalar(0.8 + t.tint * 0.3);
+      trunks.push({ x: t.x, y: t.y + 0.9 * sc, z: t.z, sx: 2.8 * sc, sy: 1.8 * sc, sz: 2.4 * sc, color: ice, rot: t.tint * 3 });
+      trunks.push({ x: t.x + 0.6 * sc, y: t.y + 2.1 * sc, z: t.z - 0.2 * sc, sx: 1.7 * sc, sy: 1.5 * sc, sz: 1.6 * sc, color: ice.clone().multiplyScalar(1.12), rot: t.tint * 3 });
+      trunks.push({ x: t.x - 1.8 * sc, y: t.y + 0.5 * sc, z: t.z + 0.8 * sc, sx: 1.2 * sc, sy: 1.0 * sc, sz: 1.1 * sc, color: ice.clone().multiplyScalar(0.85) });
+      continue;
+    }
+    if (t.type === 'iceshard') {
+      const c = new THREE.Color(['#9fd6ff', '#cfe6ff', '#a4b6ff'][Math.floor(t.tint * 3) % 3]);
+      for (const [ox, oz, h, w] of [[0, 0, 6.0, 1.3], [1.1, 0.5, 3.6, 0.9], [-1.0, 0.6, 4.4, 1.0], [0.3, -1.0, 2.6, 0.8]]) leaves.push({ x: t.x + ox * sc, y: t.y + (h / 2) * sc, z: t.z + oz * sc, sx: w * sc, sy: h * sc, sz: w * sc, color: c });
+      continue;
+    }
     if (t.type === 'moonmount') {
       let y = t.y - 2;
       for (const [w, h, c] of [[20, 5, '#4a4a54'], [15, 5.5, '#5a5a66'], [10.5, 5, '#6e6e7a'], [6.5, 4.5, '#84848f'], [3.4, 3.5, '#a0a0aa']]) {
@@ -1138,8 +1202,8 @@ export function createWorld(scene, lights) {
     for (const [, pm] of planets) pm.visible = false;
     if (planet) planetFor(planet.R).visible = true;
     arena.ground.visible = !planet;
-    sunMesh.visible = !planet && sunMesh.visible;
     const look = racing ? { ...LOOK_DEFAULT, ...(env.look || {}) } : null;
+    sunMesh.visible = !planet && !(racing && look.sky === 'space');
     arena.clouds.visible = !(racing && look.sky === 'space');   // no clouds in the vacuum
     sunWorld = racing && look.sunWorld ? look.sunWorld : null; earthWorld = racing && look.earthWorld ? look.earthWorld : null;
     earthLight.intensity = racing && look.earthshine ? look.earthshine[1] : 0;
@@ -1147,6 +1211,13 @@ export function createWorld(scene, lights) {
     for (const [k, m] of skies) m.visible = false;
     if (racing) skyFor(SKY_STOPS[look.sky] || DAY, look.sky).visible = true;
     space.visible = racing && look.sky === 'space';
+    if (space.visible) {                         // each space stage shows its own sky furniture: Earth + Sun (Moon), or Saturn + Sun
+      for (const o of space.userData.earthSet) o.visible = !!look.earthWorld;
+      space.userData.saturn.visible = !!look.saturn;
+      const sd = look.sunWorld || look.sunDisc;
+      space.userData.sunG.visible = !!sd;
+      if (sd) { space.userData.sunG.position.set(sd[0] * 108, sd[1] * 108, sd[2] * 108); space.userData.sunG.lookAt(0, 0, 0); }
+    }
     snow.set(racing ? env.weather : null);
     weatherWind = env.breeze || env.wind || null;
     sandbox.visible = d && course === 'arena';
@@ -1197,7 +1268,8 @@ export function createWorld(scene, lights) {
     if (skyAnchor) for (const [, sk] of skies) sk.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z);
     if (space.visible) {
       if (skyAnchor) space.position.set(skyAnchor.x, skyAnchor.y, skyAnchor.z); else space.position.set(focus.x, 0, focus.z);
-      space.userData.earth.rotation.y += dt * 0.05;
+      if (space.userData.earth.visible) space.userData.earth.rotation.y += dt * 0.05;
+      if (space.userData.saturn.visible) space.userData.saturn.userData.tilt.rotation.y += dt * 0.02;
       if (skyAnchor && skyAnchor.f) animateMeteors(space.userData.meteors, dt, skyAnchor);
     }
     if (mode !== 'garage') {

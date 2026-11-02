@@ -455,6 +455,61 @@ const MOON_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF)];
+// ---------------------------------------------------------------- 8. Saturn's Rings (a lap round a ring of ice, under a giant Saturn)
+const SATURN_DEF = {
+  id: 'saturn', name: "Saturn's Rings",
+  theme: { a: [0.86, 0.82, 0.74], b: [0.8, 0.76, 0.68], edge: [0.97, 0.94, 0.86], far: [0.46, 0.42, 0.4], dirt: [0.7, 0.66, 0.6], rut: [0.58, 0.54, 0.5], sand: [0.9, 0.86, 0.78], sky: 'space', wall: [0.6, 0.64, 0.74] },
+  scenery: ['icechunk', 'icechunk', 'iceshard', 'iceshard', 'moonrock'], sceneryCount: 260,
+  env: { openRoad: true, ring: { a: '#e8f2ff', b: '#bcd2f0', rail1: '#ffd36a', rail2: '#3a3020', glow: '#5a4410' }, gravity: 9, weather: null,
+    look: { sky: 'space', saturn: true, sunDisc: [-0.79, 0.4, 0.51], fog: ['#05060f', 150, 420], hemi: ['#9fb4e8', '#3a3228', 0.85], sun: ['#fff0d8', 3.2, -14, 7, 9] } },
+  ctrl() {
+    const ctrl = [];
+    // a rounded-square lap: broad enough that Saturn swings round the sky as you go
+    for (let k = 0; k < 28; k++) {
+      const th = (2 * Math.PI * k) / 28;
+      const c = Math.cos(th); const sn = Math.sin(th); const n = 2.7;
+      const r = 1 + 0.05 * Math.sin(3 * th + 0.6);
+      ctrl.push({ x: 128 * Math.sign(c) * Math.pow(Math.abs(c), 2 / n) * r, z: 94 * Math.sign(sn) * Math.pow(Math.abs(sn), 2 / n) * r });
+    }
+    return ctrl;
+  },
+  elevation: (s) => 4.6 + 1.5 * Math.sin(2 * Math.PI * 3 * s + 0.5) + 0.8 * Math.sin(2 * Math.PI * 7 * s + 1.4),
+  sections: [
+    { from: 0.0, to: 0.1, surf: 'asphalt' }, { from: 0.1, to: 0.3, surf: 'dirt' }, { from: 0.3, to: 0.38, surf: 'ice' },
+    { from: 0.38, to: 0.6, surf: 'dirt' }, { from: 0.6, to: 0.7, surf: 'sand' }, { from: 0.7, to: 0.78, surf: 'ice' },
+    { from: 0.78, to: 0.9, surf: 'dirt' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
+  ],
+  loops: ({ straightNear }) => [{ s: straightNear(0.68, 16, 0.02), vmin: 14 }],
+  features(T) {
+    const { JUMP, feat } = T;
+    return [...JUMP(0.2, 0.8, 7), feat(0.865, 'whoops', { kind: 'whoops', len: 24, w: 11, amp: 0.5, wave: 4.5 })];
+  },
+  walls({ W }) {
+    W.barrels(0.5, 1, 3); W.tnt(0.33, 2); W.crates(0.42, -1, 3);
+    for (const [a, o, l] of [[0.04, 0, 8], [0.3, 0, 8], [0.8, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.58, 3, 9, 5); W.oil(0.93, -3, 10, 5);
+    for (const [a, o] of [[0.03, 0], [0.13, 0], [0.24, 0], [0.34, 0], [0.47, 0], [0.56, 0], [0.64, 0], [0.74, 0], [0.84, 0], [0.95, 0]]) W.pickup(a, o);
+  },
+  hazards({ sampleAt, add }) {
+    // floating rocks that slide back and forth across the road; the shadow on the ice shows where each one is
+    const spec = [[0.085, 0], [0.15, 1.6], [0.27, 3.1], [0.365, 0.8], [0.455, 2.4], [0.545, 4.0], [0.62, 1.1], [0.595, 2.9], [0.83, 0.3], [0.915, 1.9]];
+    for (const [s, ph] of spec) {
+      const p = sampleAt(s);
+      add({ kind: 'drifter', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 4.4, r: 1.7, top: 3.4, period: 5.5, phase: ph });
+    }
+  },
+  obstacles(T) {
+    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const rand = rng(53); const out = [];
+    for (let i = 0; i < 30; i++) {
+      const s = rand(); const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
+      const p = sampleAt(s); if (s < 0.02 || s > 0.98) continue;
+      out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
+    }
+    return out;
+  },
+};
+
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF)];
 export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => TRACKS.some((t) => t.id === id);
