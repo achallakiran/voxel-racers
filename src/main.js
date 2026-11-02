@@ -1032,6 +1032,7 @@ function start() {
     camFov += (g.fov + nitroPunch * feel.nitro.fov - camFov) * (1 - Math.exp(-4 * dt));
     shake *= Math.exp(-6 * dt);
     camera.position.copy(camPos);
+    if (window.__voxelRacers && window.__voxelRacers.camOverride) { const o = window.__voxelRacers.camOverride; camera.position.set(o.pos[0], o.pos[1], o.pos[2]); camLook.set(o.look[0], o.look[1], o.look[2]); }   // debug/screenshot aid
     if (shake > 0.01) camera.position.add(tmp.set((rand() - 0.5) * shake * 0.6, (rand() - 0.5) * shake * 0.6, (rand() - 0.5) * shake * 0.6));
     camera.lookAt(camLook);
     if (Math.abs(camera.fov - camFov) > 0.01) { camera.fov = camFov; camera.updateProjectionMatrix(); }

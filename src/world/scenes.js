@@ -10,6 +10,7 @@ import {
 import { loopWorld } from '../physics/loop.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
 import { createHazardView } from './hazard-view.js';
+import { skullCave } from './structures.js';
 import {
   ARENA, CROWD_COLORS, SKIN_COLORS, tireWallLayout, standsLayout, towersLayout,
   mesasLayout, cloudsLayout, dustLayout, rampLayout, carPileLayout,
@@ -693,6 +694,17 @@ function buildTrack(group, T) {
   }
   instanced(group, trunks, new THREE.MeshLambertMaterial(), { cast: true });
   instanced(group, leaves, new THREE.MeshLambertMaterial(), { cast: true });
+
+  // set pieces (the skull cave): bone and rock lit by the stage, glow parts self-lit
+  for (const st of T.STRUCTURES || []) {
+    if (st.type !== 'skullcave') continue;
+    const sc = skullCave(T, st);
+    const shade = (list, base) => list.map((b) => ({ ...b, color: new THREE.Color(base).multiplyScalar(b.tone || 1) }));
+    instanced(group, shade(sc.bone, '#e2dcc8'), new THREE.MeshLambertMaterial({ emissive: '#34303e' }), { cast: true });
+    instanced(group, shade(sc.rock, '#6c6678'), new THREE.MeshLambertMaterial({ emissive: '#1a1622' }), { cast: true });
+    instanced(group, sc.dark.map((b) => ({ ...b, color: '#07050b' })), new THREE.MeshBasicMaterial(), { cast: false });
+    instanced(group, sc.glow, new THREE.MeshBasicMaterial({ fog: false }), { cast: false });
+  }
 
   // roadside rocks and tyre stacks (solid)
   const rocks = []; const stacks = []; const cars = [];

@@ -2038,3 +2038,28 @@ test('7d: Skull Cavern has falling rocks and a cave look; Magma Peak has lava, g
     assert.ok(l.off !== null && Math.sign(l.off) === -Math.sign(z.off), 'avoids lava');
   }
 });
+
+// ---------------------------------------------------------------- phase 8a: Skull Cavern cave set piece
+import { skullCave, SKULL } from '../src/world/structures.js';
+
+test('8a: the skull cave leaves the road, barriers and a truck-tall gap clear, and covers the road', () => {
+  const T = getTrackById('skull');
+  const spec = T.STRUCTURES.find((s) => s.type === 'skullcave');
+  assert.ok(spec && spec.s1 > spec.s0, 'skull stage declares a cave');
+  const parts = skullCave(T, spec);
+  assert.ok(parts.bone.length > 300 && parts.rock.length > 200 && parts.glow.length > 10 && parts.dark.length >= 6);
+  for (const list of [parts.bone, parts.rock]) for (const b of list) {
+    const n = T.nearest(b.x, b.z);
+    const bottom = b.y - b.sy / 2 - T.sampleAt(n.s).y;
+    const edge = Math.abs(n.d) - b.sx / 2;
+    assert.ok(edge >= 13.9 || bottom >= 7.5, `box at lat ${n.d.toFixed(1)} blocks the drivable corridor (edge ${edge.toFixed(1)}, bottom ${bottom.toFixed(1)})`);
+  }
+  // the road really is roofed: slabs overhead along the length of the tunnel
+  const mid = T.sampleAt((spec.s0 + spec.s1) / 2);
+  assert.ok(parts.rock.some((b) => Math.hypot(b.x - mid.x, b.z - mid.z) < 3 && b.y > mid.y + SKULL.roof), 'roof over the middle of the tunnel');
+  // the cave sits on a bend (that is the point) and the rocks that fall inside it use the shorter drop
+  const a = Math.atan2(T.sampleAt(spec.s0).tx, T.sampleAt(spec.s0).tz); const c = Math.atan2(T.sampleAt(spec.s1).tx, T.sampleAt(spec.s1).tz);
+  assert.ok(Math.abs(Math.atan2(Math.sin(c - a), Math.cos(c - a))) > 0.5, 'tunnel turns by more than ~30 degrees');
+  const inside = T.terrain.hazards.filter((h) => h.kind === 'stalactite' && T.nearest(h.x, h.z).s > spec.s0 && T.nearest(h.x, h.z).s < spec.s1);
+  assert.ok(inside.length >= 3 && inside.every((h) => h.drop < SKULL.roof + 1), 'stalactites fall from the cave roof');
+});

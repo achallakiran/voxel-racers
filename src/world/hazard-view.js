@@ -74,7 +74,7 @@ export function createHazardView(parent) {
         if (s.state === 'falling') {
           const d = h.r * 2 * (0.25 + 0.75 * s.k);
           place(it.shadow, h.x, h.y0 + 0.05, h.z, d, 0.05, d);
-          const y = h.y0 + 16 * (1 - s.k) * (1 - s.k) + 0.2;
+          const y = h.y0 + (h.drop ?? 16) * (1 - s.k) * (1 - s.k) + 0.2;
           place(it.spike[0], h.x, y + 2.4, h.z, 2.2, 1.6, 2.2); place(it.spike[1], h.x, y + 1.2, h.z, 1.5, 1.4, 1.5); place(it.spike[2], h.x, y, h.z, 0.7, 1.3, 0.7);
         } else if (s.state === 'impact' || s.state === 'rubble') {
           for (let i = 0; i < it.rubble.length; i++) { const a = i * 1.1; place(it.rubble[i], h.x + Math.cos(a) * 1.0, h.y0, h.z + Math.sin(a) * 1.0, 0.7 + (i % 3) * 0.3, 0.5 + (i % 2) * 0.4, 0.7); }

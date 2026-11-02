@@ -259,6 +259,7 @@ const SKULL_DEF = {
   id: 'skull', name: 'Skull Cavern',
   theme: { a: [0.2, 0.17, 0.26], b: [0.17, 0.14, 0.22], edge: [0.32, 0.27, 0.38], far: [0.1, 0.08, 0.14], dirt: [0.34, 0.3, 0.36], rut: [0.26, 0.22, 0.3], sand: [0.74, 0.72, 0.66], sky: 'cave', wall: [0.42, 0.38, 0.48] },
   scenery: ['stalagmite', 'crystal'], sceneryCount: 420, skulls: 7,
+  structures: [{ type: 'skullcave', s0: 0.355, s1: 0.445 }],
   env: { weather: 'spores', breeze: { x: 1.5, z: 0 }, look: { sky: 'cave', fog: ['#0d1020', 12, 78], hemi: ['#7a68d8', '#1c1630', 0.95], sun: ['#9fb8ff', 0.9, 6, 12, 4] } },
   ctrl() {
     const ctrl = [];
@@ -290,8 +291,9 @@ const SKULL_DEF = {
   },
   hazards({ sampleAt, add }) {
     // rocks drop from the ceiling on a fixed rhythm; a growing shadow shows where
-    const spec = [[0.09, 3, 0], [0.34, -3, 2], [0.43, 2.5, 4], [0.69, -2, 1], [0.745, 3, 3.5], [0.915, -2.5, 5]];
-    for (const [s, off, o] of spec) add({ kind: 'stalactite', ...roadPoint(sampleAt, s, off), r: 2.8, period: 7, warn: 4, offset: o });
+    const spec = [[0.09, 3, 0], [0.375, -3, 2], [0.40, 2.5, 4], [0.425, -2, 1], [0.69, -2, 3], [0.745, 3, 3.5], [0.915, -2.5, 5]];
+    // the ones inside the skull fall from the cave roof (shorter drop)
+    for (const [s, off, o] of spec) add({ kind: 'stalactite', ...roadPoint(sampleAt, s, off), r: 2.8, period: 7, warn: 4, offset: o, drop: s > 0.36 && s < 0.45 ? 10.5 : 16 });
   },
   obstacles(T) {
     const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
