@@ -390,6 +390,14 @@ def main():
         page.click('#btn-back')
         check(page.evaluate('window.__voxelRacers.flow.state') == 'title', 'home icon returns to title')
         check(page.evaluate('window.__voxelRacers.worldMode') == 'outdoor', 'home returns to the stadium')
+        # a planet stage (the Moon) leaves the camera tilted: simulate that, the title must straighten it (no upside-down truck)
+        page.evaluate("(() => { const c = window.__voxelRacers.camera; c.up.set(0.3, -0.9, 0.3); c.position.set(0, -40, 60); })()")
+        try:
+            page.wait_for_function('window.__voxelRacers.camera.up.y > 0.99 && window.__voxelRacers.camera.position.y > 0', timeout=20000)
+            ok_up = True
+        except Exception:
+            ok_up = False
+        check(ok_up, 'showroom camera is upright after leaving a planet stage')
 
         # ---------------- icon-only and unselectable
         sel = page.evaluate('getComputedStyle(document.body).userSelect')

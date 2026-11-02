@@ -1124,6 +1124,11 @@ function start() {
       // gentle camera sway on the title, steady in the garage
       const sway = flow.state === 'garage' ? 0 : Math.sin(clock * 0.35) * 0.9;
       camera.position.x += (sway - camera.position.x) * (1 - Math.exp(-dt * 3));
+      // a planet stage leaves the camera's "up" tilted to the ball's surface: put the showroom view back upright
+      camera.up.set(0, 1, 0);
+      camera.position.y = camBase.y; camera.position.z = camBase.z;
+      world.skyTo(null);
+      hemi.position.set(0, 1, 0);
       camera.lookAt(0, camBase.ly, 0);
       world.update(dt, clock, spin);
 
