@@ -1142,6 +1142,7 @@ function start() {
     respawn,
     get driveMode() { return driveMode; },
     get trackStats() { return world.trackStats; },
+    get shown() { return world.shown; },
     get susp() { return susp; },
     get voice() { return feel.voice; },
     get fov() { return camera.fov; },

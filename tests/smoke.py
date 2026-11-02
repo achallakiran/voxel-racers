@@ -238,6 +238,7 @@ def main():
         page.wait_for_function("window.__voxelRacers.match && window.__voxelRacers.match.phase === 'fight'", timeout=60000)
         check(visible(page, '#arena-hud') and visible(page, '#hp'), 'arena HUD and health bar visible')
         check(page.evaluate('window.__voxelRacers.arenaTerrain.props.length') >= 50, 'arena is full of destructible props')
+        check(page.evaluate('window.__voxelRacers.shown.arena') is True and page.evaluate('window.__voxelRacers.shown.track') is False, 'arena terrain is switched on, no race track showing')
         shot(page, '04-drive-start')
 
         # gas button (B1) with the mouse = a finger
@@ -352,6 +353,7 @@ def main():
         check(page.evaluate('window.__voxelRacers.driveMode') == 'race', 'race icon starts a race')
         page.wait_for_function('window.__voxelRacers.vehicle !== null && window.__voxelRacers.drawn > 60', timeout=60000)
         ts = page.evaluate('window.__voxelRacers.trackStats')
+        check(page.evaluate('window.__voxelRacers.shown.track') is True and page.evaluate('window.__voxelRacers.shown.arena') is False, 'the race track mesh is actually shown (ground, road, barriers)')
         check(ts is not None and ts['barriers'] > 800 and ts['trees'] > 200 and ts['fineTris'] > 50000, f'track built ({ts})')
         page.wait_for_function("parseFloat(getComputedStyle(document.getElementById('drive')).opacity) > 0.9", timeout=5000)
         check(visible(page, '#race-hud') and visible(page, '#minimap'), 'race HUD and minimap visible')

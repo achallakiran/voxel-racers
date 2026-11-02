@@ -941,6 +941,8 @@ export function createWorld(scene, lights) {
     if (racing) skyFor(SKY_STOPS[look.sky] || DAY, look.sky).visible = true;
     snow.set(racing ? env.weather : null);
     weatherWind = env.breeze || env.wind || null;
+    sandbox.visible = d && course === 'arena';
+    for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
     groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
     scene.background = new THREE.Color(g ? '#16161e' : (racing ? look.fog[0] : '#ffb35a'));
@@ -1006,6 +1008,8 @@ export function createWorld(scene, lights) {
     setMode,
     setCourse,
     follow(x, y, z) { focus = { x, y, z }; },
+    // what is actually switched on right now (guards against a stage whose ground or props never get shown)
+    get shown() { return { track: !!(activeTrack && trackGroups.get(activeTrack.id) && trackGroups.get(activeTrack.id).group.visible), arena: sandbox.visible, hazards: hazardView.count }; },
     hazards: hazardView,
     props: propMeshes,
     pickups: pickupMeshes,
