@@ -2,7 +2,8 @@
 // Every cell is a column: a flat top at a quantised height plus side walls wherever the neighbour is lower.
 // That keeps the voxel look while drawing only the visible faces.
 
-export function buildColumns({ x0, z0, nx, nz, cell, quant, heightAt, colorAt, include, yOffset = 0, sides = true }) {
+// `edge(x, z)` (optional) says whether a cell belongs to the island; a drawn cell next to one that does not gets a cliff `edgeDrop` deep.
+export function buildColumns({ x0, z0, nx, nz, cell, quant, heightAt, colorAt, include, yOffset = 0, sides = true, edge = null, edgeDrop = 0 }) {
   const H = new Float32Array(nx * nz);
   const at = (ix, iz) => H[ix * nz + iz];
   for (let ix = 0; ix < nx; ix++) {
@@ -31,7 +32,7 @@ export function buildColumns({ x0, z0, nx, nz, cell, quant, heightAt, colorAt, i
       quad([xa, h, za], [xa, h, zb], [xb, h, zb], [xb, h, za], [0, 1, 0], c);
       if (!sides) continue;
       const shade = (k) => [c[0] * k, c[1] * k, c[2] * k];
-      const lower = (jx, jz) => (jx < 0 || jz < 0 || jx >= nx || jz >= nz ? h - 0.5 : at(jx, jz));
+      const lower = (jx, jz) => (jx < 0 || jz < 0 || jx >= nx || jz >= nz ? h - 0.5 : (edge && !edge(x0 + (jx + 0.5) * cell, z0 + (jz + 0.5) * cell) ? h - edgeDrop : at(jx, jz)));
       let hn = lower(ix + 1, iz);   // +x
       if (hn < h - 1e-4) quad([xb, h, zb], [xb, hn, zb], [xb, hn, za], [xb, h, za], [1, 0, 0], shade(0.82));
       hn = lower(ix - 1, iz);       // -x

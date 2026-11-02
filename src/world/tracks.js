@@ -456,23 +456,24 @@ const MOON_DEF = {
 };
 
 // ---------------------------------------------------------------- 8. Saturn's Rings (the road IS the ring: a circular lap round a giant Saturn)
-const SAT = { Rt: 132, gx: 0, gz: 0, gy: 78, gr: 80 };
+const SAT = { Rt: 150, gx: 0, gz: 0, gy: 5, gr: 100, r0: 116, r1: 186 };   // the ring plane runs through Saturn's equator; the ground is a disc r0..r1
 // concentric ring bands across the ice (a dark Cassini gap between the road and the planet), so the whole plain reads as Saturn's rings
 function saturnShade(x, z) {
   const r = Math.hypot(x - SAT.gx, z - SAT.gz);
   const off = Math.abs(r - SAT.Rt);
   if (off < 17) return 1;                                   // the road and its shoulders keep their own colour
   let k = 0.9 + 0.12 * Math.sin(r * 0.9) * Math.sin(r * 0.23 + 1);
-  if (r < SAT.Rt - 28 && r > SAT.Rt - 52) k *= 0.62;           // a dark gap just inside the road
+  if (r < SAT.Rt - 20 && r > SAT.Rt - 30) k *= 0.62;           // a dark gap just inside the road
   return k;
 }
 const SATURN_DEF = {
   id: 'saturn', name: "Saturn's Rings",
   theme: { a: [0.86, 0.82, 0.74], b: [0.8, 0.76, 0.68], edge: [0.97, 0.94, 0.86], far: [0.74, 0.68, 0.58], dirt: [0.7, 0.66, 0.6], rut: [0.58, 0.54, 0.5], sand: [0.9, 0.86, 0.78], sky: 'space', wall: [0.6, 0.64, 0.74] },
-  scenery: ['icechunk', 'icechunk', 'iceshard', 'iceshard', 'moonrock'], sceneryCount: 300,
+  scenery: ['icechunk', 'icechunk', 'iceshard', 'iceshard', 'moonrock'], sceneryCount: 600,
   structures: [{ type: 'planet', x: SAT.gx, y: SAT.gy, z: SAT.gz, r: SAT.gr }],
   shade: saturnShade,
-  env: { openRoad: true, hideBarriers: true, camAim: { yaw: 0.75, lift: 5 }, ring: { a: '#e8f2ff', b: '#bcd2f0', rail1: '#ffd36a', rail2: '#3a3020', glow: '#5a4410' }, gravity: 9, weather: null,
+  keepScenery: (x, z) => { const r = Math.hypot(x - SAT.gx, z - SAT.gz); return r > SAT.r0 + 4 && r < SAT.r1 - 4; },
+  env: { openRoad: true, hideBarriers: true, ringDisc: { x: SAT.gx, z: SAT.gz, r0: SAT.r0, r1: SAT.r1 }, camAim: { yaw: 0.75, lift: 5 }, ring: { a: '#e8f2ff', b: '#bcd2f0', rail1: '#ffd36a', rail2: '#3a3020', glow: '#5a4410' }, gravity: 9, weather: null,
     look: { sky: 'space', sunDisc: [-0.79, 0.4, 0.51], fog: ['#05060f', 300, 900], hemi: ['#9fb4e8', '#5a4a38', 1.0], sun: ['#fff0d8', 3.2, -14, 7, 9] } },
   ctrl() {
     // a circle round Saturn, driven so the planet is always on your right (on screen: the camera's right is (-tz, tx))

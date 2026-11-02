@@ -402,6 +402,7 @@ export function makeTrack(def) {
       const z = p.z - p.tx * side * off + (rand() - 0.5) * 6;
       const n = nearest(x, z);
       if (Math.abs(n.d) < BARRIER + 2) continue;
+      if (def.keepScenery && !def.keepScenery(x, z)) continue;    // e.g. nothing floats beyond the edge of a ring of ground
       out.push({ x, z, y: heightAt(x, z), type: kinds.length > 2 ? kinds[Math.floor(rand() * kinds.length)] : (rand() < 0.65 ? kinds[0] : kinds[1]), scale: 0.8 + rand() * 0.9, tint: rand() });
     }
     if (def.skulls) {

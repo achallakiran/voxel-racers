@@ -335,3 +335,7 @@ Mobile frame-rate tuning, LOD, final balance.
 - Ring road has no visible fence (`env.hideBarriers`); the invisible wall still keeps trucks on the ring.
 - `env.camAim`: iso-follow and chase cameras turn with the truck and look toward Saturn on this stage only (the default iso camera is fixed to the world, so it could not keep Saturn on the right).
 - Sky-backdrop Saturn removed.
+
+### Phase 11c - Saturn ring disc (DONE)
+- The ground on Saturn's Rings is a finite disc of ice in empty space (`env.ringDisc`, r 116..186) with a visible cliff edge on the outer side and an inner edge toward the planet; scenery stays on the disc; Saturn is bigger (r 100) with its equator level with the road; road radius 150.
+- Next (asked): even bigger Saturn with stronger visible patterns, camera pulled back a little on this stage.

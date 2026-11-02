@@ -2197,6 +2197,11 @@ test('11: Saturn has an open ring road, low gravity, a Saturn sky and no divider
   }
   assert.ok(maxR - minR < 6 && minR > sat.r + 40, `a circular road well clear of the planet (${minR.toFixed(0)}..${maxR.toFixed(0)})`);
   assert.equal(right, 200, 'Saturn is on the right all the way round');
+  // the ground is a finite disc: the road and its walls sit inside it, with a visible end beyond the wall on the left, and scenery never floats outside it
+  const D = T.env.ringDisc;
+  assert.ok(D && D.r0 > sat.r && D.r1 > D.r0, 'a ring of ground in empty space round the planet');
+  for (let i = 0; i < 200; i++) { const p = T.sampleAt(i / 200); const r = Math.hypot(p.x - D.x, p.z - D.z); assert.ok(r - T.BARRIER > D.r0 + 2 && r + T.BARRIER < D.r1 - 4, 'the road and its wall sit well inside the disc'); }
+  assert.ok(T.sceneryLayout().every((q) => { const r = Math.hypot(q.x - D.x, q.z - D.z); return r > D.r0 && r < D.r1; }), 'no scenery floating off the ring');
   assert.ok(T.env.hideBarriers && T.env.camAim, 'no visible fence on the ring (the invisible wall still holds), and a camera that turns toward Saturn');
   const edge = T.sampleAt(0.3); const out = T.constrain(edge.x - edge.tz * 30, edge.z + edge.tx * 30, 1.6);   // 30 units out to the left of the road
   assert.ok(out, 'trucks cannot leave the ring: the invisible wall pushes them back');

@@ -690,12 +690,15 @@ function buildTrack(group, T) {
   const minX = Math.min(...S.map((p) => p.x)); const maxX = Math.max(...S.map((p) => p.x));
   const minZ = Math.min(...S.map((p) => p.z)); const maxZ = Math.max(...S.map((p) => p.z));
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // a stage that is a finite ring of ground in empty space (Saturn's rings): the ground exists only between two radii
+  const disc = T.env && T.env.ringDisc;
+  const inDisc = disc ? (x, z) => { const r = Math.hypot(x - disc.x, z - disc.z); return r >= disc.r0 && r <= disc.r1; } : () => true;
   const R = 40;
   const fineCell = 1.25;
   const fx0 = Math.floor((minX - R) / fineCell) * fineCell; const fz0 = Math.floor((minZ - R) / fineCell) * fineCell;
   const fine = buildColumns({
     x0: fx0, z0: fz0, nx: Math.ceil((maxX + R - fx0) / fineCell), nz: Math.ceil((maxZ + R - fz0) / fineCell), cell: fineCell, quant: 0.25,
-    heightAt: T.heightAt, colorAt: trackColor, include: (x, z) => T.nearest(x, z).dist < R,
+    heightAt: T.heightAt, colorAt: trackColor, include: (x, z) => T.nearest(x, z).dist < R && inDisc(x, z), edge: disc ? inDisc : null, edgeDrop: 10,
   });
   group.add(meshFrom(fine, mat));
   const far = 150;
@@ -706,7 +709,8 @@ function buildTrack(group, T) {
   const cx0 = PL ? -Math.PI * PL.R : Math.floor((minX - far) / cc) * cc; const cz0 = PL ? -80 : Math.floor((minZ - far) / cc) * cc;
   const coarse = buildColumns({
     x0: cx0, z0: cz0, nx: PL ? Math.floor((2 * Math.PI * PL.R) / cc) : Math.ceil((maxX + far - cx0) / cc), nz: PL ? 40 : Math.ceil((maxZ + far - cz0) / cc), cell: cc, quant: 0.5, sides: false, yOffset: -0.4,
-    heightAt: T.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => T.nearest(x, z).dist >= R - 4,
+    heightAt: T.heightAt, colorAt: (x, z, h) => trackColor(x, z, h).map((v) => v * 0.92), include: (x, z) => T.nearest(x, z).dist >= R - 4 && inDisc(x, z),
+    sides: !!disc, edge: disc ? inDisc : null, edgeDrop: 10,
   });
   group.add(meshFrom(coarse, mat));
 
@@ -1174,7 +1178,7 @@ export function createWorld(scene, lights) {
     PLANET_U.value = planet ? planet.R : 0;
     for (const [, pm] of planets) pm.visible = false;
     if (planet) planetFor(planet.R).visible = true;
-    arena.ground.visible = !planet;
+    arena.ground.visible = !planet && !(env.ringDisc);
     const look = racing ? { ...LOOK_DEFAULT, ...(env.look || {}) } : null;
     sunMesh.visible = !planet && !(racing && look.sky === 'space');
     arena.clouds.visible = !(racing && look.sky === 'space');   // no clouds in the vacuum
