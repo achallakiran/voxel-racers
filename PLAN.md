@@ -416,3 +416,10 @@ Queue after this: Dragon's Spine ridge sprint, Neon Night City, Sea Bridge, Skul
 - Map orientation: x right, z down the screen, row 0 at the top, like the ASCII map; camera sits south of the truck.
 - Race phase `preview` (10 s, skip icon with ring) before the countdown; steep drive camera (camera icon = near/wide); fog-of-war minimap with breadcrumbs and the exit flag; respawn only un-wedges (never moves you along the route); menu shows a labyrinth glyph, not the map.
 - Tests: 15.1 (7) and 15.2 (3) unit tests, smoke covers the picker, preview, skip, fog and exit. All 9 trucks drive the route in a test follower.
+
+### Phase 15.2b — fixes after first test (built)
+- Maze shading: the meadow slab's depth bias also beat the gravel floor tiles (patchy green/jitter). Floor tiles raised and thickened, bias softened, hedge bumps no longer cast shadows.
+- Joystick stuck: a new finger on the stick replaces a stale one; any lift-off of the stick's finger anywhere, the last finger leaving the screen, page hide/blur all release every control. (All stages.)
+- Zoom: `src/ui/no-zoom.js` cancels gesture events, two-finger moves, quick double-taps and ctrl+wheel; icon buttons use `touch-action: none`; a zoomed viewport is reset. (All stages.)
+- Overview map in the labyrinth: map icon (top right) with a cooldown ring; 30 s cooldown at the start, shows 6 s, then 40 s cooldown; truck held, race clock keeps running; shows the whole maze, the start/exit beams, a red "you are here" column and your breadcrumb trail. Tap again (or key M) to close early; closing early still costs the full cooldown.
+- Tests: race map logic, touch-stick recovery, no-zoom; smoke covers the icon, camera, held truck, clock, cooldown, gesture cancel and stick release.

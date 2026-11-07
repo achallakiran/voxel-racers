@@ -415,6 +415,41 @@ def main():
         except Exception:
             low = False
         check(low, 'drive camera settles close to the truck')
+        # overview map icon: cooling at first, then opens (truck held, clock running), closes, cools down again
+        check(visible(page, '#btn-map'), 'overview-map icon shows in the labyrinth')
+        check(page.evaluate("document.getElementById('btn-map').classList.contains('cooling')"), 'map icon starts on cooldown')
+        page.evaluate('window.__voxelRacers.race.mapCool = 0')
+        try:
+            page.wait_for_function("document.getElementById('btn-map').classList.contains('ready')", timeout=15000); rdy = True
+        except Exception:
+            rdy = False
+        check(rdy, 'map icon is ready after the cooldown')
+        page.click('#btn-map', force=True)
+        page.wait_for_function('window.__voxelRacers.race.mapT > 0', timeout=5000)
+        try:
+            page.wait_for_function('window.__voxelRacers.camera.position.y > 100', timeout=15000); high2 = True
+        except Exception:
+            high2 = False
+        check(high2, 'overview map lifts the camera over the maze')
+        t0 = page.evaluate('window.__voxelRacers.race.time'); page.wait_for_timeout(700)
+        check(page.evaluate('window.__voxelRacers.race.time') > t0, 'the race clock keeps running during the map')
+        check(abs(page.evaluate('window.__voxelRacers.vehicle.f')) < 1.0, 'the truck is held during the map')
+        page.click('#btn-map', force=True)
+        page.wait_for_function('window.__voxelRacers.race.mapT === 0', timeout=5000)
+        check(page.evaluate('window.__voxelRacers.race.mapCool') > 10, 'closing the map starts the cooldown')
+        # zoom and stuck-stick safety nets
+        pv = page.evaluate("(() => { const e = new Event('gesturestart', { cancelable: true, bubbles: true }); document.dispatchEvent(e); return e.defaultPrevented; })()")
+        check(pv, 'pinch (gesture) events are cancelled')
+        stuck = page.evaluate("""(() => {
+          const z = document.getElementById('joy-zone');
+          const T = window.__voxelRacers.touch; const r = z.getBoundingClientRect();
+          z.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 41, clientX: r.left + 100, clientY: r.top + 100, bubbles: true }));
+          z.dispatchEvent(new PointerEvent('pointermove', { pointerId: 41, clientX: r.left + 160, clientY: r.top + 100, bubbles: true }));
+          const held = T.state.active && T.state.x > 0.3;
+          const e = new Event('touchend', { bubbles: true }); Object.defineProperty(e, 'touches', { value: [] }); window.dispatchEvent(e);
+          return [held, T.state.active, T.state.x];
+        })()""")
+        check(stuck[0] and not stuck[1] and stuck[2] == 0, f'the joystick is released when the last finger leaves ({stuck})')
         page.click('#btn-exit', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'labyrinth exits to the garage')
         page.click('#trk-next', force=True)

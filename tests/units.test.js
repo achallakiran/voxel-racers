@@ -2664,3 +2664,77 @@ test('15.2: fog of war reveals only the cells you have driven through (and the w
   const all = new Set(); for (let r = 0; r < M.R; r++) for (let c = 0; c < M.C; c++) all.add(r * 64 + c);
   assert.ok(Array.from({ length: M.H }).every((_, i) => Array.from({ length: M.W }).every((__, j) => tileSeen(M, all, i, j))), 'everything once explored');
 });
+
+// ---- Phase 15.2b: overview map with cooldown, touch safety, no-zoom
+import { MAP_PEEK } from '../src/core/race.js';
+import { createTouchControls } from '../src/ui/touch-controls.js';
+
+test('15.2b: the overview map: cooldown at the start, freezes nothing in the rules, ends by itself, cooldown after', () => {
+  const T = MAZE_TRACK;
+  const mk = () => createRace({ laps: 1, checkpoints: T.CHECKPOINTS, startS: T.START_S, finishS: T.FINISH_S, map: MAP_PEEK });
+  const r = mk();
+  assert.equal(r.startMap(), false, 'not during the countdown');
+  r.tick(4); assert.equal(r.phase, 'racing');
+  assert.equal(r.startMap(), false, 'cooling down from the start');
+  r.tick(MAP_PEEK.initial - 1); assert.equal(r.startMap(), false);
+  r.tick(1.1); assert.equal(r.mapCool, 0);
+  assert.equal(r.startMap(), true); assert.ok(r.mapT > 0);
+  const t0 = r.time; r.tick(2); assert.ok(r.time - t0 > 1.99, 'the race clock keeps running during the map');
+  assert.equal(r.startMap(), false, 'cannot open it twice');
+  r.tick(MAP_PEEK.time); assert.equal(r.mapT, 0);
+  assert.ok(r.mapCool > MAP_PEEK.cool - 3 && r.mapCool <= MAP_PEEK.cool, 'cooldown starts when it closes');
+  assert.deepEqual(r.drainEvents().filter((e) => e.startsWith('map')), ['mapStart', 'mapEnd']);
+  r.tick(MAP_PEEK.cool + 0.1); assert.equal(r.startMap(), true);
+  r.endMap(); assert.equal(r.mapT, 0); assert.ok(r.mapCool > MAP_PEEK.cool - 0.5, 'closing early still costs the full cooldown');
+  const road = createRace({ laps: 3 }); road.tick(4); assert.equal(road.startMap(), false, 'road races have no overview map');
+});
+
+// a minimal DOM for the touch controls
+function fakeEl() {
+  const l = {}; const cls = new Set();
+  return {
+    style: { setProperty() {} }, classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), has: (c) => cls.has(c) },
+    addEventListener(n, f) { (l[n] ||= []).push(f); }, fire(n, e) { for (const f of l[n] || []) f(e); },
+    setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, top: 0, right: 400, bottom: 300, width: 400, height: 300 }),
+  };
+}
+test('15.2b: the joystick cannot stay stuck: a new finger recovers it, and any lost lift-off releases it', () => {
+  const win = {}; const doc = { hidden: false, addEventListener() {} };
+  const prevW = globalThis.window; const prevD = globalThis.document;
+  const wl = {};
+  globalThis.window = { addEventListener(n, f) { (wl[n] ||= []).push(f); } }; globalThis.document = doc;
+  try {
+    const zone = fakeEl(); const base = fakeEl(); const knob = fakeEl();
+    const c = createTouchControls({ zone, base, knob, gas: fakeEl(), brake: fakeEl(), nitro: fakeEl() });
+    const down = (id, x, y) => zone.fire('pointerdown', { pointerId: id, clientX: x, clientY: y, preventDefault() {} });
+    down(1, 150, 150); zone.fire('pointermove', { pointerId: 1, clientX: 220, clientY: 150 });
+    assert.ok(c.state.x > 0.5 && c.state.active, 'pushed right');
+    // the lift-off for finger 1 never arrives; a new finger (id 2) takes over instead of being ignored
+    down(2, 150, 150); zone.fire('pointermove', { pointerId: 2, clientX: 80, clientY: 150 });
+    assert.ok(c.state.x < -0.5, 'follows the new finger');
+    // a lift-off seen anywhere releases it
+    for (const f of wl.pointerup) f({ pointerId: 2 });
+    assert.equal(c.state.x, 0); assert.equal(c.state.active, false);
+    // the last finger leaving the screen releases everything
+    down(3, 150, 150); zone.fire('pointermove', { pointerId: 3, clientX: 220, clientY: 150 });
+    for (const f of wl.touchend) f({ touches: [] });
+    assert.equal(c.state.x, 0);
+    // but a touchend with a finger still down does not
+    down(4, 150, 150); zone.fire('pointermove', { pointerId: 4, clientX: 220, clientY: 150 });
+    for (const f of wl.touchend) f({ touches: [{}] });
+    assert.ok(c.state.x > 0.5, 'one finger lifted, the stick finger is still down');
+  } finally { globalThis.window = prevW; globalThis.document = prevD; }
+});
+
+test('15.2b: zoom gestures are cancelled', async () => {
+  const { installNoZoom } = await import('../src/ui/no-zoom.js');
+  const handlers = {};
+  const doc = { addEventListener(n, f) { (handlers[n] ||= []).push(f); }, querySelector: () => null };
+  installNoZoom(doc, {});
+  const ev = (extra = {}) => ({ cancelable: true, prevented: false, preventDefault() { this.prevented = true; }, ...extra });
+  for (const g of ['gesturestart', 'gesturechange']) { const e = ev(); handlers[g].forEach((f) => f(e)); assert.ok(e.prevented, g); }
+  let e = ev({ touches: [{}, {}] }); handlers.touchmove.forEach((f) => f(e)); assert.ok(e.prevented, 'two-finger move');
+  e = ev({ touches: [{}] }); handlers.touchmove.forEach((f) => f(e)); assert.ok(!e.prevented, 'one finger may move');
+  e = ev(); handlers.touchend.forEach((f) => f(e)); const e2 = ev(); handlers.touchend.forEach((f) => f(e2)); assert.ok(e2.prevented, 'the quick second tap is cancelled');
+  e = ev({ ctrlKey: true }); handlers.wheel.forEach((f) => f(e)); assert.ok(e.prevented, 'ctrl+wheel zoom');
+});

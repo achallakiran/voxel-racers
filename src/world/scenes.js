@@ -1035,7 +1035,7 @@ function buildMaze(group, T) {
   const hash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
   const leaf = (k) => new THREE.Color().setHSL(0.27 + (k - 0.5) * 0.05, 0.5, 0.25 + k * 0.1);
   // a big meadow under and around the maze, so the overview has green all round instead of the sky showing past the ground
-  const meadow = new THREE.Mesh(UNIT, new THREE.MeshLambertMaterial({ color: 0x6fa850, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const meadow = new THREE.Mesh(UNIT, new THREE.MeshLambertMaterial({ color: 0x6fa850, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
   meadow.scale.set(1400, 0.1, 1400); meadow.position.set(0, -0.03, 0); meadow.receiveShadow = true; group.add(meadow);
   const body = []; const caps = []; const blobs = [];
   for (const r of M.wallRuns()) {
@@ -1056,14 +1056,14 @@ function buildMaze(group, T) {
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   instanced(group, body, mat, { cast: true });
   instanced(group, caps, mat, { cast: false });
-  instanced(group, blobs, mat, { cast: true });
+  instanced(group, blobs, mat, { cast: false });        // the little bumps on top cast no shadow: it only made speckle
   // gravel floor: every open tile (cells and the gaps between them)
   const floor = [];
   for (let i = 0; i < M.H; i++) for (let j = 0; j < M.W; j++) {
     if (M.lines[i][j] === '#') continue;
     const [x0, x1] = M.xs[j]; const [z0, z1] = M.zs[i];
     const k = hash(i, j);
-    floor.push({ x: (x0 + x1) / 2, y: 0.03, z: (z0 + z1) / 2, sx: x1 - x0, sy: 0.08, sz: z1 - z0, color: new THREE.Color(0.72, 0.64, 0.46).multiplyScalar(0.9 + k * 0.14) });
+    floor.push({ x: (x0 + x1) / 2, y: 0.08, z: (z0 + z1) / 2, sx: x1 - x0, sy: 0.24, sz: z1 - z0, color: new THREE.Color(0.72, 0.64, 0.46).multiplyScalar(0.9 + k * 0.14) });
   }
   instanced(group, floor, mat, { receive: true });
   // the exit: a low arch (no taller than the hedges, so it is found by driving, not by looking over the walls) and a chequered pad
@@ -1086,7 +1086,14 @@ function buildMaze(group, T) {
   const s0 = M.cellCenter(M.start.r, M.start.c);
   col(s0.x, s0.z, '#ffd60a', 22); col(e.x, e.z, '#4cc9f0', 40);
   group.add(beacons);
-  return { walls: body.length, blobs: blobs.length, floorTiles: floor.length, beacons };
+  // overview-map extras: a red "you are here" column and a breadcrumb trail of the cells driven through
+  const you = new THREE.Group(); you.visible = false;
+  const ycol = new THREE.Mesh(UNIT, basic('#ff3b30', { transparent: true, opacity: 0.6, depthWrite: false })); ycol.scale.set(2.2, 26, 2.2); ycol.position.y = 13; you.add(ycol);
+  const ycap = new THREE.Mesh(UNIT, basic('#ff3b30')); ycap.scale.set(5, 1.4, 5); ycap.position.y = 26.7; you.add(ycap);
+  group.add(you);
+  const TRAIL_MAX = 800;
+  const trailMesh = new THREE.InstancedMesh(UNIT, basic('#ffd60a'), TRAIL_MAX); trailMesh.count = 0; trailMesh.frustumCulled = false; trailMesh.visible = false; group.add(trailMesh);
+  return { walls: body.length, blobs: blobs.length, floorTiles: floor.length, beacons, you, trailMesh, trailMax: TRAIL_MAX };
 }
 const WALL_H_VIEW = 3.4;
 
@@ -1352,6 +1359,22 @@ export function createWorld(scene, lights) {
   function setMazePreview(on) {
     const tg = activeTrack && trackGroups.get(activeTrack.id);
     if (tg && tg.stats && tg.stats.beacons) tg.stats.beacons.visible = !!on;
+    if (tg && tg.stats && tg.stats.you && !on) { tg.stats.you.visible = false; tg.stats.trailMesh.visible = false; }
+  }
+  // overview map during a race: beams on the start and exit, a red column on the truck, and the breadcrumb trail
+  const _tm = new THREE.Matrix4();
+  function setMazePeek(on, you, trail) {
+    const tg = activeTrack && trackGroups.get(activeTrack.id);
+    if (!tg || !tg.stats || !tg.stats.you) return;
+    const st = tg.stats;
+    st.beacons.visible = !!on; st.you.visible = !!on; st.trailMesh.visible = !!on;
+    if (!on) return;
+    if (you) st.you.position.set(you.x, 0, you.z);
+    if (trail) {
+      const n = Math.min(trail.length, st.trailMax);
+      for (let i = 0; i < n; i++) { _tm.makeScale(1.1, 0.3, 1.1); _tm.setPosition(trail[i][0], 0.35, trail[i][1]); st.trailMesh.setMatrixAt(i, _tm); }
+      st.trailMesh.count = n; st.trailMesh.instanceMatrix.needsUpdate = true;
+    }
   }
   function setCourse(next, track) {
     course = next === 'race' ? 'race' : 'arena';
@@ -1400,6 +1423,7 @@ export function createWorld(scene, lights) {
     setMode,
     setCourse,
     setMazePreview,
+    setMazePeek,
     get sunDir() { return sunDirFlat; },
     follow(x, y, z) { focus = { x, y, z }; },
     // planet stages only: where the camera really is, so the sky follows it (pass null to go back to the flat map)

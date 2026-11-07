@@ -19,7 +19,7 @@ import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST, RACE_ST
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
 import { HEADING as HEADING_OF, tileSeen } from './world/maze.js';
 import { STAGES as TRACKS, getTrackById, validTrack } from './world/tracks.js';
-import { createRace, formatTime, wrapDelta, PREVIEW_TIME } from './core/race.js';
+import { createRace, formatTime, wrapDelta, PREVIEW_TIME, MAP_PEEK } from './core/race.js';
 import { resolveCollisions } from './physics/collide.js';
 import { createDriver, driverInput, DIFFICULTIES } from './ai/driver.js';
 import { createIntro } from './ui/intro.js';
@@ -34,6 +34,8 @@ import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
 import { nextCamera, validCamera, cameraGoal, newCameraState, mazeCameraGoal, mazePreviewGoal } from './core/camera-modes.js';
 import { createTouchControls } from './ui/touch-controls.js';
+import { installNoZoom } from './ui/no-zoom.js';
+installNoZoom();
 import { boltPath, chainTargets, chargeTick, canZap, ZAP_COST, ZAP_DAMAGE, ZAP_SLOW } from './fx/lightning.js';
 import { LightningRenderer } from './fx/lightning-render.js';
 import { emissionRate, takeSpawns, makeParticle, QUALITY_SCALE } from './fx/emit.js';
@@ -362,6 +364,7 @@ function start() {
   const scaleNow = () => QUALITY_SCALE[save.particles] ?? 1;
   const tmp = new THREE.Vector3();
 
+  let peekOn = false; let peekSync = 0;       // labyrinth overview map on screen?
   let mazeZoom = 0;                      // labyrinth camera: 0 = close, 1 = wide (the camera icon toggles it)
   let explored = new Set(); let trail = [];   // labyrinth fog-of-war: cells driven through, and a breadcrumb trail
   function snapCamera() {
@@ -407,11 +410,11 @@ function start() {
     $('results').classList.remove('show');
     $('countdown').classList.remove('show');
     $('wrongway').classList.remove('show');
-    race = racing ? createRace({ laps: TR.OPEN ? 1 : 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S, finishS: TR.FINISH_S, preview: TR.maze ? PREVIEW_TIME : 0 }) : null;
+    race = racing ? createRace({ laps: TR.OPEN ? 1 : 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S, finishS: TR.FINISH_S, preview: TR.maze ? PREVIEW_TIME : 0, map: TR.maze ? MAP_PEEK : null }) : null;
     const maze = racing && !!TR.maze;
     $('drive').classList.toggle('maze', maze);
     $('drive').classList.toggle('preview', maze);
-    world.setMazePreview(maze);
+    world.setMazePreview(maze); peekOn = false;
     explored = new Set(); trail = []; mazeZoom = 0;
     camera.far = maze ? 700 : 220; camera.updateProjectionMatrix();
     goTimer = 0; wrongWay = 0;
@@ -440,7 +443,7 @@ function start() {
     world.props.clear();
     debris.life.fill(0); debris.alive = 0;
     $('drive').classList.remove('race', 'go', 'arena', 'maze', 'preview');
-    world.setMazePreview(false); camera.far = 220; camera.updateProjectionMatrix();
+    world.setMazePreview(false); peekOn = false; camera.far = 220; camera.updateProjectionMatrix();
     $('results').classList.remove('show');
     Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
     sun.shadow.camera.updateProjectionMatrix();
@@ -877,6 +880,7 @@ function start() {
     mini.restore();
   }
   $('btn-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
+  $('btn-map').addEventListener('click', () => { if (!race) return; if (race.mapT > 0) race.endMap(); else race.startMap(); });
   $('btn-skip').addEventListener('click', () => { if (race && race.phase === 'preview') { race.skipPreview(); audio.click(); } });
   $('btn-cam').addEventListener('click', () => {
     if (TR.maze && driveMode === 'race') { mazeZoom = mazeZoom ? 0 : 1; audio.click(); return; }
@@ -889,6 +893,7 @@ function start() {
   window.addEventListener('keydown', (e) => {
     if (flow.state !== 'drive') return;
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+    if (e.code === 'KeyM' && !e.repeat && race && TR.maze) { if (race.mapT > 0) race.endMap(); else race.startMap(); }
     if (!e.repeat && isBoostKey(e.code)) keyBoost = true;
     keys.add(e.code);
   });
@@ -939,7 +944,7 @@ function start() {
     const input = readInput();
     if (race) {
       race.tick(dt);
-      if (race.phase === 'countdown' || race.phase === 'preview') { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
+      if (race.phase === 'countdown' || race.phase === 'preview' || race.mapT > 0) { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
       if (race.phase === 'finished') { input.gas = 0; input.boost = false; input.brake = 0; input.hold = true; }
     }
     if (match) {
@@ -1045,7 +1050,9 @@ function start() {
         if (!v.loop && (pitT > 1.2 || stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2)) respawn();
       }
       for (const e of race.drainEvents()) {
-        if (e === 'previewEnd') { $('drive').classList.remove('preview'); world.setMazePreview(false); audio.click(); }
+        if (e === 'mapStart') { peekOn = true; peekSync = 0; world.setMazePeek(true, vehicle, trail); audio.click(); }
+        else if (e === 'mapEnd') { peekOn = false; world.setMazePeek(false); audio.click(); }
+        else if (e === 'previewEnd') { $('drive').classList.remove('preview'); world.setMazePreview(false); audio.click(); }
         else if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
         else if (e === 'checkpoint') { audio.click(); vehicle.nitro = Math.min(1, vehicle.nitro + 0.12); }
         else if (e === 'lap') audio.chime();
@@ -1066,7 +1073,15 @@ function start() {
       wrongWay = (v.f > 3 && along < -0.3 && race.phase === 'racing' && !v.loop && !TR.maze) ? Math.min(1, wrongWay + dt) : Math.max(0, wrongWay - dt * 2);
       $('wrongway').classList.toggle('show', wrongWay > 0.5);
       if (race.phase === 'preview') $('skip-ring').style.strokeDashoffset = String(66 * (1 - race.preview / PREVIEW_TIME));
-      if (TR.maze) { exploreCell(v); }
+      if (TR.maze) {
+        exploreCell(v);
+        if (peekOn && race.mapT <= 0) { peekOn = false; world.setMazePeek(false); }           // the race ended while the map was open
+        if (peekOn) { peekSync -= dt; world.setMazePeek(true, v, peekSync <= 0 ? trail : null); if (peekSync <= 0) peekSync = 0.5; }
+        const bm = $('btn-map'); const mp = MAP_PEEK;
+        const cooling = race.mapCool > 0; const peeking = race.mapT > 0;
+        bm.classList.toggle('cooling', cooling && !peeking); bm.classList.toggle('ready', !cooling && !peeking);
+        $('map-ring').style.strokeDashoffset = String(66 * (peeking ? 1 - race.mapT / mp.time : cooling ? race.mapCool / mp.cool : 0));
+      }
       drawMinimap();
     }
 
@@ -1110,10 +1125,10 @@ function start() {
     let g;
     if (TR.maze && driveMode === 'race') {
       g = mazeCameraGoal({ x: v.x, y: 0, z: v.z, heading: v.heading, speed: v.f }, mazeZoom);
-      if (race && race.phase === 'preview') {
+      if (race && (race.phase === 'preview' || race.mapT > 0)) {
         // the overview, then a swoop down to the truck over the last second and a half
         const ov = mazePreviewGoal(TR.maze.bounds, window.innerWidth / Math.max(1, window.innerHeight));
-        const k = Math.max(0, Math.min(1, race.preview / 1.5)); const e = k * k * (3 - 2 * k);
+        const k = race.mapT > 0 ? 1 : Math.max(0, Math.min(1, race.preview / 1.5)); const e = k * k * (3 - 2 * k);
         g = { pos: { x: g.pos.x + (ov.pos.x - g.pos.x) * e, y: g.pos.y + (ov.pos.y - g.pos.y) * e, z: g.pos.z + (ov.pos.z - g.pos.z) * e },
           look: { x: g.look.x + (ov.look.x - g.look.x) * e, y: g.look.y + (ov.look.y - g.look.y) * e, z: g.look.z + (ov.look.z - g.look.z) * e }, fov: g.fov + (ov.fov - g.fov) * e };
       }
@@ -1262,6 +1277,7 @@ function start() {
     get scene() { return scene; },   // debug/screenshot aid
     get camera() { return camera; },
     get explored() { return explored.size; },
+    get touch() { return touch; },
     get mazeZoom() { return mazeZoom; },
     get vehicle() { return vehicle; },
     get camMode() { return camMode; },

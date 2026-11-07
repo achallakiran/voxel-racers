@@ -31,6 +31,9 @@ export function createTouchControls({ zone, base, knob, gas, brake, nitro }) {
   }
 
   zone.addEventListener('pointerdown', (e) => {
+    // a new finger on the stick while it still thinks an old one is down means the old lift-off was lost (a browser gesture
+    // stole it): forget the old finger and follow the new one, instead of ignoring it and leaving the stick stuck
+    if (pid !== null && pid !== e.pointerId) reset();
     if (pid !== null) return;
     e.preventDefault();
     pid = e.pointerId;
@@ -88,10 +91,25 @@ export function createTouchControls({ zone, base, knob, gas, brake, nitro }) {
   const rg = hold(gas, 'gas');
   const rb = hold(brake, 'brake');
   const rn = nitro ? hold(nitro, 'nitro') : () => {};
+  const releaseAll = () => { rg(); rb(); rn(); reset(); };
+
+  // safety nets: any lift-off anywhere for the stick's finger, the last finger leaving the screen, or the page being hidden
+  // all clear every control, so nothing can stay held after the finger is gone
+  if (typeof window !== 'undefined') {
+    const lift = (e) => { if (e.pointerId === pid) reset(); };
+    window.addEventListener('pointerup', lift, true);
+    window.addEventListener('pointercancel', lift, true);
+    const touchesGone = (e) => { if (!e.touches || e.touches.length === 0) releaseAll(); };
+    window.addEventListener('touchend', touchesGone, true);
+    window.addEventListener('touchcancel', touchesGone, true);
+    window.addEventListener('pagehide', releaseAll);
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+  }
 
   return {
     state,
     layout: restPosition,
-    reset() { rg(); rb(); rn(); reset(); },
+    reset: releaseAll,
   };
 }

@@ -3,6 +3,7 @@
 // cutting across or driving backwards counts nothing.
 
 export const COUNTDOWN = 3.2;   // seconds of "3, 2, 1" before GO
+export const MAP_PEEK = { time: 6, cool: 40, initial: 30 };   // labyrinth overview map: seconds shown, cooldown after, cooldown at the start
 export const PREVIEW_TIME = 10;  // labyrinth: seconds of overhead map before the countdown (skippable)
 
 // signed shortest difference on the circle, in (-0.5, 0.5]
@@ -22,11 +23,13 @@ export function crossedForward(from, to, c) {
 }
 
 // finishS (sprint tracks): the finish line is that fraction of the way along an OPEN track, not the lap line at 0.
-export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], startS = 0.985, finishS = null, preview = 0 } = {}) {
+export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], startS = 0.985, finishS = null, preview = 0, map = null } = {}) {
   const r = {
     laps, checkpoints,
     phase: preview > 0 ? 'preview' : 'countdown',   // preview (labyrinth map, no driving) | countdown | racing | finished
     preview,                     // seconds of preview left
+    mapT: 0,                     // overview map: seconds left on screen (the truck is held, the clock keeps running)
+    mapCool: map ? (map.initial ?? map.cool) : 0,   // ... and seconds until it can be opened again
     countdown: COUNTDOWN,
     time: 0,                     // racing clock
     lap: 1,                      // current lap (1-based)
@@ -36,9 +39,14 @@ export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], start
     best: Infinity,
     prevS: startS,
     finishTime: 0,
-    events: [],                  // 'previewEnd' | 'go' | 'checkpoint' | 'lap' | 'finish' | 'newbest'
+    events: [],                  // 'previewEnd' | 'mapStart' | 'mapEnd' | 'go' | 'checkpoint' | 'lap' | 'finish' | 'newbest'
   };
 
+  r.startMap = () => {
+    if (!map || r.phase !== 'racing' || r.mapT > 0 || r.mapCool > 0) return false;
+    r.mapT = map.time; r.events.push('mapStart'); return true;
+  };
+  r.endMap = () => { if (r.mapT > 0) { r.mapT = 0; r.mapCool = map.cool; r.events.push('mapEnd'); } };
   r.skipPreview = () => { if (r.phase === 'preview') { r.preview = 0; r.phase = 'countdown'; r.events.push('previewEnd'); } };
 
   r.tick = (dt) => {
@@ -50,7 +58,9 @@ export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], start
       if (r.countdown <= 0) { r.phase = 'racing'; r.countdown = 0; r.events.push('go'); }
     } else if (r.phase === 'racing') {
       r.time += dt;
-    }
+      if (r.mapT > 0) { r.mapT -= dt; if (r.mapT <= 0) { r.mapT = 0; r.mapCool = map.cool; r.events.push('mapEnd'); } }
+      else if (r.mapCool > 0) r.mapCool = Math.max(0, r.mapCool - dt);
+    } else if (r.mapT > 0) r.mapT = 0;
   };
 
   // number to show during the countdown (3, 2, 1) or 0 for GO

@@ -223,7 +223,7 @@ img { -webkit-user-drag: none; pointer-events: none; }
   backdrop-filter: blur(4px);
   -webkit-user-select: none;
   user-select: none;
-  touch-action: manipulation;
+  touch-action: none;           /* no pinch / double-tap zoom on any icon */
 }
 .icon-btn.small { width: 52px; height: 52px; }
 .icon-btn.huge { width: clamp(84px, 20vmin, 130px); height: clamp(84px, 20vmin, 130px); border-width: 4px; background: rgba(255, 183, 3, 0.25); }
@@ -420,7 +420,15 @@ img { -webkit-user-drag: none; pointer-events: none; }
 /* labyrinth: a taller square minimap, no lap / place boxes, and the preview's skip icon with its countdown ring */
 #drive.maze #minimap { width: 118px; height: 118px; }
 #drive.maze #lapbox, #drive.maze #posbox, #drive.maze #btn-respawn { display: none; }
-#btn-skip { display: none; }
+#btn-skip, #btn-map { display: none; }
+/* labyrinth overview-map icon: top right under the camera icon, with a cooldown ring */
+#drive.maze:not(.preview) #btn-map { display: grid; position: absolute; top: calc(var(--safe-t) + 72px); right: calc(var(--safe-r, 0px) + 12px); width: 52px; height: 52px; place-items: center; }
+#btn-map svg { grid-area: 1 / 1; width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+#btn-map svg.ring { width: 50px; height: 50px; stroke-width: 2.4; transform: rotate(-90deg); }
+#btn-map svg.ring circle:first-child { stroke: rgba(255, 255, 255, 0.25); }
+#map-ring { stroke: #4cc9f0; stroke-dasharray: 66; stroke-dashoffset: 0; }
+#btn-map.cooling { opacity: 0.55; }
+#btn-map.ready { border-color: #4cc9f0; box-shadow: 0 0 14px rgba(76, 201, 240, 0.7); }
 #drive.preview #btn-skip { display: grid; position: absolute; left: 50%; margin-left: -32px; bottom: calc(var(--safe-b, 0px) + 22px); width: 64px; height: 64px; place-items: center; z-index: 20; }
 #btn-skip svg { grid-area: 1 / 1; width: 28px; height: 28px; fill: #fff; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; }
 #btn-skip svg.ring { width: 58px; height: 58px; fill: none; stroke-width: 2.4; transform: rotate(-90deg); }
