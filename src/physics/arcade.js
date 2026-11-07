@@ -275,18 +275,21 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   const wasGrounded = v.grounded;
   const gPrev = terrain.heightAt(v.x, v.z);
   let h = v.y - g1;
-  if (!wasGrounded) v.fallV = Math.min(v.fallV, v.vy);
+  // on a very steep descent (a stage with `slopeLanding`) the ground itself is falling away: impacts and damping are measured
+  // against its motion, so a truck sliding down the slope is not "landing" at slope speed and does not porpoise
+  const gvel = terrain.slopeLanding ? Math.min(0, (g1 - gPrev) / dt) : 0;
+  if (!wasGrounded) v.fallV = Math.min(v.fallV, v.vy - gvel);
   let ay = -G;
-  if (h < SPRING_REST) ay += tune.suspK * (SPRING_REST - h) - tune.suspC * v.vy;
+  if (h < SPRING_REST) ay += tune.suspK * (SPRING_REST - h) - tune.suspC * (v.vy - gvel);
   v.vy = clamp(v.vy + ay * dt, -45, MAX_UP);
   v.y += v.vy * dt;
   h = v.y - g1;
   let slam = 0;
   if (h < 0) {                                // bottomed out
     v.y = g1;
-    if (v.vy < 0) {
-      slam = -v.vy;
-      v.vy = slam > 3 ? slam * tune.restitution : 0;
+    if (v.vy - gvel < 0) {
+      slam = -(v.vy - gvel);
+      v.vy = gvel + (slam > 3 ? slam * tune.restitution : 0);
       if (slam > 5) { v.vx *= 0.93; v.vz *= 0.93; }
     }
     h = 0;

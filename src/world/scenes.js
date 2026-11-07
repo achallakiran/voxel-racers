@@ -951,6 +951,20 @@ function buildTrack(group, T) {
   const wallBoxes = [];
   const wallBase = { brick: [0.66, 0.33, 0.24], stone: [0.55, 0.55, 0.58], plinth: [0.4, 0.4, 0.45] };
   for (const w of [...T.WALLS, ...(T.BLOCKS || [])]) {
+    if (w.kind === 'snowrock') {                                    // a slate boulder: offset chunks, thick snow caps, a glint of ice
+      const hs = (((Math.round(w.x * 3) * 7 + Math.round(w.z * 5) * 13) & 15) / 15);
+      const r = w.r || 1.5; const rot = (w.rot || 0) + (hs - 0.5) * 0.9; const cs = Math.cos(rot); const sn = Math.sin(rot);
+      const slate = new THREE.Color('#5a6272').multiplyScalar(0.85 + hs * 0.3);
+      const at = (ox, oz) => [w.x + ox * cs + oz * sn, w.z - ox * sn + oz * cs];
+      const [ax, az] = at(0.45 * r, -0.3 * r); const [bx, bz] = at(-0.5 * r, 0.35 * r); const [ix, iz] = at(0.1 * r, 0.82 * r);
+      wallBoxes.push({ x: w.x, y: w.y0 + w.h * 0.5 - 0.1, z: w.z, sx: 1.6 * r, sy: w.h, sz: 1.45 * r, rot, color: slate });
+      wallBoxes.push({ x: ax, y: w.y0 + w.h * 0.3, z: az, sx: 1.2 * r, sy: w.h * 0.62, sz: 1.05 * r, rot: rot + 0.5, color: slate.clone().multiplyScalar(1.12) });
+      wallBoxes.push({ x: bx, y: w.y0 + w.h * 0.36, z: bz, sx: 1.0 * r, sy: w.h * 0.72, sz: 1.0 * r, rot: rot - 0.4, color: slate.clone().multiplyScalar(0.9) });
+      wallBoxes.push({ x: w.x, y: w.y0 + w.h + 0.2, z: w.z, sx: 1.85 * r, sy: 0.5, sz: 1.7 * r, rot, color: new THREE.Color('#f6f9ff') });
+      wallBoxes.push({ x: bx, y: w.y0 + w.h * 0.72 + 0.12, z: bz, sx: 1.25 * r, sy: 0.36, sz: 1.25 * r, rot: rot - 0.4, color: new THREE.Color('#e9f0fb') });
+      wallBoxes.push({ x: ix, y: w.y0 + 0.55, z: iz, sx: 0.32 * r, sy: 1.1, sz: 0.32 * r, rot: rot + 0.3, color: new THREE.Color('#8fdcff') });
+      continue;
+    }
     const base = wallBase[w.kind] || wallBase.brick;
     const shade = 0.86 + ((Math.round(w.x * 3) + Math.round(w.z * 5)) & 7) * 0.03;
     const col = new THREE.Color(base[0] * shade, base[1] * shade, base[2] * shade);

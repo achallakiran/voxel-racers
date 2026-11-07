@@ -1935,7 +1935,7 @@ test('intro: the audio has intro and title sounds and every one is a safe no-op 
 
 // ---------------------------------------------------------------- phase 7c: stage engine (gravity, wind, hazards, snow)
 import { stepVehicle as stepV7c, createVehicle as mkV7c, tuningFor as tuneV7c } from '../src/physics/arcade.js';
-import { avalanchePhase, avalancheBand, tickHazards, lavaflowState, hazardEffects } from '../src/physics/hazards.js';
+import { avalanchePhase, avalancheExtent, avalancheBand, tickHazards, lavaflowState, hazardEffects } from '../src/physics/hazards.js';
 
 const flat7c = (extra = {}) => ({ heightAt: () => 0, surfaceAt: () => 'asphalt', constrain: (x, z) => ({ x, z }), obstacles: [], radius: 1e9, ...extra });
 const truck7c = () => tuneV7c({ speed: 6, grip: 6, weight: 6 });
@@ -2499,4 +2499,24 @@ test('14: the ring-search nearest() gives exactly the brute-force answer on ever
       assert.ok(Math.abs(T.nearest(x, z).dist - best) < 1e-6, `${T.id} (${x.toFixed(0)},${z.toFixed(0)}): ${T.nearest(x, z).dist} vs ${best}`);
     }
   }
+});
+
+test('14b: Himalaya has side and middle snow rocks with a clear path past each; slope landing is Himalaya-only; the surge reaches the middle', () => {
+  const T = TRACKS.find((t) => t.id === 'himalaya');
+  const rocks = T.WALLS.filter((w) => w.kind === 'snowrock');
+  assert.ok(rocks.length >= 25, `rocks: ${rocks.length}`);
+  // none in the first 150 m, and every rock leaves a gap wider than a truck on the road
+  for (const w of rocks) {
+    const n = T.nearest(w.x, w.z);
+    const along = n.s * T.LENGTH;
+    assert.ok(along > 150, `rock at ${along.toFixed(0)} m is too near the start`);
+    assert.ok(Math.abs(n.d) < 7.5 + w.r, 'rocks sit on the road');
+  }
+  assert.ok(TRACKS.filter((t) => t.id !== 'himalaya').every((t) => !t.terrain.slopeLanding && !t.WALLS.some((w) => w.kind === 'snowrock')));
+  assert.equal(T.terrain.slopeLanding, true);
+  const av = T.terrain.hazards.find((h) => h.kind === 'avalanche');
+  assert.ok(avalancheExtent(0.5) > 0);
+  let ext = 0; for (let k = 0; k <= 1; k += 0.02) ext = Math.max(ext, avalancheExtent(k));
+  const half = av.w / 2; const front = half - ext * (av.reach ?? 1) * av.w;
+  assert.ok(Math.abs(front) < half * 0.35, 'the surge front ends near the middle of the road');
 });

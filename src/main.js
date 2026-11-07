@@ -897,6 +897,7 @@ function start() {
         }
         else if (e.type === 'land') { landings.push(e); shake = Math.max(shake, Math.min(1, e.power / 18)); spawnDust(5, 3, 1.2); audio.thump(e.power); }
         else if (e.type === 'hit' || e.type === 'wall') { shake = Math.max(shake, Math.min(0.8, e.power / 20)); audio.thump(e.power * 0.6); }
+        else if (e.type === 'avalanche') { shake = Math.max(shake, 0.7); audio.thump(14); }
       }
       if (rivals.length && race) rivalStep(1 / 60);
       else if (match) arenaStep(1 / 60);

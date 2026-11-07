@@ -242,7 +242,7 @@ const HIMALAYA_DEF = {
   // the gully: the walls rise from the road's own height, so the road and the mountain can never drift apart
   ground: (x, z, n) => n.y + 0.9 * Math.min(30, Math.max(0, Math.abs(n.d) - 8)) + 0.35 * Math.max(0, Math.abs(n.d) - 38),
   env: {
-    openRoad: true, hideBarriers: true, fine: { R: 30, cell: 1.6 }, camAim: { yaw: 0, lift: 3 }, weather: 'snow', wind: { x: 3, z: 0 },
+    openRoad: true, hideBarriers: true, slopeLanding: true, fine: { R: 30, cell: 1.6 }, camAim: { yaw: 0, lift: 3 }, weather: 'snow', wind: { x: 3, z: 0 },
     look: { sky: 'alpine', fog: ['#dfe9f5', 70, 340], hemi: ['#e8f0ff', '#9aa8c0', 1.3], sun: ['#fff6e8', 2.2, 6, 12, 4] },
   },
   ctrl() {
@@ -259,10 +259,14 @@ const HIMALAYA_DEF = {
   features(T) {
     const { JUMP, feat } = T;
     return [...JUMP(0.2, 1.4, 8), ...JUMP(0.5, 1.6, 9), ...JUMP(0.72, 1.4, 8),
-      feat(0.36, 'whoops', { kind: 'whoops', len: 40, w: 11, amp: 0.5, wave: 4.2 }), feat(0.63, 'whoops', { kind: 'whoops', len: 36, w: 11, amp: 0.5, wave: 4.2 })];
+      feat(0.36, 'whoops', { kind: 'whoops', len: 60, w: 11, amp: 0.28, wave: 13 }), feat(0.63, 'whoops', { kind: 'whoops', len: 60, w: 11, amp: 0.28, wave: 13 })];
   },
   walls({ W }) {
     W.barrels(0.12, 1, 3); W.crates(0.42, -1, 3); W.tnt(0.58, 2); W.barrels(0.82, -1, 3);
+    // snow rocks: in the middle of the chute, in clusters on one side, and gates with a gap in the centre
+    for (const [a, side] of [[0.11, 1], [0.235, -1], [0.325, 1], [0.455, -1], [0.545, 1], [0.69, -1], [0.8, 1]]) W.rockMid(a, side);
+    for (const [a, side] of [[0.14, 1], [0.3, -1], [0.48, 1], [0.595, -1], [0.755, 1], [0.87, -1]]) W.rockSide(a, side);
+    for (const a of [0.165, 0.39, 0.665, 0.84]) W.rockGate(a);
     for (const [a, o, l] of [[0.06, 0, 8], [0.18, 0, 8], [0.4, 0, 8], [0.6, 0, 8], [0.74, 0, 8]]) W.pad(a, o, l, 5.5);
     W.goo(0.28, 3, 9, 5); W.oil(0.45, -3, 10, 5); W.goo(0.66, -3, 9, 5);
     for (const [a, o] of [[0.08, 0], [0.15, 0], [0.25, 0], [0.34, 0], [0.44, 0], [0.54, 0], [0.64, 0], [0.74, 0], [0.84, 0]]) W.pickup(a, o);
@@ -271,7 +275,7 @@ const HIMALAYA_DEF = {
     // avalanche waves sweep a stretch of the chute from alternating sides; a warning leads each one
     for (const [s, side, off] of [[0.26, 1, 0], [0.43, -1, 5], [0.61, 1, 9], [0.78, -1, 2]]) {
       const p = sampleAt(s);
-      add({ kind: 'avalanche', x: p.x, z: p.z, tx: p.tx, tz: p.tz, len: 28, w: 13, side, period: 16, warn: 2.0, warnLead: 2.5, dur: 3.0, offset: off, s });
+      add({ kind: 'avalanche', x: p.x, z: p.z, tx: p.tx, tz: p.tz, len: 28, w: 13, reach: 0.5, side, period: 16, warn: 2.0, warnLead: 2.5, dur: 3.4, offset: off, s });
     }
   },
   obstacles(T) {

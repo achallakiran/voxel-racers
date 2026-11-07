@@ -373,3 +373,9 @@ Mobile frame-rate tuning, LOD, final balance.
 - Content: snow, ice sections, pads, whoops, three jumps, barrels/crates/TNT, goo and oil, four avalanche waves from alternating sides (28 m long, shove toward the far bank and slow the truck; 2 s warning), pickups, pines. The loop, forks and stone blocks of the old pass are gone. Road tinted blue-grey so the lane reads against the snow.
 - Performance: `nearest()` now widens its search ring by ring instead of scanning every sample (identical results, proven against brute force on every track; the crater loads about twice as fast too); `env.fine` lets a very long stage use a tighter, coarser detail mesh (Himalaya: R 30, cell 1.6).
 - Tests: stage geometry (length, flat start, 30-40%, run-out, banks), avalanche alternation and shove, nearest() equivalence, every truck finishes at both styles.
+
+## Phase 14b — Himalaya follow-up
+- Avalanche: a sideways surge that grows out of the bank and reaches the middle of the road (`reach: 0.5`); new heap/puff/spray rendering following the ground, shake + thump on impact.
+- Bounce: `terrain.slopeLanding` (Himalaya only) measures landings against the falling ground; whoops softened (amp 0.28, wave 13 m).
+- Rocks: `rockMid` (single middle rock), `rockSide` (cluster on one bank), `rockGate` (two rocks, gap in the centre); slate chunks with snow caps and an ice shard (`snowrock` in scenes.js). AI lane hints steer around each. None in the first 150 m.
+- Tests: 14b (rocks, Himalaya-only slope landing, surge extent). Sweeps: 36 truck/style/mode combos all finish (77–124 s).

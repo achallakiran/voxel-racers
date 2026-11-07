@@ -1,6 +1,6 @@
 // Draws the timed stage hazards from the same pure functions the physics uses (so what you see is what hits you).
 import * as THREE from '../../lib/three.module.js';
-import { avalanchePhase, avalancheWarning, avalancheBand, geyserState, stalactiteState, lavaflowState, STALACTITE_FALL } from '../physics/hazards.js';
+import { avalanchePhase, avalancheWarning, avalancheBand, avalancheExtent, geyserState, stalactiteState, lavaflowState, STALACTITE_FALL } from '../physics/hazards.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const mat = (c, basic = false) => (basic ? new THREE.MeshBasicMaterial({ color: c, fog: false }) : new THREE.MeshLambertMaterial({ color: c }));
@@ -21,7 +21,12 @@ export function createHazardView(parent) {
       const group = new THREE.Group(); root.add(group);
       const it = { h, group };
       if (h.kind === 'avalanche') {
-        it.blocks = Array.from({ length: 22 }, (_, i) => ({ b: box(group, i % 3 ? M.snow : M.snowShade), r: ((i * 37) % 17) / 17, r2: ((i * 53) % 19) / 19 }));
+        // a heap of snow rooted in the bank (60 blocks, 12 rows x 5 columns), a plume above its crest, spray ahead of it and a
+        // shaking lip on the bank during the warning
+        it.blocks = Array.from({ length: 60 }, (_, i) => ({ b: box(group, i % 3 ? M.snow : M.snowShade), row: i % 12, col: Math.floor(i / 12), r: ((i * 37) % 61) / 61, r2: ((i * 53) % 67) / 67 }));
+        it.puffs = Array.from({ length: 10 }, (_, i) => ({ b: box(group, M.snow), r: ((i * 29) % 11) / 11, r2: ((i * 17) % 13) / 13 }));
+        it.specks = Array.from({ length: 30 }, (_, i) => ({ b: box(group, i % 2 ? M.snow : M.snowShade), r: ((i * 41) % 31) / 31, r2: ((i * 23) % 29) / 29 }));
+        it.lip = Array.from({ length: 6 }, (_, i) => ({ b: box(group, M.snowShade), r: i / 5 }));
         it.flag = box(group, M.flag); it.flag2 = box(group, M.flag);
       } else if (h.kind === 'geyser') {
         it.ring = Array.from({ length: 8 }, () => box(group, M.rock));
@@ -49,7 +54,76 @@ export function createHazardView(parent) {
     const time = terrain.time || 0;
     for (const it of items) {
       const h = it.h;
-      for (const b of [...(it.pool || []), ...(it.rim || []), ...(it.blocks || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.chunks || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
+      for (const b of [...(it.pool || []), ...(it.rim || []), ...(it.blocks || []).map((o) => o.b), ...(it.puffs || []).map((o) => o.b), ...(it.specks || []).map((o) => o.b), ...(it.lip || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.chunks || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
+      if (h.kind === 'avalanche') {
+        const k = avalanchePhase(h, time);
+        const warn = avalancheWarning(h, time);
+        const at = (along, lat) => [h.x + h.tx * along + h.tz * lat, h.z + h.tz * along - h.tx * lat];
+        const ground = (x, z) => (terrain.heightAt ? terrain.heightAt(x, z) : h.y0);
+        const half = h.w / 2; const sd = h.side;
+        if (warn && k < 0) {   // flags flap at the edge the wave will come from, and the snow lip on the bank shakes and sheds
+          const pulse = 0.6 + 0.4 * Math.sin(time * 12);
+          const [fx, fz] = at(-h.len / 2, sd * (half + 0.8)); const [gx, gz] = at(h.len / 2, sd * (half + 0.8));
+          place(it.flag, fx, ground(fx, fz), fz, 0.5, 3.2 * pulse + 1, 0.5); place(it.flag2, gx, ground(gx, gz), gz, 0.5, 3.2 * pulse + 1, 0.5);
+          for (const o of it.lip) {
+            const [x, z] = at((o.r - 0.5) * h.len * 0.9, sd * (half + 1.3 + Math.sin(time * 14 + o.r * 9) * 0.25));
+            place(o.b, x, ground(x, z) + 0.1, z, 2.2, 1.0 + 0.6 * pulse + o.r * 0.4, 2.2);
+          }
+          for (let i = 0; i < 12; i++) {                       // snow sloughing off the bank
+            const o = it.specks[i]; const fall = (time * 1.4 + o.r) % 1;
+            const [x, z] = at((o.r2 - 0.5) * h.len, sd * (half + 1.0 - fall * 1.6));
+            place(o.b, x, ground(x, z) + 4.5 - fall * 4.2, z, 0.4, 0.4, 0.4);
+          }
+        }
+        if (k >= 0) {
+          const ex = avalancheExtent(k);
+          const [a, b] = avalancheBand(h, k);
+          const frontLat = sd > 0 ? a : b; const rootLat = sd * (half + 2.2);      // the heap is rooted in the bank
+          const span = Math.abs(rootLat - frontLat);
+          const rows = 12; const cols = Math.max(1, Math.min(5, Math.ceil(span / 2.4)));
+          for (const o of it.blocks) {
+            if (o.col >= cols) continue;
+            const f = (o.col + 0.5) / cols;                      // 0 at the front, 1 at the bank
+            const lat = frontLat + (rootLat - frontLat) * f + (o.r - 0.5) * 0.7;
+            const along = ((o.row + 0.5) / rows - 0.5) * h.len + (o.r2 - 0.5) * 0.8 + Math.sin(time * 5 + o.row) * 0.35 * (1 - f);
+            const [x, z] = at(along, lat);
+            // a cresting wave: tallest at the front, rolling along its length, tapering into the bank
+            const crest = (1 - f) * (3.2 + 0.9 * Math.sin(time * 6 + o.row * 1.3)) + 1.1 + o.r * 0.5;
+            const size = span / cols + 0.8;
+            place(o.b, x, ground(x, z) - 0.25, z, size, crest * Math.min(1, 0.35 + ex), h.len / rows + 0.6);
+          }
+          if (ex > 0.04) {
+            for (const o of it.puffs) {                          // a powder plume boiling up from the crest
+              const rise = (time * 0.9 + o.r) % 1;
+              const [x, z] = at((o.r2 - 0.5) * h.len, frontLat + sd * (0.4 - rise * 0.6));
+              const sz = (1.9 - rise * 1.1) * (0.5 + 0.5 * ex);
+              place(o.b, x, ground(x, z) + 2.6 + rise * 4.2, z, sz, sz, sz);
+            }
+            for (const o of it.specks) {                         // spray thrown ahead of the front
+              const fl = (time * 1.6 + o.r) % 1;
+              const [x, z] = at((o.r2 - 0.5) * h.len, frontLat - sd * (0.5 + fl * 3.2));
+              place(o.b, x, ground(x, z) + 0.8 + 3.4 * Math.sin(Math.PI * fl), z, 0.34, 0.34, 0.34);
+            }
+          }
+        }
+      } else if (h.kind === 'lavaflow') {
+        it.pool = Array.from({ length: 9 }, (_, i) => box(group, i % 3 ? M.lava : M.lavaHot));
+        it.rim = Array.from({ length: 7 }, () => box(group, M.shadow));
+      } else if (h.kind === 'stalactite') {
+        it.shadow = box(group, M.shadow);
+        it.spike = [box(group, M.stone), box(group, M.stone), box(group, M.rock)];
+        it.rubble = Array.from({ length: 6 }, () => box(group, M.stone));
+        it.dust = Array.from({ length: 5 }, () => box(group, M.dust));
+      }
+      items.push(it);
+    }
+  }
+
+  function update(terrain, t) {
+    const time = terrain.time || 0;
+    for (const it of items) {
+      const h = it.h;
+      for (const b of [...(it.pool || []), ...(it.rim || []), ...(it.blocks || []).map((o) => o.b), ...(it.puffs || []).map((o) => o.b), ...(it.specks || []).map((o) => o.b), ...(it.lip || []).map((o) => o.b), it.flag, it.flag2, ...(it.ring || []), ...(it.chunks || []), ...(it.col || []), ...(it.puff || []), it.shadow, ...(it.spike || []), ...(it.rubble || []), ...(it.dust || [])]) if (b) b.visible = false;
       if (h.kind === 'avalanche') {
         const k = avalanchePhase(h, time);
         const warn = avalancheWarning(h, time);

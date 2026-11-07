@@ -22,10 +22,18 @@ export const avalancheWarning = (h, time) => {
   return t >= h.period - h.warnLead || t < h.warn;
 };
 
-// lateral extent [a,b] of the wave (+ = right of travel) at phase k. side +1: the wave comes from the right edge
+// how much of its reach the wave has covered at phase k (0..1): it rushes in, holds, then slumps back toward its edge
+const easeIO = (t) => t * t * (3 - 2 * t);
+export function avalancheExtent(k) {
+  if (k < 0.4) return easeIO(k / 0.4);
+  if (k < 0.75) return 1;
+  return 1 - easeIO(Math.min(1, (k - 0.75) / 0.25));
+}
+// lateral extent [a,b] of the wave (+ = right of travel) at phase k. side +1: the wave comes from the right edge and
+// reaches `reach` of the way across the road (default all of it; the Himalaya waves go as far as the middle)
 export function avalancheBand(h, k) {
   const half = h.w / 2;
-  const front = half - k * h.w;                   // from +half down to -half (for side +1)
+  const front = half - avalancheExtent(k) * (h.reach ?? 1) * h.w;
   return h.side > 0 ? [front, half] : [-half, -front];
 }
 

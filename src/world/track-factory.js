@@ -334,6 +334,25 @@ export function makeTrack(def) {
       }
       LANES.push({ from: s - 6 / LENGTH, to: s + (len + 4) / LENGTH, limit: 2.4, off: -2.8 });
     },
+    // snow rocks (a stage with a chute): single rocks in the middle of the road, clusters on one side, and a 'gate' of two rocks with a
+    // gap in the centre. Each leaves a clear path wider than a truck, and the AI is told which way to go.
+    rockMid(s, passSide = 1, r = 1.7) {
+      const p = sampleAt(s); const off = -passSide * 0.8;
+      wallAt(p.x + p.tz * off, p.z - p.tx * off, Math.atan2(p.tx, p.tz), 'snowrock', 3.4, r);
+      LANES.push({ from: s - 9 / LENGTH, to: s + 7 / LENGTH, limit: 2.4, off: passSide * 4.6 });
+    },
+    rockSide(s, side = 1) {
+      [[0, 5.7, 1.4, 3.0], [4.2, 6.5, 1.3, 2.6], [8.2, 5.3, 1.5, 3.4]].forEach(([d, o, r, h]) => {
+        const p = sampleAt(s + d / LENGTH);
+        wallAt(p.x + p.tz * side * o, p.z - p.tx * side * o, Math.atan2(p.tx, p.tz), 'snowrock', h, r);
+      });
+      LANES.push({ from: s - 9 / LENGTH, to: s + 15 / LENGTH, limit: 2.6, off: -side * 2.4 });
+    },
+    rockGate(s, r = 1.6) {
+      const p = sampleAt(s);
+      for (const side of [-1, 1]) wallAt(p.x + p.tz * side * 5.1, p.z - p.tx * side * 5.1, Math.atan2(p.tx, p.tz), 'snowrock', 3.2, r);
+      LANES.push({ from: s - 10 / LENGTH, to: s + 7 / LENGTH, limit: 1.4, off: 0 });
+    },
     pickup(s, off) { PICKUPS.push({ id: PICKUPS.length, ...lateral(s, off, {}), r: 1.3, taken: false, cool: 0 }); },
     // a FORK: a median wall splits the road in two lanes with different risk and reward.
     //   fast lane: crate gate, accelerator pads, a jump over a trench, a nitro canister at the end
@@ -500,7 +519,7 @@ export function makeTrack(def) {
   const ENV = { gravity: undefined, wind: null, weather: 'none', ...(def.env || {}) };
   const HAZARDS = [];
   if (def.hazards) def.hazards({ W: null, sampleAt, LENGTH, ROAD_HALF, add: (h) => HAZARDS.push({ y0: heightAt(h.x, h.z), ...h }) });
-  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true, gravity: ENV.gravity, wind: ENV.wind, hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
+  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true, gravity: ENV.gravity, wind: ENV.wind, slopeLanding: !!ENV.slopeLanding, hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {
     const props = PROPS.map((p) => ({ ...p }));
