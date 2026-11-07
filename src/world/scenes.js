@@ -711,8 +711,9 @@ function buildTrack(group, T) {
   // a stage that is a finite ring of ground in empty space (Saturn's rings): the ground exists only between two radii
   const disc = T.env && T.env.ringDisc;
   const inDisc = disc ? (x, z) => { const r = Math.hypot(x - disc.x, z - disc.z); return r >= disc.r0 && r <= disc.r1; } : () => true;
-  const R = 40;
-  const fineCell = 1.25;
+  const FN = (T.env && T.env.fine) || {};                        // a very long stage can ask for a tighter, coarser detail mesh
+  const R = FN.R || 40;
+  const fineCell = FN.cell || 1.25;
   const fx0 = Math.floor((minX - R) / fineCell) * fineCell; const fz0 = Math.floor((minZ - R) / fineCell) * fineCell;
   const fine = buildColumns({
     x0: fx0, z0: fz0, nx: Math.ceil((maxX + R - fx0) / fineCell), nz: Math.ceil((maxZ + R - fz0) / fineCell), cell: fineCell, quant: 0.25,

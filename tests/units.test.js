@@ -1519,7 +1519,7 @@ test('pace: normal driving is fast (fast trucks 30+, heavy ones 24+) and nitro i
 test('pace: every truck laps every track inside a lap-time window and the roster stays within 1.5x', () => {
   for (const T of TRACKS) {
     const times = TRUCKS.map((tk) => { const r = lapWith(T, tk, 'steady'); assert.ok(r.acc >= 0.98, `${tk.id} on ${T.id} finished`); return r.time; });
-    assert.ok(Math.min(...times) > 35 && Math.max(...times) < (T.OPEN ? 125 : 95), `${T.id}: ${times.map((x) => x.toFixed(0))}`);
+    assert.ok(Math.min(...times) > 35 && Math.max(...times) < (T.OPEN ? 150 : 95), `${T.id}: ${times.map((x) => x.toFixed(0))}`);
     assert.ok(Math.max(...times) / Math.min(...times) < (T.OPEN ? 1.9 : 1.5), `${T.id} roster spread`);
   }
 });
@@ -1986,11 +1986,11 @@ test('7c: tickHazards advances the clock', () => {
   assert.equal(terr.time, 0.75);
 });
 
-test('7c: Himalaya Pass has snow, ice, planks, avalanche hazards and wind; fresh terrain resets the clock', () => {
+test('7c: Himalaya Descent has snow and ice, avalanche hazards and wind; fresh terrain resets the clock', () => {
   const T = getTrackById('himalaya');
   const surfs = new Set(T.SECTIONS.map((s) => s.surf));
-  for (const s of ['snow', 'ice', 'planks']) assert.ok(surfs.has(s), s);
-  assert.equal(T.terrain.hazards.length, 3);
+  for (const s of ['snow', 'ice']) assert.ok(surfs.has(s), s);
+  assert.equal(T.terrain.hazards.length, 4);
   assert.ok(T.env.wind && T.env.weather === 'snow');
   const a = T.freshTerrain(); a.time = 9; assert.equal(T.freshTerrain().time, 0);
 });
@@ -2330,7 +2330,7 @@ test('12: a driver stops at the finish line of a sprint track', () => {
 });
 
 test('12: every truck reaches the finish of both volcano stages at both driving styles', () => {
-  for (const id of ['volcano', 'crater']) for (const style of ['steady', 'aggressive']) {
+  for (const id of ['volcano', 'crater', 'himalaya']) for (const style of ['steady', 'aggressive']) {
     const T = getTrackById(id);
     for (const tk of TRUCKS) {
       const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
@@ -2444,4 +2444,59 @@ test('13: a lava puddle with dir -1 drifts from the left to the right and shoves
   const v = { x: px, z: pz, y: 0, vx: 0, vz: 12, nitro: 0.5, hazCool: 0 };
   hazardEffects(v, { hazards: [{ ...h, y0: 0 }], time }, 1 / 60, []);
   assert.ok(v.vx * h.tz - v.vz * h.tx < 0, 'shoved towards the right-hand side');
+});
+
+test('14: Himalaya Descent is a long open sprint down a steep snow chute: flat start, 30% to 40%, flat run-out, banked gully', () => {
+  const T = getTrackById('himalaya');
+  assert.ok(T.OPEN && T.env.camAim && T.env.hideBarriers, 'a sprint with no fence (banked walls instead)');
+  assert.ok(T.LENGTH > 2300, `a long run (${T.LENGTH.toFixed(0)} m, longer than the other sprint stages)`);
+  const grade = (s) => { const a = T.sampleAt(s - 0.003); const b = T.sampleAt(s + 0.003); return (a.y - b.y) / (0.006 * T.LENGTH); };
+  assert.ok(Math.abs(grade(0.02)) < 0.05, 'a flat start platform');
+  assert.ok(grade(0.12) > 0.28 && grade(0.12) < 0.36, `it starts at about 30% (${grade(0.12).toFixed(2)})`);
+  let maxGr = 0; for (let s = 0.08; s < 0.9; s += 0.004) maxGr = Math.max(maxGr, grade(s));
+  assert.ok(maxGr > 0.38 && maxGr < 0.46, `and gets to about 40% (${maxGr.toFixed(2)})`);
+  assert.ok(Math.abs(grade(T.FINISH_S + 0.03)) < 0.06, 'a flat run-out after the finish');
+  let prevY = 1e9;
+  for (let s = 0.04; s <= 0.95; s += 0.01) { const y = T.sampleAt(s).y; assert.ok(y <= prevY + 0.6, 'the road only goes down'); prevY = y; }
+  assert.ok(T.sampleAt(T.START_S).y > 600 && T.sampleAt(T.FINISH_S).y < 30, 'from the top of the mountain to the bottom');
+  // the gully walls rise from the road: the ground beside the road is well above it, on both sides
+  for (const s of [0.2, 0.45, 0.7]) {
+    const p = T.sampleAt(s);
+    for (const side of [-1, 1]) assert.ok(T.heightAt(p.x + p.tz * side * 28, p.z - p.tx * side * 28) > p.y + 8, `a bank on side ${side} at ${s}`);
+  }
+});
+
+test('14: Himalaya Descent avalanches alternate sides, cross the whole chute and shove a truck toward the far bank', () => {
+  const T = getTrackById('himalaya'); const av = T.freshTerrain().hazards.filter((h) => h.kind === 'avalanche');
+  assert.equal(av.length, 4);
+  for (let i = 1; i < av.length; i++) assert.notEqual(av[i].side, av[i - 1].side, 'sides alternate');
+  assert.ok(av.every((h) => h.w >= 13 && h.len >= 24));
+  // standing in the wave (it comes from the right, so a truck on the right is inside it): shoved to the left, and slowed
+  const w = { ...av[0], x: 0, z: 0, tx: 0, tz: 1, side: 1, offset: 0 };
+  const terr = flat7c({ hazards: [w], time: w.warn + 0.4 * w.dur });
+  const v = mkV7c(4, 0, 0, terr, 0); v.vx = 0; v.vz = 0;
+  const x0 = v.x;
+  for (let i = 0; i < 30; i++) stepV7c(v, { steer: 0, gas: 0 }, terr, truck7c(), 1 / 60);
+  assert.ok(v.x < x0 - 0.3, `swept toward the far bank (${x0} -> ${v.x.toFixed(2)})`);
+});
+
+test('14: the ring-search nearest() gives exactly the brute-force answer on every track, near the road and far from it', () => {
+  for (const T of TRACKS) {
+    const S = T.SAMPLES; const N = S.length;
+    let x0 = 1e9; let x1 = -1e9; let z0 = 1e9; let z1 = -1e9;
+    for (const p of S) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+    const r = L.rng(5);
+    for (let k = 0; k < 120; k++) {
+      const x = x0 - 160 + r() * (x1 - x0 + 320); const z = z0 - 160 + r() * (z1 - z0 + 320);
+      let best = 1e18;
+      for (let i = 0; i < N; i++) {
+        if (T.OPEN && i >= N - 1) continue;
+        const a = S[i]; const b = S[(i + 1) % N];
+        const sx = b.x - a.x; const sz = b.z - a.z; const l2 = sx * sx + sz * sz || 1;
+        const t = Math.max(0, Math.min(1, ((x - a.x) * sx + (z - a.z) * sz) / l2));
+        best = Math.min(best, Math.hypot(x - (a.x + sx * t), z - (a.z + sz * t)));
+      }
+      assert.ok(Math.abs(T.nearest(x, z).dist - best) < 1e-6, `${T.id} (${x.toFixed(0)},${z.toFixed(0)}): ${T.nearest(x, z).dist} vs ${best}`);
+    }
+  }
 });

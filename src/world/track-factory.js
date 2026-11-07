@@ -135,6 +135,13 @@ export function makeTrack(def) {
     grid.get(k).push(p.i);
   }
 
+  // how many cells wide the grid is: the widest the ring search ever needs to go
+  const GRID_SPAN = (() => {
+    let x0 = Infinity; let x1 = -Infinity; let z0 = Infinity; let z1 = -Infinity;
+    for (const p of SAMPLES) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+    return Math.ceil(Math.max(x1 - x0, z1 - z0) / CELL) + 3;
+  })();
+
   function segInfo(x, z, i) {
     const a = SAMPLES[i];
     const b = SAMPLES[(i + 1) % N];
@@ -157,11 +164,18 @@ export function makeTrack(def) {
       const info = segInfo(x, z, i);
       if (!best || info.dist < best.dist) best = { ...info, i };
     };
-    for (let ax = -1; ax <= 1; ax++) for (let az = -1; az <= 1; az++) {
-      const list = grid.get(gk(cx + ax, cz + az));
+    const scanCell = (gx, gz) => {
+      const list = grid.get(gk(gx, gz));
       if (list) for (const i of list) { consider(i); consider((i + N - 1) % N); }
+    };
+    for (let ax = -1; ax <= 1; ax++) for (let az = -1; az <= 1; az++) scanCell(cx + ax, cz + az);
+    // nothing close: widen the search one ring of cells at a time (every point within k*CELL has been looked at after ring k),
+    // and only fall back to looking at every sample when the whole grid has been covered
+    for (let k = 1; !best || best.dist > k * CELL - 2; k++) {
+      if (k >= GRID_SPAN) { for (let i = 0; i < N; i++) consider(i); break; }
+      const r = k + 1;
+      for (let ax = -r; ax <= r; ax++) for (let az = -r; az <= r; az++) if (Math.max(Math.abs(ax), Math.abs(az)) === r) scanCell(cx + ax, cz + az);
     }
-    if (!best || best.dist > CELL - 2) for (let i = 0; i < N; i++) consider(i);
     const a = SAMPLES[best.i];
     const b = SAMPLES[(best.i + 1) % N];
     const sA = a.s; let sB = b.s;
@@ -256,7 +270,7 @@ export function makeTrack(def) {
     const blend = smooth((ad - ROAD_HALF) / 10);
     const gb = def.ground ? smooth((ad - ROAD_HALF - 4) / 16) : blend;   // landform stages keep the road corridor and its walls level
     const base = def.ground
-      ? Math.max(0.1, n.y * (1 - gb) + (def.ground(x, z) + (nat - 2.6) * 0.12) * gb)   // a stage with its own landform (dome, craters, mountain)
+      ? Math.max(0.1, n.y * (1 - gb) + (def.ground(x, z, n) + (nat - 2.6) * 0.12) * gb)   // a stage with its own landform (dome, craters, mountain)
       : Math.max(0.1, n.y + (nat - 2.6) * blend);
     const f = ad < ROAD_HALF + 4 ? featureSum(x, z) : 0;
     const onRoad = ad <= ROAD_HALF;

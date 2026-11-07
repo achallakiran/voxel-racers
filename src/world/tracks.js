@@ -198,54 +198,88 @@ const FORTRESS_DEF = {
   },
 };
 
-// ---------------------------------------------------------------- 4. Himalaya Pass (snow, ice, wind, avalanches)
+// ---------------------------------------------------------------- 4. Himalaya Descent (sprint: a long steep snow chute down the mountain)
+// The road runs from a flat start platform at the top of a mountain, drops in and slides 30% -> 40% down a gully with
+// sweeping S-curves, and finishes on a flat run-out. The road elevation and the gully walls come from one description:
+// H(z) is the mountain's height along the fall line, xc(z) the sweep of the road, and the walls rise from the road itself.
+const HIM = { Lz: 2500, d0: 110, d1: 175, g0: 0.32, g1: 0.42, ro0: 2080, ro1: 2300, floor: 6 };
+const smooth01 = (t) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u); };
+function himGrade(z) {
+  if (z <= HIM.d0 || z >= HIM.ro1) return 0;
+  if (z < HIM.d1) return HIM.g0 * smooth01((z - HIM.d0) / (HIM.d1 - HIM.d0));
+  const g = HIM.g0 + (HIM.g1 - HIM.g0) * Math.min(1, (z - HIM.d1) / (HIM.ro0 - HIM.d1));
+  return z < HIM.ro0 ? g : g * (1 - smooth01((z - HIM.ro0) / (HIM.ro1 - HIM.ro0)));
+}
+const HIM_STEP = 5;
+const HIM_H = (() => {                                     // height along the fall line, from the floor at the end back up to the start
+  const n = Math.ceil(HIM.Lz / HIM_STEP) + 1; const h = new Array(n + 1).fill(HIM.floor);
+  for (let i = n - 1; i >= 0; i--) h[i] = h[i + 1] + 0.5 * (himGrade(i * HIM_STEP) + himGrade((i + 1) * HIM_STEP)) * HIM_STEP;
+  return h;
+})();
+function himHeight(z) {
+  if (z <= 0) return HIM_H[0];
+  const f = z / HIM_STEP; const i = Math.min(HIM_H.length - 2, Math.floor(f)); const t = Math.min(1, f - i);
+  return HIM_H[i] + (HIM_H[i + 1] - HIM_H[i]) * t;
+}
+const himSweep = (z) => smooth01(z / 260) * smooth01((HIM.Lz - z) / 260) * (46 * Math.sin(2 * Math.PI * z / 760 + 0.4) + 14 * Math.sin(2 * Math.PI * z / 330 + 1.9));
 const HIMALAYA_DEF = {
-  id: 'himalaya', name: 'Himalaya Pass',
+  id: 'himalaya', name: 'Himalaya Descent', open: true, startS: 0.04, finishS: 0.93,
   theme: { a: [0.93, 0.96, 1.0], b: [0.86, 0.9, 0.97], edge: [0.74, 0.78, 0.86], far: [0.72, 0.78, 0.9], dirt: [0.55, 0.5, 0.47], rut: [0.45, 0.4, 0.38], sand: [0.8, 0.82, 0.88], sky: 'alpine', snow: true },
-  peaks: 30, scenery: ['pine', 'pine'], sceneryCount: 380,
-  env: { weather: 'snow', wind: { x: 9, z: 0 }, look: { sky: 'alpine', fog: ['#dfe9f5', 30, 135], hemi: ['#e8f0ff', '#9aa8c0', 1.3], sun: ['#fff6e8', 2.2, 6, 12, 4] } },
-  ctrl() {
-    const ctrl = [];
-    for (let k = 0; k < 20; k++) {
-      const th = (2 * Math.PI * k) / 20;
-      const r = 1 + 0.07 * Math.sin(2 * th + 0.9) + 0.04 * Math.sin(4 * th + 0.2) + 0.02 * Math.sin(7 * th);
-      ctrl.push({ x: 128 * Math.cos(th) * r, z: 92 * Math.sin(th) * r });
+  checkpoints: [0, 0.3, 0.55, 0.78],
+  peaks: 40, scenery: ['pine', 'pine'], sceneryCount: 560,
+  paint(x, z, h, smp, c) {
+    // the snow road is tinted blue-grey with darker edges and speed stripes so the lane reads against the white mountain
+    if (smp.onRoad && !smp.feature && (smp.surf === 'snow' || smp.surf === 'ice')) {
+      if (smp.ad > 5.9) return [0.22, 0.32, 0.52];
+      if (smp.surf === 'snow') return Math.floor(z / 7) & 1 ? [0.5, 0.6, 0.78] : [0.44, 0.54, 0.74];
+      return [0.42, 0.7, 0.92];
     }
+    if (smp.onRoad) return null;
+    if (smp.ad < 9.5) return [0.52, 0.62, 0.8];                        // a packed-snow lip along the road
+    if (smp.ad > 14 && Math.sin(z * 0.045 + x * 0.09) * Math.sin(z * 0.021 - x * 0.05) > 0.62) return [0.3, 0.33, 0.42];   // rock streaks on the walls
+    return null;
+  },
+  // the gully: the walls rise from the road's own height, so the road and the mountain can never drift apart
+  ground: (x, z, n) => n.y + 0.9 * Math.min(30, Math.max(0, Math.abs(n.d) - 8)) + 0.35 * Math.max(0, Math.abs(n.d) - 38),
+  env: {
+    openRoad: true, hideBarriers: true, fine: { R: 30, cell: 1.6 }, camAim: { yaw: 0, lift: 3 }, weather: 'snow', wind: { x: 3, z: 0 },
+    look: { sky: 'alpine', fog: ['#dfe9f5', 70, 340], hemi: ['#e8f0ff', '#9aa8c0', 1.3], sun: ['#fff6e8', 2.2, 6, 12, 4] },
+  },
+  ctrl() {
+    const ctrl = []; const n = 100;
+    for (let k = 0; k <= n; k++) { const z = (HIM.Lz * k) / n; ctrl.push({ x: himSweep(z), z }); }
     return ctrl;
   },
-  elevation: (s) => 4.2 + 1.5 * Math.sin(2 * Math.PI * s + 0.4) + 0.8 * Math.sin(2 * Math.PI * 3 * s + 1.2) + 0.4 * Math.sin(2 * Math.PI * 7 * s),
+  elevation: (s, p) => himHeight(p.z) + 0.3 * Math.sin(2 * Math.PI * 19 * s),
   sections: [
-    { from: 0.0, to: 0.12, surf: 'asphalt' }, { from: 0.12, to: 0.34, surf: 'snow' }, { from: 0.34, to: 0.42, surf: 'asphalt' }, { from: 0.42, to: 0.5, surf: 'planks' },
-    { from: 0.5, to: 0.6, surf: 'snow' }, { from: 0.6, to: 0.72, surf: 'asphalt' }, { from: 0.72, to: 0.79, surf: 'snow' },
-    { from: 0.79, to: 0.85, surf: 'ice' }, { from: 0.85, to: 0.9, surf: 'snow' }, { from: 0.9, to: 1.0, surf: 'asphalt' },
+    { from: 0.0, to: 0.07, surf: 'asphalt' }, { from: 0.07, to: 0.24, surf: 'snow' }, { from: 0.24, to: 0.3, surf: 'ice' },
+    { from: 0.3, to: 0.47, surf: 'snow' }, { from: 0.47, to: 0.52, surf: 'ice' }, { from: 0.52, to: 0.7, surf: 'snow' },
+    { from: 0.7, to: 0.76, surf: 'ice' }, { from: 0.76, to: 0.86, surf: 'snow' }, { from: 0.86, to: 1.01, surf: 'asphalt' },
   ],
-  loops: ({ straightNear }) => [{ s: straightNear(0.615, 16, 0.02) }],
   features(T) {
     const { JUMP, feat } = T;
-    return [...JUMP(0.915, 2.4, 9), feat(0.875, 'whoops', { kind: 'whoops', len: 28, w: 11, amp: 0.55, wave: 4.2 })];
+    return [...JUMP(0.2, 1.4, 8), ...JUMP(0.5, 1.6, 9), ...JUMP(0.72, 1.4, 8),
+      feat(0.36, 'whoops', { kind: 'whoops', len: 40, w: 11, amp: 0.5, wave: 4.2 }), feat(0.63, 'whoops', { kind: 'whoops', len: 36, w: 11, amp: 0.5, wave: 4.2 })];
   },
   walls({ W }) {
-    W.fork(0.135, 52, 1, 'stone', 0.55);
-    W.corridor(0.245, 30, 8.2, 'stone');
-    W.island(0.70, 32, 'stone', 1);
-    W.barrels(0.375, -1, 3); W.crates(0.945, 1, 3); W.tnt(0.778, 2);
-    for (const [a, o, l] of [[0.04, 0, 8], [0.30, 0, 8], [0.965, 0, 8]]) W.pad(a, o, l, 5.5);
-    W.goo(0.41, 3, 9, 5); W.oil(0.52, -3, 10, 5);
-    for (const [a, o] of [[0.03, 0], [0.10, 0], [0.22, 0], [0.31, 0], [0.43, 0], [0.52, 0], [0.60, 0], [0.69, 0], [0.76, 0], [0.91, 0]]) W.pickup(a, o);
+    W.barrels(0.12, 1, 3); W.crates(0.42, -1, 3); W.tnt(0.58, 2); W.barrels(0.82, -1, 3);
+    for (const [a, o, l] of [[0.06, 0, 8], [0.18, 0, 8], [0.4, 0, 8], [0.6, 0, 8], [0.74, 0, 8]]) W.pad(a, o, l, 5.5);
+    W.goo(0.28, 3, 9, 5); W.oil(0.45, -3, 10, 5); W.goo(0.66, -3, 9, 5);
+    for (const [a, o] of [[0.08, 0], [0.15, 0], [0.25, 0], [0.34, 0], [0.44, 0], [0.54, 0], [0.64, 0], [0.74, 0], [0.84, 0]]) W.pickup(a, o);
   },
-  hazards({ sampleAt, LENGTH, add }) {
-    // avalanche waves sweep a stretch of road from alternating sides; a warning leads each one
-    for (const [s, side, off] of [[0.215, 1, 0], [0.762, -1, 4], [0.81, 1, 8]]) {
+  hazards({ sampleAt, add }) {
+    // avalanche waves sweep a stretch of the chute from alternating sides; a warning leads each one
+    for (const [s, side, off] of [[0.26, 1, 0], [0.43, -1, 5], [0.61, 1, 9], [0.78, -1, 2]]) {
       const p = sampleAt(s);
-      add({ kind: 'avalanche', x: p.x, z: p.z, tx: p.tx, tz: p.tz, len: 18, w: 13, side, period: 16, warn: 2.0, warnLead: 2.5, dur: 3.0, offset: off, s });
+      add({ kind: 'avalanche', x: p.x, z: p.z, tx: p.tx, tz: p.tz, len: 28, w: 13, side, period: 16, warn: 2.0, warnLead: 2.5, dur: 3.0, offset: off, s });
     }
   },
   obstacles(T) {
-    const { rng, sampleAt, ROAD_HALF, SHOULDER } = T;
+    const { rng, sampleAt, ROAD_HALF } = T;
     const rand = rng(88); const out = [];
-    for (let i = 0; i < 34; i++) {
-      const s = rand(); const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 1.8 + rand() * (SHOULDER - 3.6);
-      const p = sampleAt(s); if (s < 0.02 || s > 0.98) continue;
+    for (let i = 0; i < 40; i++) {
+      const s = 0.03 + rand() * 0.94; const side = rand() < 0.5 ? -1 : 1; const off = ROAD_HALF + 6.5 + rand() * 4;
+      const p = sampleAt(s);
       out.push({ type: 'boulder', x: p.x + p.tz * side * off, z: p.z - p.tx * side * off, r: 1.1 + rand() * 0.9, h: 1.0 + rand() * 0.8 });
     }
     return out;

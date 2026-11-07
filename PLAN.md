@@ -366,3 +366,10 @@ Mobile frame-rate tuning, LOD, final balance.
 ### Phase 13b - Crater: fewer boulders, steeper (DONE, awaiting feedback)
 - Rolling boulders 11 -> 5; scenery boulders moved outside the barrier; one stone stretch moved clear of the pothole/lava area.
 - Crater deepened (rim 112 -> 190): steepest descent about 23%, close to the climb's 25%. Ditches eased a little (trench 4.4, kicker 2.2) so every truck still clears them.
+
+### Phase 14 - Himalaya Descent (replaces Himalaya Pass) (DONE, awaiting feedback)
+- The snow stage is now a long open sprint (about 2,600 m, the longest stage): a flat start platform on top of the mountain, a drop-in, then a steep chute at 30% rising to about 40%, a flat run-out after the finish. Wide S-curves, banked gully walls and no fence (the invisible wall still keeps trucks in).
+- Road elevation and the gully come from one description (`H(z)` along the fall line + `xc(z)` sweep; the walls rise from the road's own height via `def.ground(x, z, n)`), so they cannot drift apart.
+- Content: snow, ice sections, pads, whoops, three jumps, barrels/crates/TNT, goo and oil, four avalanche waves from alternating sides (28 m long, shove toward the far bank and slow the truck; 2 s warning), pickups, pines. The loop, forks and stone blocks of the old pass are gone. Road tinted blue-grey so the lane reads against the snow.
+- Performance: `nearest()` now widens its search ring by ring instead of scanning every sample (identical results, proven against brute force on every track; the crater loads about twice as fast too); `env.fine` lets a very long stage use a tighter, coarser detail mesh (Himalaya: R 30, cell 1.6).
+- Tests: stage geometry (length, flat start, 30-40%, run-out, banks), avalanche alternation and shove, nearest() equivalence, every truck finishes at both styles.
