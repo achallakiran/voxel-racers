@@ -87,3 +87,23 @@ export function cameraGoal(mode, t, state) {
     }
   }
 }
+
+// ---- the labyrinth: a steep view from just south of the truck; the map's north (row 0, -z) is always up the screen (like the minimap)
+// (screen-up is -z, screen-right is +x)
+export function mazeCameraGoal(t, zoom = 0) {
+  const H = zoom ? 40 : 29;
+  const sp = t.speed || 0; const h = t.heading || 0;
+  return {
+    pos: { x: t.x, y: (t.y || 0) + H, z: t.z + H * 0.34 },
+    look: { x: t.x + Math.sin(h) * sp * 0.1, y: t.y || 0, z: t.z + Math.cos(h) * sp * 0.1 - 1 },
+    fov: 42,
+  };
+}
+
+// the preview: the whole maze from above, with a little tilt. `half` is the maze's half-size in metres.
+export function mazePreviewGoal(half, aspect = 1.8) {
+  const fov = 46;
+  const need = Math.max(half.z * 1.12, (half.x * 1.12) / aspect);          // vertical half-extent that must fit
+  const H = need / Math.tan((fov / 2) * Math.PI / 180) * 1.05;
+  return { pos: { x: 0, y: H, z: H * 0.16 }, look: { x: 0, y: 0, z: 0 }, fov };
+}

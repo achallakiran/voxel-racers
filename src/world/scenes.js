@@ -1029,6 +1029,67 @@ function buildTrack(group, T) {
 }
 
 
+// ------------------------------------------------------------------ the labyrinth: hedge walls, gravel paths, the exit gate
+function buildMaze(group, T) {
+  const M = T.maze;
+  const hash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
+  const leaf = (k) => new THREE.Color().setHSL(0.27 + (k - 0.5) * 0.05, 0.5, 0.25 + k * 0.1);
+  // a big meadow under and around the maze, so the overview has green all round instead of the sky showing past the ground
+  const meadow = new THREE.Mesh(UNIT, new THREE.MeshLambertMaterial({ color: 0x6fa850, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  meadow.scale.set(1400, 0.1, 1400); meadow.position.set(0, -0.03, 0); meadow.receiveShadow = true; group.add(meadow);
+  const body = []; const caps = []; const blobs = [];
+  for (const r of M.wallRuns()) {
+    const w = r.x1 - r.x0; const d = r.z1 - r.z0; const cx = (r.x0 + r.x1) / 2; const cz = (r.z0 + r.z1) / 2;
+    const k = hash(cx, cz);
+    body.push({ x: cx, y: WALL_H_VIEW / 2, z: cz, sx: w, sy: WALL_H_VIEW, sz: d, color: leaf(k).multiplyScalar(0.8) });
+    caps.push({ x: cx, y: WALL_H_VIEW + 0.12, z: cz, sx: w - 0.2, sy: 0.3, sz: d - 0.2, color: leaf(0.9) });
+    const horiz = w >= d; const len = horiz ? w : d;
+    for (let u = 0.7; u < len - 0.4; u += 1.5) {
+      const kk = hash(cx + u, cz - u);
+      const h = 0.35 + kk * 0.55;
+      blobs.push({
+        x: horiz ? r.x0 + u : cx, z: horiz ? cz : r.z0 + u, y: WALL_H_VIEW + 0.2 + h / 2,
+        sx: horiz ? 1.3 : w - 0.1, sy: h, sz: horiz ? d - 0.1 : 1.3, color: leaf(0.45 + kk * 0.55),
+      });
+    }
+  }
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  instanced(group, body, mat, { cast: true });
+  instanced(group, caps, mat, { cast: false });
+  instanced(group, blobs, mat, { cast: true });
+  // gravel floor: every open tile (cells and the gaps between them)
+  const floor = [];
+  for (let i = 0; i < M.H; i++) for (let j = 0; j < M.W; j++) {
+    if (M.lines[i][j] === '#') continue;
+    const [x0, x1] = M.xs[j]; const [z0, z1] = M.zs[i];
+    const k = hash(i, j);
+    floor.push({ x: (x0 + x1) / 2, y: 0.03, z: (z0 + z1) / 2, sx: x1 - x0, sy: 0.08, sz: z1 - z0, color: new THREE.Color(0.72, 0.64, 0.46).multiplyScalar(0.9 + k * 0.14) });
+  }
+  instanced(group, floor, mat, { receive: true });
+  // the exit: a low arch (no taller than the hedges, so it is found by driving, not by looking over the walls) and a chequered pad
+  const e = T.exitPose;
+  const g = new THREE.Group(); g.position.set(e.x, 0, e.z);
+  const post = (x, z) => { const p = new THREE.Mesh(UNIT, lambert('#f1f1f1')); p.scale.set(0.8, 3.2, 0.8); p.position.set(x, 1.6, z); p.castShadow = true; g.add(p); };
+  post(-4.5, 0); post(4.5, 0);
+  const beam = new THREE.Mesh(UNIT, lambert('#4cc9f0')); beam.scale.set(10, 0.9, 0.9); beam.position.set(0, 3.2, 0); g.add(beam);
+  for (let a = 0; a < 6; a++) for (let b = 0; b < 6; b++) {
+    const sq = new THREE.Mesh(UNIT, lambert((a + b) & 1 ? '#111' : '#fff')); sq.scale.set(1.6, 0.05, 1.6); sq.position.set(-4 + a * 1.6 + 0.8 - 0.8 + 0.0, 0.1, -4 + b * 1.6); g.add(sq);
+  }
+  group.add(g);
+  // preview-only beacons: tall light columns over the start (yellow) and the exit (cyan), so the map reads from high above
+  const beacons = new THREE.Group(); beacons.visible = false;
+  const col = (x, z, c, h) => {
+    const m = new THREE.Mesh(UNIT, basic(c, { transparent: true, opacity: 0.5, depthWrite: false }));
+    m.scale.set(2.2, h, 2.2); m.position.set(x, h / 2, z); beacons.add(m);
+    const cap = new THREE.Mesh(UNIT, basic(c)); cap.scale.set(5, 1.4, 5); cap.position.set(x, h + 0.7, z); beacons.add(cap);
+  };
+  const s0 = M.cellCenter(M.start.r, M.start.c);
+  col(s0.x, s0.z, '#ffd60a', 22); col(e.x, e.z, '#4cc9f0', 40);
+  group.add(beacons);
+  return { walls: body.length, blobs: blobs.length, floorTiles: floor.length, beacons };
+}
+const WALL_H_VIEW = 3.4;
+
 // ------------------------------------------------------------------ destructible props
 function propMesh(p) {
   const g = new THREE.Group();
@@ -1287,6 +1348,11 @@ export function createWorld(scene, lights) {
     const f = track.theme.far;
     return `#${new THREE.Color(f[0] * 0.95, f[1] * 0.95, f[2] * 0.95).getHexString()}`;
   }
+  // labyrinth preview: show / hide the light columns over the start and the exit
+  function setMazePreview(on) {
+    const tg = activeTrack && trackGroups.get(activeTrack.id);
+    if (tg && tg.stats && tg.stats.beacons) tg.stats.beacons.visible = !!on;
+  }
   function setCourse(next, track) {
     course = next === 'race' ? 'race' : 'arena';
     if (course === 'race' && track) {
@@ -1295,7 +1361,7 @@ export function createWorld(scene, lights) {
         const group = new THREE.Group();
         group.visible = false;
         scene.add(group);
-        trackGroups.set(track.id, { group, stats: buildTrack(group, track) });
+        trackGroups.set(track.id, { group, stats: track.maze ? buildMaze(group, track) : buildTrack(group, track) });
       }
       trackStats = trackGroups.get(track.id).stats;
     }
@@ -1333,6 +1399,7 @@ export function createWorld(scene, lights) {
   return {
     setMode,
     setCourse,
+    setMazePreview,
     get sunDir() { return sunDirFlat; },
     follow(x, y, z) { focus = { x, y, z }; },
     // planet stages only: where the camera really is, so the sky follows it (pass null to go back to the flat map)

@@ -1,6 +1,8 @@
 // The track roster. Each is a definition for makeTrack(); see track-factory.js.
 import { makeTrack } from './track-factory.js';
 import { MOON_SUN, MOON_EARTH } from './planet.js';
+import { makeMazeTrack } from './maze.js';
+import { LABYRINTH_DEF } from './maze-data.js';
 
 const sgnPow = (v, p) => Math.sign(v) * Math.abs(v) ** p;
 
@@ -748,5 +750,8 @@ const CRATER_DEF = {
 };
 
 export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF), makeTrack(VOLCANO_DEF), makeTrack(CRATER_DEF)];
-export const getTrackById = (id) => TRACKS.find((t) => t.id === id) || TRACKS[0];
-export const validTrack = (id) => TRACKS.some((t) => t.id === id);
+// the labyrinth is a different kind of stage (no road centreline), so TRACKS stays the road stages; STAGES is what the menu lists
+export const MAZE_TRACK = makeMazeTrack(LABYRINTH_DEF);
+export const STAGES = [...TRACKS, MAZE_TRACK];
+export const getTrackById = (id) => STAGES.find((t) => t.id === id) || TRACKS[0];
+export const validTrack = (id) => STAGES.some((t) => t.id === id);

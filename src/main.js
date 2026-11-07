@@ -17,8 +17,9 @@ installPlanetWarp(THREE);
 import { tickHazards } from './physics/hazards.js';
 import { createVehicle, stepVehicle, tuningFor, tickPickups, BOOST_COST, RACE_START_NITRO, SUS_MODES } from './physics/arcade.js';
 import { terrain as ARENA_TERRAIN, SANDBOX } from './world/arena-layout.js';
-import { TRACKS, getTrackById, validTrack } from './world/tracks.js';
-import { createRace, formatTime, wrapDelta } from './core/race.js';
+import { HEADING as HEADING_OF, tileSeen } from './world/maze.js';
+import { STAGES as TRACKS, getTrackById, validTrack } from './world/tracks.js';
+import { createRace, formatTime, wrapDelta, PREVIEW_TIME } from './core/race.js';
 import { resolveCollisions } from './physics/collide.js';
 import { createDriver, driverInput, DIFFICULTIES } from './ai/driver.js';
 import { createIntro } from './ui/intro.js';
@@ -31,7 +32,7 @@ import { DebrisRenderer } from './fx/debris-render.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
 import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
-import { nextCamera, validCamera, cameraGoal, newCameraState } from './core/camera-modes.js';
+import { nextCamera, validCamera, cameraGoal, newCameraState, mazeCameraGoal, mazePreviewGoal } from './core/camera-modes.js';
 import { createTouchControls } from './ui/touch-controls.js';
 import { boltPath, chainTargets, chargeTick, canZap, ZAP_COST, ZAP_DAMAGE, ZAP_SLOW } from './fx/lightning.js';
 import { LightningRenderer } from './fx/lightning-render.js';
@@ -361,13 +362,19 @@ function start() {
   const scaleNow = () => QUALITY_SCALE[save.particles] ?? 1;
   const tmp = new THREE.Vector3();
 
+  let mazeZoom = 0;                      // labyrinth camera: 0 = close, 1 = wide (the camera icon toggles it)
+  let explored = new Set(); let trail = [];   // labyrinth fog-of-war: cells driven through, and a breadcrumb trail
   function snapCamera() {
     const t = { x: vehicle.x, y: vehicle.y, z: vehicle.z, heading: vehicle.heading, speed: 0 };
     camState = newCameraState(t);
-    const g = cameraGoal(camMode, t, camState);
+    const g = TR.maze && driveMode === 'race' ? mazeCameraGoal(t, mazeZoom) : cameraGoal(camMode, t, camState);
     camPos.set(g.pos.x, g.pos.y, g.pos.z);
     camLook.set(g.look.x, g.look.y, g.look.z);
     camFov = g.fov;
+    if (TR.maze && driveMode === 'race' && race && race.phase === 'preview') {
+      const ov = mazePreviewGoal(TR.maze.bounds, window.innerWidth / Math.max(1, window.innerHeight));
+      camPos.set(ov.pos.x, ov.pos.y, ov.pos.z); camLook.set(ov.look.x, ov.look.y, ov.look.z); camFov = ov.fov;
+    }
   }
 
   function enterDrive() {
@@ -400,7 +407,13 @@ function start() {
     $('results').classList.remove('show');
     $('countdown').classList.remove('show');
     $('wrongway').classList.remove('show');
-    race = racing ? createRace({ laps: TR.OPEN ? 1 : 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S, finishS: TR.FINISH_S }) : null;
+    race = racing ? createRace({ laps: TR.OPEN ? 1 : 3, checkpoints: TR.CHECKPOINTS, startS: TR.START_S, finishS: TR.FINISH_S, preview: TR.maze ? PREVIEW_TIME : 0 }) : null;
+    const maze = racing && !!TR.maze;
+    $('drive').classList.toggle('maze', maze);
+    $('drive').classList.toggle('preview', maze);
+    world.setMazePreview(maze);
+    explored = new Set(); trail = []; mazeZoom = 0;
+    camera.far = maze ? 700 : 220; camera.updateProjectionMatrix();
     goTimer = 0; wrongWay = 0;
     if (racing) buildMinimap();
     Object.assign(sun.shadow.camera, { left: -11, right: 11, top: 11, bottom: -11, far: 60 });
@@ -426,7 +439,8 @@ function start() {
     boomT = 0; sun.intensity -= flashApplied; flashApplied = 0;
     world.props.clear();
     debris.life.fill(0); debris.alive = 0;
-    $('drive').classList.remove('race', 'go', 'arena');
+    $('drive').classList.remove('race', 'go', 'arena', 'maze', 'preview');
+    world.setMazePreview(false); camera.far = 220; camera.updateProjectionMatrix();
     $('results').classList.remove('show');
     Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
     sun.shadow.camera.updateProjectionMatrix();
@@ -457,6 +471,7 @@ function start() {
   const RIVAL_STYLES = ['aggressive', 'steady', 'risky', 'defensive', 'steady'];
   let playerLat = 0;
   function spawnRivals() {
+    if (TR.maze) { rivals = []; return; }          // the labyrinth's rivals arrive in a later phase (they must find the way themselves)
     const others = TRUCKS.filter((_, i) => i !== truckIdx);
     for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
     const slots = [0, 1, 2, 3, 5];
@@ -730,10 +745,21 @@ function start() {
     const off = lane.off === null ? 0 : lane.off;
     return { x: p.x + p.tz * off, z: p.z - p.tx * off, heading: Math.atan2(p.tx, p.tz) };
   }
+  // labyrinth: wedged -> back to the middle of the cell you are in, facing the way out that is closest to where you were pointing.
+  // It never moves you along the route, so it gives nothing away.
+  function mazeUnstick(v) {
+    const M = TR.maze; const c = M.cellAt(v.x, v.z); const ctr = M.cellCenter(c.r, c.c);
+    let best = null; let bd = 9;
+    for (const s of M.sides(c.r, c.c)) {
+      const h = HEADING_OF[s.k]; const d = Math.abs(Math.atan2(Math.sin(h - v.heading), Math.cos(h - v.heading)));
+      if (d < bd) { bd = d; best = h; }
+    }
+    return { x: ctr.x, z: ctr.z, heading: best === null ? v.heading : best };
+  }
   function respawn() {
     if (!race || !vehicle || race.phase !== 'racing') return;
     const n = TR.nearest(vehicle.x, vehicle.z);
-    const p = safePose(n.s, inLava(vehicle) ? 22 : inPit(vehicle) ? 10 : 0);
+    const p = TR.maze ? mazeUnstick(vehicle) : safePose(n.s, inLava(vehicle) ? 22 : inPit(vehicle) ? 10 : 0);
     const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, tune.ride);
     nv.nitro = vehicle.nitro;
     Object.assign(vehicle, nv);
@@ -750,6 +776,16 @@ function start() {
     const g = thumb.getContext('2d');
     const W = thumb.width; const H = thumb.height;
     g.clearRect(0, 0, W, H);
+    if (TR.maze) {                       // a labyrinth glyph (not the real map: that is for the preview)
+      g.strokeStyle = '#6fbf6a'; g.lineWidth = 4; g.lineCap = 'round'; g.lineJoin = 'round';
+      const cx = W / 2; const cy = H / 2;
+      for (let k = 0; k < 4; k++) {
+        const r = 10 + k * 11; const gap = k % 2 ? 0 : 1; g.beginPath();
+        const a0 = 0.5 + k * 1.6; g.arc(cx, cy, r, a0, a0 + Math.PI * 2 - 0.9 - gap * 0.3); g.stroke();
+      }
+      g.fillStyle = '#4cc9f0'; g.beginPath(); g.arc(cx, cy, 3.6, 0, 7); g.fill();
+      return;
+    }
     const S = TR.SAMPLES;
     const minX = Math.min(...S.map((p) => p.x)); const maxX = Math.max(...S.map((p) => p.x));
     const minZ = Math.min(...S.map((p) => p.z)); const maxZ = Math.max(...S.map((p) => p.z));
@@ -771,8 +807,40 @@ function start() {
   drawTrackThumb(); showTrackName();
 
   // ---- minimap (track outline drawn once, then the truck dot each frame)
-  const MW = 160; const MH = 110;
+  let MW = 160; let MH = 110;
+  // labyrinth: reveal the cell the truck is in (and leave a breadcrumb every few metres)
+  function exploreCell(v) {
+    const c = TR.maze.cellAt(v.x, v.z);
+    explored.add(c.r * 64 + c.c);
+    const last = trail[trail.length - 1];
+    if (!last || Math.hypot(v.x - last[0], v.z - last[1]) > 4) { trail.push([v.x, v.z]); if (trail.length > 700) trail.shift(); }
+  }
+  function drawMazeMinimap() {
+    const M = TR.maze; const sc = Math.min((MW - 10) / (M.bounds.x * 2), (MH - 10) / (M.bounds.z * 2));
+    const X = (x) => MW / 2 + x * sc; const Z = (z) => MH / 2 + z * sc;
+    mini.fillStyle = 'rgba(8, 12, 28, 0.55)'; mini.fillRect(0, 0, MW, MH);
+    for (let i = 0; i < M.H; i++) for (let j = 0; j < M.W; j++) {
+      const vis = tileSeen(M, explored, i, j);
+      if (!vis) continue;
+      const [x0, x1] = M.xs[j]; const [z0, z1] = M.zs[i];
+      mini.fillStyle = M.lines[i][j] === '#' ? '#6fbf6a' : '#d8c898';
+      mini.fillRect(X(x0), Z(z0), (x1 - x0) * sc + 0.6, (z1 - z0) * sc + 0.6);
+    }
+    mini.fillStyle = 'rgba(255, 214, 10, 0.8)';
+    for (const [x, z] of trail) mini.fillRect(X(x) - 0.8, Z(z) - 0.8, 1.6, 1.6);
+    // the exit flag is always shown (it was on the preview map)
+    const e = TR.exitPose; mini.fillStyle = '#4cc9f0'; mini.strokeStyle = '#fff'; mini.lineWidth = 1;
+    mini.beginPath(); mini.arc(X(e.x), Z(e.z), 3.4, 0, 7); mini.fill(); mini.stroke();
+    mini.save(); mini.translate(X(vehicle.x), Z(vehicle.z)); mini.rotate(Math.PI - vehicle.heading);
+    mini.fillStyle = '#ff3b30'; mini.strokeStyle = '#fff'; mini.lineWidth = 1.5;
+    mini.beginPath(); mini.moveTo(0, -5); mini.lineTo(3.6, 4); mini.lineTo(-3.6, 4); mini.closePath(); mini.fill(); mini.stroke();
+    mini.restore();
+  }
   function buildMinimap() {
+    const cv = $('minimap');
+    MW = TR.maze ? 160 : 160; MH = TR.maze ? 160 : 110;
+    if (cv.width !== MW || cv.height !== MH) { cv.width = MW; cv.height = MH; }
+    if (TR.maze) { miniBase = { maze: true }; return; }
     const c = document.createElement('canvas');
     c.width = MW; c.height = MH;
     const g = c.getContext('2d');
@@ -792,6 +860,7 @@ function start() {
   }
   function drawMinimap() {
     if (!miniBase || !vehicle) return;
+    if (miniBase.maze) { drawMazeMinimap(); return; }
     mini.clearRect(0, 0, MW, MH);
     mini.drawImage(miniBase.canvas, 0, 0);
     const px = vehicle.x * miniBase.sc + miniBase.ox;
@@ -808,7 +877,9 @@ function start() {
     mini.restore();
   }
   $('btn-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
+  $('btn-skip').addEventListener('click', () => { if (race && race.phase === 'preview') { race.skipPreview(); audio.click(); } });
   $('btn-cam').addEventListener('click', () => {
+    if (TR.maze && driveMode === 'race') { mazeZoom = mazeZoom ? 0 : 1; audio.click(); return; }
     camMode = nextCamera(camMode);
     save.camera = camMode;
     storage.save(save);
@@ -868,7 +939,7 @@ function start() {
     const input = readInput();
     if (race) {
       race.tick(dt);
-      if (race.phase === 'countdown') { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
+      if (race.phase === 'countdown' || race.phase === 'preview') { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
       if (race.phase === 'finished') { input.gas = 0; input.boost = false; input.brake = 0; input.hold = true; }
     }
     if (match) {
@@ -974,7 +1045,8 @@ function start() {
         if (!v.loop && (pitT > 1.2 || stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2)) respawn();
       }
       for (const e of race.drainEvents()) {
-        if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
+        if (e === 'previewEnd') { $('drive').classList.remove('preview'); world.setMazePreview(false); audio.click(); }
+        else if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
         else if (e === 'checkpoint') { audio.click(); vehicle.nitro = Math.min(1, vehicle.nitro + 0.12); }
         else if (e === 'lap') audio.chime();
         else if (e === 'finish') {
@@ -991,8 +1063,10 @@ function start() {
       $('lap').textContent = `${Math.min(race.lap, race.laps)}/${race.laps}`;
       $('timer').textContent = formatTime(race.phase === 'finished' ? race.finishTime : race.time);
       const along = Math.sin(v.heading) * n.tx + Math.cos(v.heading) * n.tz;
-      wrongWay = (v.f > 3 && along < -0.3 && race.phase === 'racing' && !v.loop) ? Math.min(1, wrongWay + dt) : Math.max(0, wrongWay - dt * 2);
+      wrongWay = (v.f > 3 && along < -0.3 && race.phase === 'racing' && !v.loop && !TR.maze) ? Math.min(1, wrongWay + dt) : Math.max(0, wrongWay - dt * 2);
       $('wrongway').classList.toggle('show', wrongWay > 0.5);
+      if (race.phase === 'preview') $('skip-ring').style.strokeDashoffset = String(66 * (1 - race.preview / PREVIEW_TIME));
+      if (TR.maze) { exploreCell(v); }
       drawMinimap();
     }
 
@@ -1033,7 +1107,17 @@ function start() {
     sun.intensity += flash - flashApplied; flashApplied = flash;
 
     // camera
-    const g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null, loopTh: v.loop ? v.loop.th : 0, loopLat: v.loop ? v.loop.lat : 0, aim: driveMode === 'race' && TR.env.camAim ? TR.env.camAim.yaw : null, aimLift: driveMode === 'race' && TR.env.camAim ? TR.env.camAim.lift : 0 }, camState);
+    let g;
+    if (TR.maze && driveMode === 'race') {
+      g = mazeCameraGoal({ x: v.x, y: 0, z: v.z, heading: v.heading, speed: v.f }, mazeZoom);
+      if (race && race.phase === 'preview') {
+        // the overview, then a swoop down to the truck over the last second and a half
+        const ov = mazePreviewGoal(TR.maze.bounds, window.innerWidth / Math.max(1, window.innerHeight));
+        const k = Math.max(0, Math.min(1, race.preview / 1.5)); const e = k * k * (3 - 2 * k);
+        g = { pos: { x: g.pos.x + (ov.pos.x - g.pos.x) * e, y: g.pos.y + (ov.pos.y - g.pos.y) * e, z: g.pos.z + (ov.pos.z - g.pos.z) * e },
+          look: { x: g.look.x + (ov.look.x - g.look.x) * e, y: g.look.y + (ov.look.y - g.look.y) * e, z: g.look.z + (ov.look.z - g.look.z) * e }, fov: g.fov + (ov.fov - g.fov) * e };
+      }
+    } else g = cameraGoal(camMode, { x: v.x, y: v.y, z: v.z, heading: v.heading, speed: v.f, loop: v.loop ? v.loop.L : null, loopTh: v.loop ? v.loop.th : 0, loopLat: v.loop ? v.loop.lat : 0, aim: driveMode === 'race' && TR.env.camAim ? TR.env.camAim.yaw : null, aimLift: driveMode === 'race' && TR.env.camAim ? TR.env.camAim.lift : 0 }, camState);
     const kp = v.loop ? 6 : camMode === 'iso-fixed' ? 7 : (camMode === 'chase' ? 6 : 5);
     camPos.lerp(tmp.set(g.pos.x, g.pos.y, g.pos.z), 1 - Math.exp(-kp * dt));
     camLook.lerp(tmp.set(g.look.x, g.look.y, g.look.z), 1 - Math.exp(-(kp + 2) * dt));
@@ -1177,6 +1261,8 @@ function start() {
     get rev() { return rev; },
     get scene() { return scene; },   // debug/screenshot aid
     get camera() { return camera; },
+    get explored() { return explored.size; },
+    get mazeZoom() { return mazeZoom; },
     get vehicle() { return vehicle; },
     get camMode() { return camMode; },
     get race() { return race; },

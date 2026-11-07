@@ -3,6 +3,7 @@
 // cutting across or driving backwards counts nothing.
 
 export const COUNTDOWN = 3.2;   // seconds of "3, 2, 1" before GO
+export const PREVIEW_TIME = 10;  // labyrinth: seconds of overhead map before the countdown (skippable)
 
 // signed shortest difference on the circle, in (-0.5, 0.5]
 export function wrapDelta(a, b) {
@@ -21,10 +22,11 @@ export function crossedForward(from, to, c) {
 }
 
 // finishS (sprint tracks): the finish line is that fraction of the way along an OPEN track, not the lap line at 0.
-export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], startS = 0.985, finishS = null } = {}) {
+export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], startS = 0.985, finishS = null, preview = 0 } = {}) {
   const r = {
     laps, checkpoints,
-    phase: 'countdown',          // countdown | racing | finished
+    phase: preview > 0 ? 'preview' : 'countdown',   // preview (labyrinth map, no driving) | countdown | racing | finished
+    preview,                     // seconds of preview left
     countdown: COUNTDOWN,
     time: 0,                     // racing clock
     lap: 1,                      // current lap (1-based)
@@ -34,11 +36,16 @@ export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], start
     best: Infinity,
     prevS: startS,
     finishTime: 0,
-    events: [],                  // 'go' | 'checkpoint' | 'lap' | 'finish' | 'newbest'
+    events: [],                  // 'previewEnd' | 'go' | 'checkpoint' | 'lap' | 'finish' | 'newbest'
   };
 
+  r.skipPreview = () => { if (r.phase === 'preview') { r.preview = 0; r.phase = 'countdown'; r.events.push('previewEnd'); } };
+
   r.tick = (dt) => {
-    if (r.phase === 'countdown') {
+    if (r.phase === 'preview') {
+      r.preview -= dt;
+      if (r.preview <= 0) { r.preview = 0; r.phase = 'countdown'; r.events.push('previewEnd'); }
+    } else if (r.phase === 'countdown') {
       r.countdown -= dt;
       if (r.countdown <= 0) { r.phase = 'racing'; r.countdown = 0; r.events.push('go'); }
     } else if (r.phase === 'racing') {

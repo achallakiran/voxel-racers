@@ -417,6 +417,16 @@ img { -webkit-user-drag: none; pointer-events: none; }
   border: 2px solid rgba(255, 255, 255, 0.35);
   pointer-events: none;
 }
+/* labyrinth: a taller square minimap, no lap / place boxes, and the preview's skip icon with its countdown ring */
+#drive.maze #minimap { width: 118px; height: 118px; }
+#drive.maze #lapbox, #drive.maze #posbox, #drive.maze #btn-respawn { display: none; }
+#btn-skip { display: none; }
+#drive.preview #btn-skip { display: grid; position: absolute; left: 50%; margin-left: -32px; bottom: calc(var(--safe-b, 0px) + 22px); width: 64px; height: 64px; place-items: center; z-index: 20; }
+#btn-skip svg { grid-area: 1 / 1; width: 28px; height: 28px; fill: #fff; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; }
+#btn-skip svg.ring { width: 58px; height: 58px; fill: none; stroke-width: 2.4; transform: rotate(-90deg); }
+#btn-skip svg.ring circle:first-child { stroke: rgba(255, 255, 255, 0.25); }
+#skip-ring { stroke: #ffd60a; stroke-dasharray: 66; stroke-dashoffset: 0; }
+#drive.preview #minimap { opacity: 0.35; }
 #countdown {
   position: absolute;
   inset: 0;

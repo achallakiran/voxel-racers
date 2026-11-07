@@ -386,6 +386,39 @@ def main():
         page.click('#btn-exit', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'race exits to the garage')
 
+        # ---------------- labyrinth stage: preview, skip, fog-of-war, no rivals yet
+        for _ in range(14):
+            if page.evaluate("document.querySelector('#trk-name b').textContent") == 'Hedge Labyrinth':
+                break
+            page.click('#trk-next', force=True); page.wait_for_timeout(120)
+        check(page.evaluate("document.querySelector('#trk-name b').textContent") == 'Hedge Labyrinth', 'the labyrinth is in the stage picker')
+        page.click('#btn-race', force=True)
+        page.wait_for_function('window.__voxelRacers.vehicle !== null && window.__voxelRacers.drawn > 30', timeout=90000)
+        check(page.evaluate('window.__voxelRacers.race.phase') == 'preview', 'labyrinth opens with the map preview')
+        check(visible(page, '#btn-skip'), 'skip icon shows during the preview')
+        try:
+            page.wait_for_function('window.__voxelRacers.camera.position.y > 100', timeout=15000)
+            high = True
+        except Exception:
+            high = False
+        check(high, 'preview camera is high above the maze')
+        check(page.evaluate('window.__voxelRacers.vehicle.f') < 0.5, 'truck cannot drive during the preview')
+        page.click('#btn-skip', force=True)
+        page.wait_for_function("window.__voxelRacers.race.phase === 'racing'", timeout=60000)
+        check(not visible(page, '#btn-skip'), 'skip icon hides once the preview is over')
+        check(page.evaluate('window.__voxelRacers.rivals.length') == 0, 'no rivals in the labyrinth yet')
+        page.keyboard.down('ArrowUp'); page.wait_for_timeout(1500); page.keyboard.up('ArrowUp')
+        check(page.evaluate('window.__voxelRacers.explored') >= 1, 'fog of war records the cells driven through')
+        try:
+            page.wait_for_function('window.__voxelRacers.camera.position.y < 60', timeout=15000)
+            low = True
+        except Exception:
+            low = False
+        check(low, 'drive camera settles close to the truck')
+        page.click('#btn-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'labyrinth exits to the garage')
+        page.click('#trk-next', force=True)
+
         # ---------------- back to title
         page.click('#btn-back')
         check(page.evaluate('window.__voxelRacers.flow.state') == 'title', 'home icon returns to title')

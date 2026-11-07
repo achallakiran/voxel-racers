@@ -410,3 +410,9 @@ Phase 15.4 — Look, sound, polish (PUSH)
 Defaults I'm assuming (change if you disagree): exit flag shown on the minimap; preview skippable; hedge-garden theme; no hazards in v1 (can add later).
 
 Queue after this: Dragon's Spine ridge sprint, Neon Night City, Sea Bridge, Skull neon tunnel (held), Football (new game mode); fork / divider-road questions still open.
+
+### Phase 15.1 + 15.2 — built (player-only; rivals come in 15.3)
+- `src/world/maze.js` (generator, model, wall collision, route progress, fog helper), `maze-data.js` (frozen seed-147 maze), `STAGES` in tracks.js (TRACKS stays the road stages), `buildMaze` in scenes.js (hedges, gravel, exit gate, preview-only beacons).
+- Map orientation: x right, z down the screen, row 0 at the top, like the ASCII map; camera sits south of the truck.
+- Race phase `preview` (10 s, skip icon with ring) before the countdown; steep drive camera (camera icon = near/wide); fog-of-war minimap with breadcrumbs and the exit flag; respawn only un-wedges (never moves you along the route); menu shows a labyrinth glyph, not the map.
+- Tests: 15.1 (7) and 15.2 (3) unit tests, smoke covers the picker, preview, skip, fog and exit. All 9 trucks drive the route in a test follower.

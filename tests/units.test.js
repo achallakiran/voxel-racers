@@ -2520,3 +2520,147 @@ test('14b: Himalaya has side and middle snow rocks with a clear path past each; 
   const half = av.w / 2; const front = half - ext * (av.reach ?? 1) * av.w;
   assert.ok(Math.abs(front) < half * 0.35, 'the surge front ends near the middle of the road');
 });
+
+// ---- Phase 15.1: the Hedge Labyrinth engine
+import { generateMaze, createMaze, makeMazeTrack, PITCH, WALL_T } from '../src/world/maze.js';
+import { LABYRINTH_DEF } from '../src/world/maze-data.js';
+import { STAGES, MAZE_TRACK, getTrackById as getStage, validTrack as validStage } from '../src/world/tracks.js';
+
+test('15.1: the maze generator is deterministic and the stage is its frozen output', () => {
+  assert.deepEqual(generateMaze(147, 13, 13, 0.12), LABYRINTH_DEF.ascii);
+  assert.notDeepEqual(generateMaze(148, 13, 13, 0.12), LABYRINTH_DEF.ascii);
+});
+
+test('15.1: the labyrinth is complex: every cell reachable, long route, many dead ends, real loops, one-way start and exit', () => {
+  const M = MAZE_TRACK.maze;
+  assert.equal(M.R, 13); assert.equal(M.C, 13);
+  for (let r = 0; r < M.R; r++) for (let c = 0; c < M.C; c++) assert.ok(M.dist[r][c] >= 0, `cell ${r},${c} reachable`);
+  assert.ok(M.path.length >= 55 && M.path.length <= 85, `route ${M.path.length}`);
+  assert.ok(M.deadEnds.length >= 12, `dead ends ${M.deadEnds.length}`);
+  assert.ok(M.loops >= 4, `loops ${M.loops}`);
+  assert.equal(M.sides(M.start.r, M.start.c).length, 1);
+  assert.equal(M.sides(M.exit.r, M.exit.c).length, 1);
+  assert.ok(PITCH - WALL_T >= 12, 'corridors are wide enough for a truck to turn');
+});
+
+test('15.1: wall collision keeps a truck inside the corridors', () => {
+  const M = MAZE_TRACK.maze;
+  const c0 = M.cellCenter(M.start.r, M.start.c);
+  assert.equal(M.collide(c0.x, c0.z, 1.3), null, 'open floor: no contact');
+  // push toward the nearest wall in every direction: always pushed back out, normal points into the wall
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const res = M.collide(c0.x + dx * 6.2, c0.z + dz * 6.2, 1.3);
+    if (!M.isOpen(M.start.r, M.start.c, { dr: dz, dc: dx })) {
+      assert.ok(res, 'touching a wall');
+      assert.ok(res.nx * dx + res.nz * dz > 0.9, 'normal points into the wall');
+      assert.ok((res.x - c0.x) * dx + (res.z - c0.z) * dz < 6.2, 'pushed back');
+    }
+  }
+  // a centre buried inside a wall is still popped out
+  const w = M.xs[0]; const inWall = M.collide((w[0] + w[1]) / 2 + 0.2, 0, 1.3);
+  assert.ok(inWall && inWall.nx !== undefined);
+});
+
+test('15.1: route progress: monotone along the route, dead ends share their branch point, nothing off-route reaches the finish', () => {
+  const M = MAZE_TRACK.maze; const T = MAZE_TRACK;
+  let prev = -1;
+  M.path.forEach((p) => { const c = M.cellCenter(p.r, p.c); const s = T.nearest(c.x, c.z).s; assert.ok(s >= prev - 1e-9, 'monotone'); prev = s; });
+  assert.ok(T.nearest(M.cellCenter(M.exit.r, M.exit.c).x, M.cellCenter(M.exit.r, M.exit.c).z).s > T.FINISH_S);
+  const onRoute = new Set(M.path.map((p) => `${p.r},${p.c}`));
+  for (let r = 0; r < M.R; r++) for (let c = 0; c < M.C; c++) {
+    if (onRoute.has(`${r},${c}`)) continue;
+    const q = M.cellCenter(r, c); const n = T.nearest(q.x, q.z);
+    assert.ok(n.s < T.FINISH_S, `off-route cell ${r},${c} is not the finish`);
+    assert.equal(n.ad, 0);
+  }
+});
+
+test('15.1: the labyrinth is its own stage: listed in the menu, not among the road tracks', () => {
+  assert.ok(STAGES.includes(MAZE_TRACK)); assert.ok(validStage('labyrinth')); assert.equal(getStage('labyrinth'), MAZE_TRACK);
+  assert.ok(!TRACKS.some((t) => t.id === 'labyrinth'));
+  assert.equal(MAZE_TRACK.OPEN, true);
+});
+
+test('15.1: the starting grid fits six trucks inside the start cell, clear of the walls', () => {
+  const T = MAZE_TRACK; const M = T.maze;
+  const g = [0, 1, 2, 3, 4, 5].map((i) => T.gridPose(i));
+  for (const p of g) { assert.equal(M.collide(p.x, p.z, 1.3), null); assert.ok(T.nearest(p.x, p.z).s < 0.02); }
+  for (let i = 0; i < 6; i++) for (let j = i + 1; j < 6; j++) assert.ok(Math.hypot(g[i].x - g[j].x, g[i].z - g[j].z) > 3.3, 'trucks do not overlap');
+});
+
+test('15.1: every truck can drive the route and reach the exit, staying inside the maze', async () => {
+  const { tuningFor, createVehicle: cv, stepVehicle: sv } = await import('../src/physics/arcade.js');
+  const { getFeel: gf } = await import('../src/vehicles/truck-feel.js');
+  const T = MAZE_TRACK; const M = T.maze;
+  const pts = M.path.map((p) => M.cellCenter(p.r, p.c));
+  const wrapA = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+  for (const tk of TRUCKS) {
+    const f = gf(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+    const terr = T.freshTerrain(); const sp = T.gridPose(3);
+    const v = cv(sp.x, sp.z, sp.heading, terr, tune.ride); v.nitro = 0.6;
+    const race = createRace({ laps: 1, checkpoints: T.CHECKPOINTS, startS: T.START_S, finishS: T.FINISH_S });
+    race.tick(10);
+    let rev = 0; let rs = 1; let stk = 0; let done = false;
+    for (let i = 0; i < 60 * 200 && !done; i++) {
+      const n = T.nearest(v.x, v.z); const k = Math.max(0, Math.min(pts.length - 1, n.i));
+      let tgt = pts[Math.min(pts.length - 1, k + 1)];
+      if (Math.hypot(tgt.x - v.x, tgt.z - v.z) < 7 && k + 1 < pts.length - 1) tgt = pts[k + 2];
+      const diff = wrapA(Math.atan2(tgt.x - v.x, tgt.z - v.z) - v.heading); const speed = Math.abs(v.f);
+      const cur = pts[Math.min(pts.length - 1, k + 1)]; const prv = pts[k]; const nx2 = pts[Math.min(pts.length - 1, k + 2)];
+      const turn = Math.abs(wrapA(Math.atan2(nx2.x - cur.x, nx2.z - cur.z) - Math.atan2(cur.x - prv.x, cur.z - prv.z)));
+      const target = turn > 0.5 && Math.hypot(cur.x - v.x, cur.z - v.z) < 20 ? 8 : 16;
+      let inp = { steer: Math.max(-1, Math.min(1, -diff * 2.8)), gas: speed < target ? 1 : 0, brake: speed > target + 3 || (Math.abs(diff) > 1 && speed > 6) ? 1 : 0, boost: false };
+      if (rev > 0) { rev -= 1 / 60; inp = { steer: -rs, gas: 0, brake: 1, boost: false }; }
+      else if (v.grounded && speed < 0.8 && i > 120) { stk += 1 / 60; if (stk > 1) { stk = 0; rev = 1; rs = inp.steer || 1; } } else stk = Math.max(0, stk - 1 / 30);
+      sv(v, inp, terr, tune, 1 / 60);
+      assert.ok(Math.abs(v.x) < M.bounds.x && Math.abs(v.z) < M.bounds.z, `${tk.id} stays inside the maze`);
+      race.update(T.nearest(v.x, v.z).s);
+      if (race.phase === 'finished') done = true;
+    }
+    assert.ok(done, `${tk.id} reaches the exit`);
+  }
+});
+
+// ---- Phase 15.2: preview, camera, fog of war
+import { PREVIEW_TIME } from '../src/core/race.js';
+import { mazeCameraGoal, mazePreviewGoal } from '../src/core/camera-modes.js';
+import { tileSeen } from '../src/world/maze.js';
+
+test('15.2: a labyrinth race opens with a skippable preview before the countdown; road races are untouched', () => {
+  const T = MAZE_TRACK;
+  const r = createRace({ laps: 1, checkpoints: T.CHECKPOINTS, startS: T.START_S, finishS: T.FINISH_S, preview: PREVIEW_TIME });
+  assert.equal(r.phase, 'preview');
+  r.tick(PREVIEW_TIME - 1); assert.equal(r.phase, 'preview'); assert.ok(r.time === 0, 'the clock does not run in the preview');
+  r.tick(1.1); assert.equal(r.phase, 'countdown'); assert.deepEqual(r.drainEvents(), ['previewEnd']);
+  const s = createRace({ laps: 1, checkpoints: T.CHECKPOINTS, startS: T.START_S, finishS: T.FINISH_S, preview: PREVIEW_TIME });
+  s.skipPreview(); assert.equal(s.phase, 'countdown'); assert.deepEqual(s.drainEvents(), ['previewEnd']);
+  s.skipPreview(); assert.deepEqual(s.drainEvents(), [], 'skipping again does nothing');
+  s.tick(5); assert.equal(s.phase, 'racing');
+  const road = createRace({ laps: 3 });
+  assert.equal(road.phase, 'countdown');
+});
+
+test('15.2: the preview camera frames the whole maze; the drive camera sits above and south of the truck', () => {
+  const M = MAZE_TRACK.maze;
+  for (const aspect of [1.3, 1.8, 2.2]) {
+    const g = mazePreviewGoal(M.bounds, aspect);
+    const half = g.pos.y * Math.tan((g.fov / 2) * Math.PI / 180);
+    assert.ok(half >= M.bounds.z, `height fits the maze at aspect ${aspect}`);
+    assert.ok(half * aspect >= M.bounds.x, 'width fits too');
+    assert.ok(g.pos.y < 650, 'inside the far plane (700)');
+  }
+  const d = mazeCameraGoal({ x: 10, y: 0, z: 20, heading: 0, speed: 0 }, 0);
+  assert.ok(d.pos.y > 20 && d.pos.z > 20 && Math.abs(d.pos.x - 10) < 1e-9, 'above and south');
+  assert.ok(mazeCameraGoal({ x: 0, y: 0, z: 0, heading: 0, speed: 0 }, 1).pos.y > d.pos.y - 29 + 1, 'wide view is higher');
+});
+
+test('15.2: fog of war reveals only the cells you have driven through (and the walls round them)', () => {
+  const M = MAZE_TRACK.maze;
+  const seen = new Set([M.start.r * 64 + M.start.c]);
+  let n = 0;
+  for (let i = 0; i < M.H; i++) for (let j = 0; j < M.W; j++) if (tileSeen(M, seen, i, j)) n++;
+  assert.equal(n, 9, 'the cell, its four walls (or gaps) and four corner posts');
+  assert.ok(!tileSeen(M, seen, 1, 1), 'a far corner is hidden');
+  const all = new Set(); for (let r = 0; r < M.R; r++) for (let c = 0; c < M.C; c++) all.add(r * 64 + c);
+  assert.ok(Array.from({ length: M.H }).every((_, i) => Array.from({ length: M.W }).every((__, j) => tileSeen(M, all, i, j))), 'everything once explored');
+});
