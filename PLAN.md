@@ -379,3 +379,34 @@ Mobile frame-rate tuning, LOD, final balance.
 - Bounce: `terrain.slopeLanding` (Himalaya only) measures landings against the falling ground; whoops softened (amp 0.28, wave 13 m).
 - Rocks: `rockMid` (single middle rock), `rockSide` (cluster on one bank), `rockGate` (two rocks, gap in the centre); slate chunks with snow caps and an ice shard (`snowrock` in scenes.js). AI lane hints steer around each. None in the first 150 m.
 - Tests: 14b (rocks, Himalaya-only slope landing, surge extent). Sweeps: 36 truck/style/mode combos all finish (77–124 s).
+
+## Phase 15 — Hedge Labyrinth (planned, not yet built)
+Decisions: one fixed complex maze, just another stage in the track list; preview (map, no route) then drive; fog-of-war minimap; rivals must *find* the way (no cheating).
+
+Maze: ~13x13 cells of 16 m (~210 m square), frozen as an ASCII map (generated offline from a seed, checked, then committed). Perfect-maze base plus a few loops (braid), several long dead ends with turning room. Flat ground, hedge walls. Nitro pickups sit in dead ends.
+
+Phase 15.1 — Maze engine (no rivals yet)
+- `src/world/maze.js`: parse ASCII -> cell graph, open sides, start/exit cells, BFS distance-to-exit field, solution polyline (game-side only: standings, respawn, `sampleAt` shim).
+- `track-factory`: `def.maze` branch behind its own flag; flat `heightAt`; `nearest()` shim returns progress = 1 - dist/maxDist so race / respawn / wrong-way keep working. No other track touched.
+- Wall collision: axis-aligned wall boxes, circle-vs-box looked up by cell (O(1)), `terrain.mazeCollide` hook used only by this stage.
+- Finish = reach the exit cell (1 lap); standings by distance-to-exit.
+- Tests: all cells reachable, exit reachable, solution length / dead-end / loop counts in range, corridor width >= 1.6x truck, truck driven into a wall stays inside, progress along solution is monotonic.
+
+Phase 15.2 — Preview + camera + fog-of-war (PUSH: player-only, test the feel)
+- New race phase `preview` before `countdown` (maze only): overhead flyover of the full map with start + exit flags, no route; ~10 s ring timer, skip icon; driving input ignored. Then swoop to the truck and the usual 3-2-1.
+- Drive camera: high steep chase (~55 deg) so hedges (3.2 m) never hide the truck; near hedges fade.
+- Minimap: only cells the player has driven through (+1 ring) are drawn; exit flag always shown (it was in the preview); breadcrumb trail.
+- Icons only on the HUD. Tests: phase machine order, input ignored in preview, skip works, fog reveals only visited cells.
+
+Phase 15.3 — Rivals that explore (PUSH)
+- `src/ai/explorer.js`: Tremaux's algorithm over a *local view* (open sides of the cell it is standing in, its own marks). It never receives the graph, the solution or distance-to-exit. Each rival has a seeded rng and a bias toward the exit's general direction (all saw the preview): steady = moderate bias, aggressive = greedy bias, plus a small chance to forget a mark (human-like errors). Tremaux guarantees the exit is found, even with loops.
+- Steering reuses the existing driver on waypoint targets (cell centres, corner cutting, speed cap in turns, reverse/3-point-turn recovery in dead ends). Rubber-band off for this stage.
+- Tests: structural no-cheat test (explorer is given a view that throws if the global graph is touched); solves from start for 20 seeds within 2x edges moves; 9 trucks x steady/aggressive all finish under the time cap with no stuck; different rivals take different routes.
+
+Phase 15.4 — Look, sound, polish (PUSH)
+- Voxel hedges with leaf colour noise and trimmed caps, grass + gravel path, centre fountain, statues in dead ends, leaf/debris burst on wall hits, dusk lighting + fireflies.
+- Menu card + icon, stage in the track list, roster tests updated, smoke test loads the stage, runs the preview and starts the race.
+
+Defaults I'm assuming (change if you disagree): exit flag shown on the minimap; preview skippable; hedge-garden theme; no hazards in v1 (can add later).
+
+Queue after this: Dragon's Spine ridge sprint, Neon Night City, Sea Bridge, Skull neon tunnel (held), Football (new game mode); fork / divider-road questions still open.
