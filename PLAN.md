@@ -362,3 +362,7 @@ Mobile frame-rate tuning, LOD, final balance.
 - Harder than the climb by request: four ditches (kicker + trench + landing, with a pad before each), seven pothole fields, eight stretches of wall-side stone blocks, 17 lava puddles (from either side), 11 one-way rolling boulders (`drifter` with `oneway`), barrels, TNT, crates, oil, goo.
 - New structures `lava` (tile disc) and `gate`; `lavaflow` supports dir -1; `paint` hook recolours the lava lake.
 - Tests: crater geometry/descent/lava below the causeway, hardness counts, one-way boulder, dir -1 lava; lap/pace tests tick hazards on open tracks; every truck finishes at both styles.
+
+### Phase 13b - Crater: fewer boulders, steeper (DONE, awaiting feedback)
+- Rolling boulders 11 -> 5; scenery boulders moved outside the barrier; one stone stretch moved clear of the pothole/lava area.
+- Crater deepened (rim 112 -> 190): steepest descent about 23%, close to the climb's 25%. Ditches eased a little (trench 4.4, kicker 2.2) so every truck still clears them.

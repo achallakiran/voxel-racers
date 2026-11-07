@@ -2408,7 +2408,7 @@ test('13: Inside the Volcano is an open sprint down the inside of the crater: st
     assert.ok((-p.tz) * (-p.x) + p.tx * (-p.z) > 0, `the crater is on the right at sample ${i}`);
     if (i > 0) steepest = Math.max(steepest, (S[i - 3].y - p.y) / 6);
   }
-  assert.ok(steepest > 0.12 && steepest < 0.3, `steepest descent ${steepest.toFixed(2)}`);
+  assert.ok(steepest > 0.17 && steepest < 0.4, `steepest descent ${steepest.toFixed(2)}`);
   assert.ok(T.sampleAt(T.START_S).y > 95 && T.sampleAt(T.FINISH_S).y < 12, 'from the rim to the bottom');
   // the bottom is a causeway over lava: the ground beside the end of the road is much lower than the road
   const e = T.sampleAt(T.FINISH_S - 0.02);
@@ -2423,7 +2423,7 @@ test('13: Inside the Volcano is hard: many ditches and jumps, potholes, lava fro
   const haz = T.freshTerrain().hazards;
   const lava = haz.filter((h) => h.kind === 'lavaflow');
   assert.ok(lava.length >= 14 && lava.some((h) => h.dir === -1) && lava.some((h) => h.dir === 1), 'lava puddles from both sides');
-  assert.ok(haz.filter((h) => h.oneway).length >= 8, 'boulders rolling off the wall');
+  assert.ok(haz.filter((h) => h.oneway).length >= 3 && haz.filter((h) => h.oneway).length <= 6, 'a few boulders rolling off the wall, not a crowd');
   const stones = T.WALLS.filter((w) => w.kind === 'stone');
   assert.ok(stones.length >= 30);
   for (const w of stones) assert.ok(T.nearest(w.x, w.z).d > 0.8, 'stone blocks only on the wall (left) side');

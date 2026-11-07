@@ -608,7 +608,7 @@ const VOLCANO_DEF = {
 // An open-top crater: the road starts on the rim, spirals down the inner wall (the wall is on your LEFT, the drop into the
 // crater on your right) and ends on a causeway over the lava lake, out through a great gate. Ditches, full-width jumps, lava
 // puddles and boulders from the wall make it a hard one. The wall and the road come from ONE function, craterWall(r).
-const CRA = { r0: 168, rEnd: 50, turns: 1.7, rFloor: 86, rim: 112, floor: 6, lava: 2.2, th0: 2.2 };
+const CRA = { r0: 168, rEnd: 50, turns: 1.7, rFloor: 86, rim: 190, floor: 6, lava: 2.2, th0: 2.2 };
 function craterWall(r) {
   if (r <= CRA.rFloor) return CRA.floor;
   const t = Math.min(1, (r - CRA.rFloor) / (CRA.r0 - CRA.rFloor));
@@ -677,7 +677,7 @@ const CRATER_DEF = {
   },
   walls({ W }) {
     // blocks of stone on the wall side (left), in many stretches; ditches and puddles push you into them
-    for (const [a, l] of [[0.075, 44], [0.15, 40], [0.285, 48], [0.375, 44], [0.52, 48], [0.62, 40], [0.76, 44], [0.855, 44]]) W.rocks(a, l);
+    for (const [a, l] of [[0.075, 44], [0.15, 40], [0.285, 48], [0.375, 44], [0.52, 48], [0.935, 32], [0.76, 44], [0.855, 44]]) W.rocks(a, l);
     W.barrels(0.545, 1, 3); W.tnt(0.36, 2); W.crates(0.735, -1, 3); W.oil(0.27, -3, 10, 5); W.goo(0.47, 3, 9, 5); W.goo(0.74, -3, 9, 5);
     for (const [a, o, l] of [[0.06, 0, 8], [0.18, 0, 9], [0.405, 0, 9], [0.56, 0, 8], [0.635, 0, 9], [0.8, 0, 9], [0.9, 0, 8]]) W.pad(a, o, l, 5.5);   // a pad just before each ditch carries the heavy trucks over
     for (const [a, o] of [[0.09, 0], [0.18, 0], [0.31, 0], [0.4, 0], [0.5, 0], [0.64, 0], [0.73, 0], [0.8, 0], [0.88, 0]]) W.pickup(a, o);
@@ -691,7 +691,7 @@ const CRATER_DEF = {
       add({ kind: 'lavaflow', cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 9.5, r: 3.6, period: 6.5, phase: ph, dir });
     }
     // boulders rolling down off the wall: one trip across the road per period, then they drop into the crater
-    const rolls = [[0.055, 0], [0.17, 0.3], [0.27, 0.6], [0.345, 0.15], [0.44, 0.45], [0.505, 0.75], [0.595, 0.05], [0.675, 0.5], [0.755, 0.25], [0.84, 0.65], [0.925, 0.35]];
+    const rolls = [[0.17, 0.3], [0.345, 0.15], [0.505, 0.75], [0.675, 0.5], [0.925, 0.35]];     // only a few: they come from the wall side, not all over the road
     for (const [s, ph] of rolls) {
       const p = sampleAt(s);
       add({ kind: 'drifter', oneway: true, cx: p.x, cz: p.z, x: p.x, z: p.z, tx: p.tx, tz: p.tz, range: 9, r: 1.5, top: 3.0, period: 5.2, phase: ph });
