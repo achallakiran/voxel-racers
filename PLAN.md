@@ -431,3 +431,23 @@ Queue after this: Dragon's Spine ridge sprint, Neon Night City, Sea Bridge, Skul
 - Rivals: `src/ai/explorer.js` - Tremaux explorer seen only through the cell it stands in (open sides + its own chalk marks); compass nudge toward the exit arch; steady and aggressive styles; wedge recovery alternates reversing and forward-with-opposite-lock. No rubber-band. 5 rivals per race.
 - How-to: icon-only card (eye the map > drive > peek again > reach the flag), shown on the first visit and remembered; a ? icon re-opens it during the preview; the preview clock waits while it is open.
 - Tests: 15.3 unit tests (Tremaux solves 40 generated mazes within 2x edges moves; structural no-cheat; 9 trucks x 2 styles finish; HUD/how-to markup) and smoke (card, remembered, ? icon, rivals move, HUD at the corner, overview camera still).
+
+## Phase 16-19 plan (agreed direction; not started)
+
+Decisions: hand bridge = hybrid "sea of clouds" stage with faithful hand models and a real edge risk; Paint mode: enemies repaint, nitro paint sealed 4 s, spin-out stops painting 2 s; Sumo with falls; arcade Football 3v3. Order: bridge first, then Paint, Sumo, Football. New modes appear in the same stage picker (like the labyrinth); icons only in play.
+
+### Phase 16 - Giant's Grip (hand bridge), each sub-phase pushed
+- 16.1 Stage skeleton and edge risk: open sprint def (coast road > cliff hairpins > garden terraces > bridge > plaza), deck raised over a drop (same approach as Volcano / Crater), low rails with gaps, fall = respawn on the deck at the last checkpoint, nitro emptied, +3 s; crosswind gusts on the span (existing `terrain.wind`, pulsed). Tests: stage listed, generic road-track tests, fall-respawn rule, gust bounds, all 9 trucks finish with the route follower.
+- 16.2 The hands: procedural voxel hands (capsule fingers with joints, thumb, knuckle creases, wrist into the cliff), weathered stone colour noise and moss; gold ribbed deck, railings, lamps, cables and anchor towers. Faithful proportions: palms up, deck resting in the palms, fingers curled under. Tests: finger count, deck inside palm extents, voxel budget.
+- 16.3 Atmosphere: cloud sea below (drifting voxel cloud layers), golden-hour light, mist patches that thin visibility briefly, gardens, pagoda, cable-car line; menu glyph.
+- 16.4 Racing feel: rivals hold lanes on the span, gentler rubber band there, edge-lane nitro pads (risk/reward), wind sound. Smoke covers fall + respawn.
+
+### Phase 17 - Mode framework + Paint the Town
+- 17.1 Arena-mode shell (picker entry, match clock, results, rival spawn on a flat arena) shared by Paint, Sumo and Football.
+- 17.2 Paint model: tile ownership grid (pure, tested), one instanced floor, only changed tiles update. 17.3 Rules: airborne trucks do not paint, nitro = wide sealed swath (4 s), ram = 2 s spin-out without paint, buckets = wide swath 8 s, 90 s round, score = share of tiles.
+- 17.4 Rival AI: sweepers (clean passes) and raiders (chase the leader), using the public tile map only. 17.5 Icon HUD: segmented territory bar, tinted minimap, results bars.
+
+### Phase 18 - Sumo Plate: round voxel disc shedding a ring every 15 s (cracks 2 s before), best of 3, nitro = stunning dash, spectate after a fall; reuses arena physics and ramming damage.
+### Phase 19 - Football: 3v3 walled pitch with curved corners, big ball with light magnet assist, kick power from speed + nitro, 2 s ram stun, goal confetti and 3-2-1 reset, striker/defender/keeper-lite AI, ball-direction edge arrow, first to 5 or golden goal.
+
+Every sub-phase: unit tests (new + old), smoke from a fresh snapshot, then push to main.
