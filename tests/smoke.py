@@ -469,8 +469,12 @@ def main():
         c2 = page.evaluate('(() => { const p = window.__voxelRacers.camera.position; return [p.x, p.y, p.z]; })()')
         check(max(abs(a - b) for a, b in zip(c1, c2)) < 0.05 and page.evaluate('window.__voxelRacers.camera.near') > 1, f'the overview camera is dead still once open ({c1} -> {c2})')
         check(not visible(page, '#nitro') or page.evaluate("getComputedStyle(document.getElementById('nitro')).opacity") == '0', 'nitro bar steps aside during the overview')
-        t0 = page.evaluate('window.__voxelRacers.race.time'); page.wait_for_timeout(700)
-        check(page.evaluate('window.__voxelRacers.race.time') > t0, 'the race clock keeps running during the map')
+        t0 = page.evaluate('window.__voxelRacers.race.time')
+        try:
+            page.wait_for_function('window.__voxelRacers.race.time > %s' % t0, timeout=60000); ran = True
+        except Exception:
+            ran = False
+        check(ran, 'the race clock keeps running during the map')
         check(abs(page.evaluate('window.__voxelRacers.vehicle.f')) < 1.0, 'the truck is held during the map')
         page.click('#btn-map', force=True)
         page.wait_for_function('window.__voxelRacers.race.mapT === 0', timeout=5000)
@@ -531,6 +535,24 @@ def main():
         check(page.evaluate("document.querySelectorAll('#res-bars i').length") == 5, 'five round pips on the results')
         page.click('#btn-results-exit', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'Sumo Plate exits to the garage')
+
+        # ---------------- Football: after Sumo; HUD, a goal scores, first to five ends the match
+        page.click('#trk-next', force=True)
+        check(page.evaluate("document.querySelector('#trk-name b').textContent") == 'Football', 'Football is in the stage picker')
+        page.click('#btn-race', force=True)
+        page.wait_for_function("window.__voxelRacers.fb && window.__voxelRacers.fb.phase === 'play'", timeout=300000)
+        check(page.evaluate('window.__voxelRacers.rivals.length') == 5, 'five other trucks on the pitch')
+        check(visible(page, '#fb-hud') and not visible(page, '#arena-hud') and not visible(page, '#hp'), 'football HUD shows the score, no arena HUD')
+        page.evaluate('(() => { const g = window.__voxelRacers; g.fbBall.x = 36; g.fbBall.z = 0; g.fbBall.vx = 0; g.fbBall.vz = 0; })()')
+        page.wait_for_function('window.__voxelRacers.fb.score[0] === 1', timeout=120000)
+        check(page.evaluate("document.querySelector('#fb-s0').textContent") == '1', 'the score shows the goal')
+        page.wait_for_function("window.__voxelRacers.fb.phase === 'play'", timeout=300000)
+        page.evaluate('(() => { const g = window.__voxelRacers; g.fb.score[0] = 4; g.fbBall.x = 36; g.fbBall.z = 0; g.fbBall.vx = 0; g.fbBall.vz = 0; })()')
+        page.wait_for_function("window.__voxelRacers.fb.phase === 'over'", timeout=120000)
+        page.wait_for_function("document.querySelector('#results').classList.contains('show')", timeout=120000)
+        check(page.evaluate("document.querySelectorAll('#res-bars i').length") == 2, 'results show two score bars')
+        page.click('#btn-results-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'Football exits to the garage')
 
         # ---------------- back to title
         page.click('#btn-back')

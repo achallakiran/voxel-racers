@@ -755,6 +755,7 @@ export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTra
 export const MAZE_TRACK = makeMazeTrack(LABYRINTH_DEF);
 import { PAINT_STAGE } from './paint-stage.js';
 import { SUMO_STAGE } from './sumo-stage.js';
-export const STAGES = [...TRACKS, MAZE_TRACK, PAINT_STAGE, SUMO_STAGE];
+import { FOOTBALL_STAGE } from './football-stage.js';
+export const STAGES = [...TRACKS, MAZE_TRACK, PAINT_STAGE, SUMO_STAGE, FOOTBALL_STAGE];
 export const getTrackById = (id) => STAGES.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => STAGES.some((t) => t.id === id);

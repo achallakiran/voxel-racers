@@ -448,6 +448,6 @@ Decisions: hand bridge = hybrid "sea of clouds" stage with faithful hand models 
 - 17.4 Rival AI: sweepers (clean passes) and raiders (chase the leader), using the public tile map only. 17.5 Icon HUD: segmented territory bar, tinted minimap, results bars.
 
 ### Phase 18 - Sumo Plate (BUILT as one pass: 5 rounds, last on the disc wins, your fall ends the round, dash hit = spin stun): round voxel disc shedding a ring every 15 s (cracks 2 s before), best of 3, nitro = stunning dash, spectate after a fall; reuses arena physics and ramming damage.
-### Phase 19 - Football: 3v3 walled pitch with curved corners, big ball with light magnet assist, kick power from speed + nitro, 2 s ram stun, goal confetti and 3-2-1 reset, striker/defender/keeper-lite AI, ball-direction edge arrow, first to 5 or golden goal.
+### Phase 19 - Football (BUILT as one pass: no clock, first to 5, you the striker with 2 AI team-mates, always-on ball magnet, no option): 3v3 walled pitch with curved corners, big ball with light magnet assist, kick power from speed + nitro, 2 s ram stun, goal confetti and 3-2-1 reset, striker/defender/keeper-lite AI, ball-direction edge arrow, first to 5 or golden goal.
 
 Every sub-phase: unit tests (new + old), smoke from a fresh snapshot, then push to main.

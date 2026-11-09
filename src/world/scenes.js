@@ -683,6 +683,98 @@ function buildSumoArena(group, S) {
   };
 }
 
+
+// ------------------------------------------------------------------ Football pitch
+function buildFootballPitch(group, F) {
+  const { HX, HZ, CORNER, GOAL_W, GOAL_D, BALL_R, pitchWall } = F;
+  const m4 = new THREE.Matrix4(); const col = new THREE.Color(); const q = new THREE.Quaternion(); const e = new THREE.Euler();
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const put = (mesh, i, x, y, z, sx, sy, sz, ry, color) => { q.setFromEuler(e.set(0, ry || 0, 0)); m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(sx, sy, sz)); mesh.setMatrixAt(i, m4); mesh.setColorAt(i, col.set(color)); };
+  // grass: 2 m cells in stripes, inside the rounded outline
+  const cells = [];
+  for (let x = -HX; x < HX; x += 2) for (let z = -HZ; z < HZ; z += 2) if (!pitchWall(x + 1, z + 1, 0.2)) cells.push([x + 1, z + 1]);
+  const grass = new THREE.InstancedMesh(UNIT, mat, cells.length); grass.receiveShadow = true; grass.frustumCulled = false;
+  cells.forEach(([x, z], i) => put(grass, i, x, 0.1, z, 2.02, 0.2, 2.02, 0, (Math.floor((x + HX) / 5) & 1) ? '#3f9a45' : '#368c3c'));
+  group.add(grass);
+  // white lines: halfway line, centre circle, the two penalty-ish boxes
+  const lines = [];
+  for (let z = -HZ + 2; z <= HZ - 2; z += 1.2) lines.push([0, z, 0.35, 1.3]);
+  for (let k = 0; k < 40; k++) { const a = (k / 40) * Math.PI * 2; lines.push([Math.cos(a) * 6, Math.sin(a) * 6, 0.9, 0.9]); }
+  for (const sx of [-1, 1]) for (let z = -9; z <= 9; z += 1.2) lines.push([sx * (HX - 9), z, 0.35, 1.3]);
+  for (const sx of [-1, 1]) for (let x = HX - 9; x <= HX - 1; x += 1.2) for (const sz of [-9, 9]) lines.push([sx * x, sz, 1.3, 0.35]);
+  const glow = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0.45 });   // lines and ball stay white under the sunset light
+  const lm = new THREE.InstancedMesh(UNIT, glow, lines.length); lm.frustumCulled = false;
+  lines.forEach(([x, z, sx, sz], i) => put(lm, i, x, 0.22, z, sx, 0.06, sz, 0, '#f4f4f4'));
+  group.add(lm);
+  // walls round the outline, with the goal mouths left open; the colour follows the end
+  const walls = [];
+  const P = 2 * (2 * (HX - CORNER) + 2 * (HZ - CORNER)) + 2 * Math.PI * CORNER;
+  const n = Math.round(P / 1.9);
+  for (let i = 0; i < n; i++) {
+    const t = i / n * P; const pt = outlinePoint(t, HX, HZ, CORNER);
+    if (Math.abs(pt.z) < GOAL_W / 2 + 0.4 && Math.abs(pt.x) > HX - 1.2) continue;
+    walls.push([pt.x + pt.nx * 0.9, pt.z + pt.nz * 0.9, Math.atan2(pt.nx, pt.nz), i % 2 ? '#e8eaf0' : '#c9ced9']);
+  }
+  const wm = new THREE.InstancedMesh(UNIT, mat, walls.length); wm.castShadow = true; wm.frustumCulled = false;
+  walls.forEach(([x, z, ry, c], i) => put(wm, i, x, 0.8, z, 2.1, 1.6, 1.4, ry, c));
+  group.add(wm);
+  // goals: posts, bar and a pale net
+  const goal = [];
+  for (const sx of [-1, 1]) {
+    const x0 = sx * HX; const x1 = sx * (HX + GOAL_D);
+    for (const sz of [-1, 1]) goal.push([x0, 1.8, sz * GOAL_W / 2, 0.7, 3.6, 0.7, '#ffffff']);
+    goal.push([x0, 3.6, 0, 0.7, 0.7, GOAL_W + 0.7, '#ffffff']);
+    for (const sz of [-1, 1]) for (let x = 0; x <= GOAL_D; x += 1.2) goal.push([sx * (HX + x), 1.6, sz * (GOAL_W / 2), 1.2, 3.2, 0.2, '#dfe6ee']);
+    for (let z = -GOAL_W / 2; z <= GOAL_W / 2; z += 1.2) goal.push([x1, 1.6, z, 0.2, 3.2, 1.2, '#dfe6ee']);
+    for (let x = 0; x <= GOAL_D; x += 1.2) for (let z = -GOAL_W / 2; z <= GOAL_W / 2; z += 1.2) goal.push([sx * (HX + x), 3.3, z, 1.2, 0.15, 1.2, '#cfd8e3']);
+  }
+  const gm = new THREE.InstancedMesh(UNIT, mat, goal.length); gm.castShadow = true; gm.frustumCulled = false;
+  goal.forEach(([x, y, z, sx, sy, sz, c], i) => put(gm, i, x, y, z, sx, sy, sz, 0, c));
+  group.add(gm);
+  // the ball: a voxel sphere shell (white with dark patches), spun as it rolls
+  const ballGroup = new THREE.Group();
+  const cubes = []; const step = 0.5; const R = BALL_R;
+  for (let x = -R; x <= R; x += step) for (let y = -R; y <= R; y += step) for (let z = -R; z <= R; z += step) {
+    const d = Math.hypot(x, y, z); if (d > R + 0.01 || d < R - step * 0.9) continue;
+    const dark = ((Math.floor((x + 9) / step) + Math.floor((y + 9) / step) * 2 + Math.floor((z + 9) / step) * 3) % 5) === 0;
+    cubes.push([x, y, z, dark ? '#22252c' : '#f6f6f6']);
+  }
+  const bm = new THREE.InstancedMesh(UNIT, glow, cubes.length); bm.castShadow = true; bm.frustumCulled = false;
+  cubes.forEach(([x, y, z, c], i) => put(bm, i, x, y, z, step * 1.02, step * 1.02, step * 1.02, 0, c));
+  ballGroup.add(bm); group.add(ballGroup);
+  return {
+    group, ballGroup,
+    update(ball, dt) {
+      ballGroup.position.set(ball.x, ball.y, ball.z);
+      const sp = Math.hypot(ball.vx, ball.vz);
+      if (sp > 0.05) { const ax = new THREE.Vector3(ball.vz, 0, -ball.vx).normalize(); ballGroup.rotateOnWorldAxis(ax, (sp * dt) / BALL_R); }
+    },
+  };
+}
+// a point on the rounded-rectangle outline by arc length, with its outward normal
+function outlinePoint(t, HX, HZ, C) {
+  const sx = HX - C; const sz = HZ - C; const arc = Math.PI * C / 2;
+  const segs = [[2 * sz, 'r'], [arc, 'c0'], [2 * sx, 't'], [arc, 'c1'], [2 * sz, 'l'], [arc, 'c2'], [2 * sx, 'b'], [arc, 'c3']];
+  let u = t;
+  for (const [len, kind] of segs) {
+    if (u <= len) {
+      const k = u / len;
+      switch (kind) {
+        case 'r': return { x: HX, z: -sz + 2 * sz * k, nx: 1, nz: 0 };
+        case 'c0': { const a = k * Math.PI / 2; return { x: sx + Math.cos(a) * C, z: sz + Math.sin(a) * C, nx: Math.cos(a), nz: Math.sin(a) }; }
+        case 't': return { x: sx - 2 * sx * k, z: HZ, nx: 0, nz: 1 };
+        case 'c1': { const a = Math.PI / 2 + k * Math.PI / 2; return { x: -sx + Math.cos(a) * C, z: sz + Math.sin(a) * C, nx: Math.cos(a), nz: Math.sin(a) }; }
+        case 'l': return { x: -HX, z: sz - 2 * sz * k, nx: -1, nz: 0 };
+        case 'c2': { const a = Math.PI + k * Math.PI / 2; return { x: -sx + Math.cos(a) * C, z: -sz + Math.sin(a) * C, nx: Math.cos(a), nz: Math.sin(a) }; }
+        case 'b': return { x: -sx + 2 * sx * k, z: -HZ, nx: 0, nz: -1 };
+        default: { const a = 1.5 * Math.PI + k * Math.PI / 2; return { x: sx + Math.cos(a) * C, z: -sz + Math.sin(a) * C, nx: Math.cos(a), nz: Math.sin(a) }; }
+      }
+    }
+    u -= len;
+  }
+  return { x: HX, z: -sz, nx: 1, nz: 0 };
+}
+
 // ------------------------------------------------------------------ sandbox (drive mode)
 const TERRAIN_COLORS = { ramp: '#e2b04a', table: '#e2b04a', hill: '#9c7048', whoops: '#8a5530' };
 
@@ -1489,6 +1581,10 @@ export function createWorld(scene, lights) {
   sumoGroup.visible = false;
   scene.add(sumoGroup);
   let sumoView = null;
+  const footGroup = new THREE.Group();
+  footGroup.visible = false;
+  scene.add(footGroup);
+  let footView = null;
   const propGroup = new THREE.Group();
   scene.add(propGroup);
   const propMeshes = buildPropMeshes(propGroup);
@@ -1549,6 +1645,7 @@ export function createWorld(scene, lights) {
     sandbox.visible = d && course === 'arena';
     paintGroup.visible = d && course === 'paint';
     sumoGroup.visible = d && course === 'sumo';
+    footGroup.visible = d && course === 'football';
     for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
     groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
@@ -1596,7 +1693,7 @@ export function createWorld(scene, lights) {
     }
   }
   function setCourse(next, track) {
-    course = next === 'race' ? 'race' : (next === 'paint' ? 'paint' : (next === 'sumo' ? 'sumo' : 'arena'));
+    course = next === 'race' ? 'race' : (next === 'paint' ? 'paint' : (next === 'sumo' ? 'sumo' : (next === 'football' ? 'football' : 'arena')));
     if (course === 'race' && track) {
       activeTrack = track;
       if (!trackGroups.has(track.id)) {
@@ -1619,6 +1716,11 @@ export function createWorld(scene, lights) {
     while (sumoGroup.children.length) sumoGroup.remove(sumoGroup.children[0]);
     sumoView = buildSumoArena(sumoGroup, info);
     return sumoView;
+  }
+  function setFootball(F) {
+    while (footGroup.children.length) footGroup.remove(footGroup.children[0]);
+    footView = buildFootballPitch(footGroup, F);
+    return footView;
   }
   setMode('outdoor');
 
@@ -1654,6 +1756,8 @@ export function createWorld(scene, lights) {
     setCourse,
     setPaint,
     setSumo,
+    setFootball,
+    get footView() { return footView; },
     get sumoView() { return sumoView; },
     get paintView() { return paintView; },
     setMazePreview,

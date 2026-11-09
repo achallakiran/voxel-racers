@@ -599,3 +599,18 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #drive.sumo #res-bars i { height: 14px; border-radius: 7px; border: 2px solid rgba(255, 255, 255, 0.5); }
 #drive.sumo #results.lost .trophy { display: none; }
 #drive.sumo #results.lost .skull { display: block; }
+
+/* ---- Football HUD: the two scores with a ball icon, an arrow to the ball when it is off screen */
+#fb-hud { display: none; position: absolute; top: calc(var(--safe-t) + 10px); left: 50%; transform: translateX(-50%); align-items: center; gap: 10px; pointer-events: none; }
+#drive.football #fb-hud { display: flex; }
+#drive.football #nitro { top: calc(var(--safe-t) + 62px); }
+#fb-hud b { min-width: 34px; text-align: center; padding: 2px 10px; border-radius: 999px; font-family: var(--pixel); font-size: clamp(16px, 4vmin, 26px); color: #fff; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5); border: 2px solid rgba(255, 255, 255, 0.8); }
+#fb-ico { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#ball-arrow { display: none; position: absolute; width: 36px; height: 36px; pointer-events: none; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)); }
+#ball-arrow.show { display: none; }
+#drive.football #ball-arrow.show { display: block; }
+#drive.football #results .row, #drive.football #results .race-row, #drive.football #results .arena-row { display: none; }
+#drive.football #res-bars { display: flex; flex-direction: column; gap: 6px; }
+#drive.football #res-bars i { height: 16px; border-radius: 8px; border: 2px solid rgba(255, 255, 255, 0.6); }
+#drive.football #results.lost .trophy { display: none; }
+#drive.football #results.lost .skull { display: block; }

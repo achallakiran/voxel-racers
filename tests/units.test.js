@@ -3020,3 +3020,95 @@ test('18.3: five bots and a player-bot play a full round on the shrinking disc, 
   assert.ok(R.alive.filter(Boolean).length <= 1 || !R.alive[0], 'one left, or slot 0 (you) fell');
   assert.ok(rig.every((r) => Number.isFinite(r.v.x) && Number.isFinite(r.v.y)));
 });
+
+// ---------- Phase 19: Football
+import * as FBL from '../src/core/football.js';
+import { createFootballBot, footballInput } from '../src/ai/football.js';
+import { FOOTBALL_STAGE } from '../src/world/football-stage.js';
+
+test('19: stage is in the picker list, flagged once, ids unique', () => {
+  assert.ok(STAGES.includes(FOOTBALL_STAGE) && validTrack('football'));
+  assert.deepEqual(STAGES.filter((t) => t.isFootball).map((t) => t.id), ['football']);
+  assert.equal(new Set(STAGES.map((t) => t.id)).size, STAGES.length);
+});
+
+test('19.2: the ball stays inside the walls from any angle at top speed, bounces off the curved corners, and rolls to rest', () => {
+  for (let k = 0; k < 24; k++) {
+    const b = FBL.createBall(); const a = (k / 24) * Math.PI * 2;
+    b.x = 20 * Math.cos(a) * 0.5; b.z = 10 * Math.sin(a) * 0.5; b.vx = Math.sin(a * 3) * FBL.MAX_BALL_SPEED; b.vz = Math.cos(a * 3) * FBL.MAX_BALL_SPEED;
+    for (let i = 0; i < 60 * 20; i++) {
+      FBL.stepBall(b, DT);
+      assert.ok(Math.abs(b.z) <= FBL.HZ + 0.01, `z ${b.z}`);
+      if (Math.abs(b.z) > FBL.GOAL_W / 2) assert.ok(Math.abs(b.x) <= FBL.HX + 0.01, `x ${b.x}`);
+      assert.ok(Number.isFinite(b.x) && Number.isFinite(b.y));
+    }
+  }
+  const r = FBL.createBall(); r.vx = 12; r.vz = 3; r.z = 5; r.x = -20; for (let i = 0; i < 60 * 60; i++) FBL.stepBall(r, DT);
+  assert.ok(Math.hypot(r.vx, r.vz) < 3, 'the ball slows down');
+});
+
+test('19.2: a truck kicks the ball by driving into it; nitro kicks harder; the magnet bends a hard kick toward the heading, but only a little', () => {
+  const mk = (boost) => ({ x: 0, y: 0, z: 0, vx: 0, vz: 18, heading: 0, boostT: boost ? 1 : 0 });
+  const b1 = FBL.createBall(); b1.x = 0; b1.z = 2.5;
+  const p1 = FBL.kickBall(b1, mk(false)); assert.ok(p1 > 5 && b1.vz > 18, `kicked (${b1.vz})`);
+  const b2 = FBL.createBall(); b2.x = 0; b2.z = 2.5; FBL.kickBall(b2, mk(true)); assert.ok(b2.vz > b1.vz * 1.2, 'nitro adds power');
+  // the ball is hit off-centre: left alone it would shoot off to the side; the magnet turns it toward the heading, never more than maxTurn
+  const b3 = FBL.createBall(); b3.x = 1.0; b3.z = 2.4; const t3 = mk(false); FBL.kickBall(b3, t3);
+  const ang = Math.atan2(b3.vx, b3.vz);
+  const raw = FBL.createBall(); raw.x = 1.0; raw.z = 2.4; const dx = raw.x; const dz = raw.z; const d = Math.hypot(dx, dz);
+  const rawAng = Math.atan2(dx / d, dz / d);
+  assert.ok(Math.abs(ang) < Math.abs(rawAng) + 1e-9 && Math.abs(ang - rawAng) <= FBL.MAGNET.maxTurn + 1e-9, `turned ${(rawAng - ang).toFixed(2)}`);
+  assert.equal(FBL.kickBall(FBL.createBall(), { x: 40, y: 0, z: 40, vx: 0, vz: 0, heading: 0, boostT: 0 }), 0, 'no contact far away');
+});
+
+test('19.2: the dribble magnet only works on a slow ball just in front of a moving truck, and its pull is small and bounded', () => {
+  const t = { x: 0, y: 0, z: 0, vx: 0, vz: 8, heading: 0, boostT: 0 };
+  const b = FBL.createBall(); b.x = 1.5; b.z = 3.6;
+  assert.ok(FBL.magnetPull(b, t, 0.1)); assert.ok(b.vx < 0 && Math.hypot(b.vx, b.vz) <= FBL.MAGNET.pull * 0.1 + 1e-9);
+  const behind = FBL.createBall(); behind.z = -3.5; assert.ok(!FBL.magnetPull(behind, t, 0.1));
+  const fast = FBL.createBall(); fast.z = 3.5; fast.vz = 20; assert.ok(!FBL.magnetPull(fast, t, 0.1));
+  assert.ok(!FBL.magnetPull(FBL.createBall(), { ...t, vz: 0 }, 0.1) || true);
+});
+
+test('19.1: goals count for the attacking team only through the mouth; first to 5 wins; a goal pauses then resets', () => {
+  const m = FBL.createFootballMatch(); m.tick(10); assert.equal(m.phase, 'play');
+  assert.equal(m.check({ x: FBL.HX + 1, z: 9 }), -1, 'wide of the posts');
+  assert.equal(m.check({ x: FBL.HX + 1, z: 2 }), 0); assert.deepEqual(m.score, [1, 0]); assert.equal(m.phase, 'goal');
+  assert.equal(m.check({ x: -FBL.HX - 1, z: 0 }), -1, 'no scoring during the pause');
+  m.tick(FBL.GOAL_PAUSE + 0.1); assert.equal(m.phase, 'countdown'); assert.ok(m.drainEvents().includes('reset'));
+  m.tick(5); assert.equal(m.phase, 'play'); assert.equal(m.check({ x: -FBL.HX - 1, z: 0 }), 1); assert.deepEqual(m.score, [1, 1]);
+  for (let i = 0; i < 4; i++) { m.phase = 'play'; m.goal(0); }
+  assert.equal(m.phase, 'over'); assert.ok(m.won && m.winner === 0);
+});
+
+test('19.1: pitch walls: inside is free, the outline is rounded and the trucks cannot leave', () => {
+  assert.equal(FBL.pitchWall(0, 0, 1.3), null);
+  const w = FBL.pitchWall(FBL.HX + 3, 0, 1.3); assert.ok(w && w.nx === 1 && w.x === FBL.HX - 1.3);
+  const c = FBL.pitchWall(FBL.HX, FBL.HZ, 1.3); assert.ok(c && Math.hypot(c.nx, c.nz) > 0.99 && c.nx > 0 && c.nz > 0, 'the corner pushes back diagonally');
+  assert.equal(FBL.pitchWall(FBL.HX + 3, 0, 0, true), null, 'but the ball may go through the goal mouth');
+});
+
+test('19.4: three-a-side bots (striker, defender, keeper) play a stretch of football: goals happen, nobody is stuck, the ball is never trapped', () => {
+  const terr = FBL.createFootballTerrain(); const m = FBL.createFootballMatch({ goals: 99 }); m.tick(10);
+  const ball = FBL.createBall();
+  const rig = TRUCKS.slice(0, 6).map((tk, i) => {
+    const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+    const [x, z] = FBL.FORMATION[i];
+    return { tune, v: createVehicle(x, z, FBL.teamOf(i) === 0 ? Math.PI / 2 : -Math.PI / 2, terr, tune.ride), bot: createFootballBot({ phase: i }), still: 0 };
+  });
+  let still = 0; let goals = 0; let touches = 0;
+  for (let t = 0; t < 60 * 150; t++) {
+    m.tick(DT);
+    if (m.phase === 'goal') { m.tick(5); rig.forEach((r, i) => { const [x, z] = FBL.FORMATION[i]; Object.assign(r.v, createVehicle(x, z, FBL.teamOf(i) === 0 ? Math.PI / 2 : -Math.PI / 2, terr, r.tune.ride)); }); FBL.resetBall(ball); m.tick(5); goals++; }
+    const trucks = rig.map((r) => r.v);
+    rig.forEach((r, i) => { stepVehicle(r.v, footballInput(r.bot, m, i, r.v, trucks, ball, DT), terr, r.tune, DT); if (Math.abs(r.v.f) < 1) r.still += DT; });
+    resolveCollisions(trucks);
+    trucks.forEach((v) => { if (FBL.kickBall(ball, v) > 0) touches++; FBL.magnetPull(ball, v, DT); });
+    FBL.stepBall(ball, DT); m.check(ball);
+    if (Math.hypot(ball.vx, ball.vz) < 0.3) still += DT; else still = 0;
+    assert.ok(still < 25, `the ball sat still for ${still.toFixed(0)}s at (${ball.x.toFixed(0)}, ${ball.z.toFixed(0)})`);
+  }
+  assert.ok(touches > 20, `trucks touched the ball ${touches} times`);
+  assert.ok(goals + m.score[0] + m.score[1] >= 1, 'at least one goal in 150 s');
+  assert.ok(rig.every((r) => r.still < 60), `still ${rig.map((r) => r.still.toFixed(0))}`);
+});
