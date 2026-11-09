@@ -108,3 +108,8 @@ export function detonate(terrain, origin) {
 export function createPaintTerrain(radius = 38) {
   return { heightAt: () => 0, obstacles: [], props: [], radius, surfaceAt: () => 'asphalt', hazards: [] };
 }
+
+// Sumo Plate: the raised disc; its height comes from the live round (rings that have fallen are holes down to the ground)
+export function createSumoTerrain(ref) {          // ref.round is the live round (it is replaced each round)
+  return { heightAt: (x, z) => ref.round.heightAt(x, z), obstacles: [], props: [], radius: 60, surfaceAt: () => 'asphalt', hazards: [] };
+}

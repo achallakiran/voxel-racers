@@ -2954,3 +2954,69 @@ test('17.4: painters (sweepers and raiders) cover most of the arena in a round a
   assert.ok(Array.from(m.counts).every((c) => c > 0.02 * m.total), `shares ${Array.from(m.counts)}`);
   assert.ok(rig.every((r) => Math.hypot(r.v.x, r.v.z) <= 38), 'nobody leaves the arena');
 });
+
+// ---------- Phase 18: Sumo Plate
+import * as SM from '../src/core/sumo.js';
+import { createSumoBot, sumoInput } from '../src/ai/sumo.js';
+import { createSumoTerrain } from '../src/world/props.js';
+import { SUMO_STAGE } from '../src/world/sumo-stage.js';
+
+test('18: stage is in the picker list, flagged once, ids unique', () => {
+  assert.ok(STAGES.includes(SUMO_STAGE) && validTrack('sumo'));
+  assert.deepEqual(STAGES.filter((t) => t.isSumo).map((t) => t.id), ['sumo']);
+  assert.equal(new Set(STAGES.map((t) => t.id)).size, STAGES.length);
+});
+
+test('18.1: rings drop outermost first every 15 s, crack warning 2 s before, the disc shrinks', () => {
+  const r = SM.createSumoRound(); r.tick(10);
+  assert.equal(r.phase, 'play'); assert.equal(r.radius(), SM.DISC_R);
+  assert.equal(r.cracking(), 0);
+  let t = 0; const ev = [];
+  while (t < 14) { r.tick(0.1); t += 0.1; ev.push(...r.drainEvents()); }
+  assert.ok(r.cracking() === SM.RING_COUNT, 'outer ring is cracking just before it falls');
+  assert.ok(ev.some((e) => e.type === 'crack') && !ev.some((e) => e.type === 'drop'));
+  for (let i = 0; i < 20; i++) r.tick(0.1);
+  assert.equal(r.gone, 1); assert.ok(r.radius() < SM.DISC_R); assert.equal(r.heightAt(SM.DISC_R - 1, 0), 0, 'the fallen ring is a hole');
+  assert.equal(r.heightAt(3, 0), SM.PLATE_Y);
+  for (let i = 0; i < 700; i++) r.tick(0.1);
+  assert.equal(r.gone, SM.RING_COUNT); assert.ok(r.radius() < SM.PLATE_R, 'after the last ring the plate shrinks');
+  assert.ok(r.radius() >= SM.MIN_R);
+});
+
+test('18.1: a truck below the disc is out; your fall ends the round, the last one standing wins', () => {
+  const r = SM.createSumoRound(); r.tick(10);
+  const on = { x: 5, y: SM.PLATE_Y, z: 0 }; const off = { x: 40, y: 0.2, z: 0 };
+  r.check([on, on, on, on, on, off]); assert.ok(!r.alive[5] && r.phase === 'play');
+  r.check([on, off, off, off, off, off]); assert.equal(r.phase, 'over'); assert.equal(r.winner, 0);
+  const r2 = SM.createSumoRound(); r2.tick(10); r2.check([off, on, on, on, on, on]);
+  assert.equal(r2.phase, 'over'); assert.equal(r2.winner, -1, 'you fell: lost');
+});
+
+test('18.1: stun lasts one second; a five-round match, the point is yours or nobody\'s', () => {
+  const r = SM.createSumoRound(); r.tick(10); r.stun(2); assert.ok(r.isStunned(2)); r.tick(SM.STUN_TIME + 0.1); assert.ok(!r.isStunned(2));
+  const m = SM.createSumoMatch();
+  const win = { winner: 0 }; const lose = { winner: -1 };
+  [win, win, lose, win, lose].forEach((x) => m.record(x));
+  assert.ok(m.done && m.wins === 3 && m.won);
+  const m2 = SM.createSumoMatch(); [lose, lose, win, lose, win].forEach((x) => m2.record(x)); assert.ok(!m2.won);
+});
+
+test('18.3: five bots and a player-bot play a full round on the shrinking disc, and one is left', () => {
+  const ref = { round: SM.createSumoRound() }; const terr = createSumoTerrain(ref);
+  const rig = TRUCKS.slice(0, 6).map((tk, i) => {
+    const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+    const a = i * Math.PI / 3; const x = Math.cos(a) * 22; const z = Math.sin(a) * 22;
+    return { tune, v: createVehicle(x, z, Math.atan2(-x, -z), terr, tune.ride), b: createSumoBot({ phase: i }) };
+  });
+  const R = ref.round; let t = 0;
+  for (; t < 150 * 60 && R.phase !== 'over'; t++) {
+    R.tick(DT);
+    const infos = rig.map((r) => ({ x: r.v.x, z: r.v.z, vx: r.v.vx, vz: r.v.vz }));
+    rig.forEach((r, i) => stepVehicle(r.v, sumoInput(r.b, R, i, r.v, infos, DT), terr, r.tune, DT));
+    // shove: close trucks push each other apart (the game does this through its collision code)
+    R.check(rig.map((r) => r.v));
+  }
+  assert.equal(R.phase, 'over', `round ended after ${(t / 60).toFixed(0)}s`);
+  assert.ok(R.alive.filter(Boolean).length <= 1 || !R.alive[0], 'one left, or slot 0 (you) fell');
+  assert.ok(rig.every((r) => Number.isFinite(r.v.x) && Number.isFinite(r.v.y)));
+});

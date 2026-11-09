@@ -25,10 +25,12 @@ import { createDriver, driverInput, DIFFICULTIES } from './ai/driver.js';
 import { createIntro } from './ui/intro.js';
 import { createBrawler, brawlerInput } from './ai/brawler.js';
 import { ramDamage, applyDamage, blastTrucks } from './physics/damage.js';
-import { createPaintTerrain, createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
+import { createSumoTerrain, createPaintTerrain, createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
 import { createMatch, formatClock, comboMultiplier } from './core/arena-match.js';
 import { createPaintMap, createPaintMatch, createBuckets, tickBuckets, paintTruck, spinOut, isSpinning, hasBucket, shares, ranking, leader, drainDirty, expireSeals, paintPalette, RAM_POWER } from './core/paint.js';
 import { createPainter, painterInput } from './ai/painter.js';
+import { createSumoRound, createSumoMatch, ringEdges, PLATE_Y, STUN_TIME } from './core/sumo.js';
+import { createSumoBot, sumoInput } from './ai/sumo.js';
 import { DebrisPool, burst } from './fx/debris.js';
 import { DebrisRenderer } from './fx/debris-render.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
@@ -329,6 +331,7 @@ function start() {
   let match = null;
   let arenaFoes = 5;
   let arenaT = null;
+  let sumoRound = null; let sumoMatchS = null; let sumoPal = []; let sumoNext = 0; const sumoRef = { round: null };
   let paintMap = null; let paintMatch = null; let paintBuckets = []; let paintPal = []; let paintSync = 0;
   let endTimer = 0;
   let rivals = [];
@@ -393,22 +396,26 @@ function start() {
     prevVy = 0; prevF = 0;
     const racing = driveMode === 'race';
     const paint = driveMode === 'paint';
+    const sumo = driveMode === 'sumo';
     courseTerrain = racing ? TR.freshTerrain() : ARENA_TERRAIN;
     world.hazards.set(racing ? courseTerrain.hazards : []);
     if (racing) { world.props.set(courseTerrain.props); world.pickups.set(courseTerrain.pickups || []); } else world.pickups.clear();
     clearRivals();
     debris.life.fill(0); debris.alive = 0;
-    match = null; paintMatch = null; endTimer = 0; truckMesh.visible = true; boomT = 0;
+    match = null; paintMatch = null; sumoRound = null; sumoMatchS = null; endTimer = 0; truckMesh.visible = true; boomT = 0;
     if (paint) { courseTerrain = createPaintTerrain(TR.radius); world.props.set([]); }
+    else if (sumo) { sumoRef.round = createSumoRound(); courseTerrain = createSumoTerrain(sumoRef); world.props.set([]); }
     else if (!racing) { arenaT = createArenaTerrain(); courseTerrain = arenaT; world.props.set(arenaT.props); }
-    const s = racing ? TR.gridPose(4) : (paint ? { x: TR.radius * 0.68, z: 0, heading: -Math.PI / 2 } : SANDBOX.start);
+    const s = racing ? TR.gridPose(4) : (paint ? { x: TR.radius * 0.68, z: 0, heading: -Math.PI / 2 } : (sumo ? { x: 22, z: 0, heading: -Math.PI / 2 } : SANDBOX.start));
     vehicle = createVehicle(s.x, s.z, s.heading, courseTerrain, tune.ride);
     if (racing) vehicle.nitro = RACE_START_NITRO;
     if (racing) spawnRivals();
     else if (paint) startPaint();
+    else if (sumo) startSumo();
     else { spawnBrawlers(); match = createMatch({ foes: rivals.length }); }
-    $('drive').classList.toggle('arena', !racing && !paint);
+    $('drive').classList.toggle('arena', !racing && !paint && !sumo);
     $('drive').classList.toggle('paint', paint);
+    $('drive').classList.toggle('sumo', sumo);
     playerAcc = racing ? wrapDelta(TR.START_S, TR.nearest(s.x, s.z).s) : 0;
     playerPrevS = racing ? TR.nearest(s.x, s.z).s : 0;
     stuckT = 0; place = rivals.length + 1;
@@ -448,7 +455,7 @@ function start() {
     vehicle = null;
     race = null;
     clearRivals();
-    match = null; paintMatch = null; $('drive').classList.remove('paint');
+    match = null; paintMatch = null; sumoRound = null; sumoMatchS = null; $('drive').classList.remove('paint', 'sumo');
     truckMesh.visible = true;
     boomT = 0; sun.intensity -= flashApplied; flashApplied = 0;
     world.props.clear();
@@ -472,7 +479,7 @@ function start() {
     world.setCourse(mode, TR);
     flow.send('drive');
   }
-  $('btn-race').addEventListener('click', () => startMode(TR.isPaint ? 'paint' : 'race'));
+  $('btn-race').addEventListener('click', () => startMode(TR.isPaint ? 'paint' : (TR.isSumo ? 'sumo' : 'race')));
   $('btn-arena').addEventListener('click', () => startMode('arena'));
   $('btn-retry').addEventListener('click', () => { audio.click(); enterDrive(); });
   $('btn-results-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
@@ -545,7 +552,7 @@ function start() {
       } else { r.acc += wrapDelta(r.prevS, n.s); r.prevS = n.s; }
       const m = r.mesh;
       m.position.set(v.x, v.y - (v.loop ? 0 : r.tune.ride), v.z);
-      m.rotation.set(-v.pitch, v.heading, v.roll);
+      m.rotation.set(-v.pitch, v.heading + (v.spinVis || 0), v.roll);
       for (const w of m.userData.wheels) if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
       const sn = Math.min(1, Math.abs(v.f) / r.tune.maxSpeed);
       animateTruck(m, dt, 0.3 + sn * 0.6, clock, v.f / 0.6);
@@ -575,6 +582,33 @@ function start() {
     group.add(bg, fg);
     scene.add(group);
     return { group, fg };
+  }
+  // Sumo Plate: five rounds on a shrinking raised disc; every round everybody is put back on the disc
+  function startSumo() {
+    sumoMatchS = createSumoMatch();
+    sumoPal = paintPalette(currentPaint(TRUCKS[truckIdx]).body, 5);
+    const others = TRUCKS.filter((_, i) => i !== truckIdx);
+    for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+    rivals = others.slice(0, 5).map((t, i) => {
+      const f = getFeel(t.id); const rt = tuningFor(t.stats, f.handling, f.sus);
+      const v = createVehicle(0, 0, 0, courseTerrain, rt.ride);
+      const mesh = createTruckMesh(t, { body: sumoPal[i + 1] });
+      mesh.rotation.order = 'YXZ';
+      scene.add(mesh);
+      return { truck: t, mesh, v, tune: rt, brain: createSumoBot({ aggression: 0.55 + rand() * 0.35, phase: i }), color: sumoPal[i + 1], acc: 0, prevS: 0 };
+    });
+    world.setSumo({ ringEdges: ringEdges(), plateY: PLATE_Y });
+    newSumoRound();
+  }
+  function newSumoRound() {
+    sumoRound = createSumoRound(); sumoRef.round = sumoRound; sumoNext = 0; endTimer = 0;
+    const put = (v, tn, i, x, z) => { const nv = createVehicle(x, z, Math.atan2(-x, -z), courseTerrain, tn.ride); nv.nitro = 1; Object.assign(v, nv); v.spinVis = 0; };
+    put(vehicle, tune, 0, 22, 0);
+    rivals.forEach((r, i) => { const a = (i + 1) * (Math.PI * 2 / 6); put(r.v, r.tune, i + 1, Math.cos(a) * 22, Math.sin(a) * 22); r.mesh.visible = true; });
+    truckMesh.visible = true;
+    world.sumoView.reset();
+    $('drive').classList.remove('go'); $('results').classList.remove('show');
+    snapCamera();
   }
   // Paint the Town: fresh tile map, buckets, five painters in their own colours
   function startPaint() {
@@ -752,6 +786,43 @@ function start() {
       if (h.power > 6) { burst(debris, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.8, z: (a.z + b.z) / 2, colors: [0x9aa0aa, 0xffd60a, 0x1c1c20], count: 4, speed: 5, up: 4, size: 0.2, u: rand }); }
     }
   }
+  // Sumo Plate, one physics step: bots drive, hard rams shove, a dash hit spins the victim, anything off the disc is out
+  function sumoStep(dt) {
+    const R = sumoRound;
+    const trucks = allTrucks();
+    const infos = trucks.map((v) => ({ x: v.x, z: v.z, vx: v.vx, vz: v.vz }));
+    rivals.forEach((r, i) => {
+      const input = sumoInput(r.brain, R, i + 1, r.v, infos, dt);
+      stepVehicle(r.v, input, courseTerrain, r.tune, dt);
+    });
+    trucks.forEach((v, i) => { v.spinVis = R.isStunned(i) ? ((v.spinVis || 0) + dt * 14) % (Math.PI * 2) : 0; });
+    if (R.phase === 'play') {
+      const pre = trucks.map((v) => ({ vx: v.vx, vz: v.vz }));
+      for (const h of resolveCollisions(trucks)) {
+        if (h.power < 3) continue;
+        const a = trucks[h.a]; const b = trucks[h.b];
+        const dx = b.x - a.x; const dz = b.z - a.z; const dl = Math.hypot(dx, dz) || 1;
+        const k = Math.min(7, 1.5 + h.power * 0.35);                      // shove along the line between them
+        const dmg = ramDamage(a, b, h.power, { a: pre[h.a], b: pre[h.b] });
+        const wa = dmg.a / (dmg.a + dmg.b + 1e-6);                         // the one who took the bigger hit is shoved harder
+        a.vx -= (dx / dl) * k * wa * 2; a.vz -= (dz / dl) * k * wa * 2;
+        b.vx += (dx / dl) * k * (1 - wa) * 2; b.vz += (dz / dl) * k * (1 - wa) * 2;
+        if (a.boostT > 0 && b.boostT <= 0) R.stun(h.b); else if (b.boostT > 0 && a.boostT <= 0) R.stun(h.a);
+        if (h.a === 0 || h.b === 0) { shake = Math.max(shake, Math.min(0.8, h.power / 14)); audio.thump(h.power * 0.9); }
+        if (h.power > 5) burst(debris, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.8, z: (a.z + b.z) / 2, colors: [0xffd60a, 0xffffff], count: 5, speed: 5, up: 4, size: 0.22, u: rand });
+      }
+    }
+    R.check(trucks);
+  }
+  function sumoHud() {
+    const R = sumoRound; const M = sumoMatchS;
+    const pips = $('pips').children;
+    for (let i = 0; i < 5; i++) { const done = i < M.results.length; pips[i].className = done ? (M.results[i] ? 'won' : 'lost') : (i === M.round ? 'now' : ''); }
+    const dots = $('alive').children;
+    for (let i = 0; i < 6; i++) { dots[i].style.background = sumoPal[i]; dots[i].classList.toggle('out', !R.alive[i]); }
+    $('ring-ico').classList.toggle('crack', R.cracking() > 0);
+    $('drive').classList.toggle('spun', R.isStunned(0));
+  }
   // Paint the Town, one physics step: painters drive, everyone paints, hard rams spin the victim out
   function paintStep(dt) {
     const m = paintMap;
@@ -875,6 +946,12 @@ function start() {
         const a0 = 0.5 + k * 1.6; g.arc(cx, cy, r, a0, a0 + Math.PI * 2 - 0.9 - gap * 0.3); g.stroke();
       }
       g.fillStyle = '#4cc9f0'; g.beginPath(); g.arc(cx, cy, 3.6, 0, 7); g.fill();
+      return;
+    }
+    if (TR.isSumo) {                     // concentric rings with a gap
+      const cx = W / 2; const cy = H / 2;
+      for (const [r, c] of [[40, '#9a8c98'], [32, '#81b29a'], [24, '#f2cc8f'], [16, '#e07a5f'], [8, '#e9d8a6']]) { g.fillStyle = c; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill(); }
+      g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy, 40, 0, 7); g.stroke();
       return;
     }
     if (TR.isPaint) {                      // a round arena with paint splats
@@ -1044,6 +1121,11 @@ function start() {
       if (race.phase === 'countdown' || race.phase === 'preview' || race.mapT > 0) { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
       if (race.phase === 'finished') { input.gas = 0; input.boost = false; input.brake = 0; input.hold = true; }
     }
+    if (sumoRound) {
+      sumoRound.tick(dt);
+      if (sumoRound.phase !== 'play' || !sumoRound.alive[0]) { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
+      else if (sumoRound.isStunned(0)) { input.gas = 0; input.boost = false; input.brake = 0.3; input.steer = 1; }
+    }
     if (paintMatch) {
       paintMatch.tick(dt, paintMap);
       if (paintMatch.phase !== 'play') { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
@@ -1080,6 +1162,7 @@ function start() {
       if (rivals.length && race) rivalStep(1 / 60);
       else if (match) arenaStep(1 / 60);
       else if (paintMatch) paintStep(1 / 60);
+      else if (sumoRound) sumoStep(1 / 60);
     }
     const v = vehicle;
     const speedNorm = Math.min(1, Math.abs(v.f) / tune.maxSpeed);
@@ -1094,7 +1177,7 @@ function start() {
 
     // pose
     truckMesh.position.set(v.x, v.y - (v.loop ? 0 : tune.ride), v.z);
-    truckMesh.rotation.set(-v.pitch, v.heading, v.roll);
+    truckMesh.rotation.set(-v.pitch, v.heading + (v.spinVis || 0), v.roll);
     for (const w of truckMesh.userData.wheels) {
       if (w.group.position.z > 0.3) w.group.rotation.y = -v.steerVis * 0.45;
     }
@@ -1219,6 +1302,37 @@ function start() {
       const mult = comboMultiplier(match.chain);
       $('combo').textContent = `x${mult}`;
       $('combo').classList.toggle('show', mult > 1 && match.chain > 0);
+    }
+    if (sumoRound) {
+      arenaPose(dt);
+      const R = sumoRound;
+      world.sumoView.update(R, dt, clock);
+      for (const e of R.drainEvents()) {
+        if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
+        else if (e.type === 'crack') { shake = Math.max(shake, 0.25); audio.thump(6); }
+        else if (e.type === 'drop') { shake = Math.max(shake, 0.7); audio.thump(16); }
+        else if (e.type === 'out') { const t = e.who === 0 ? vehicle : rivals[e.who - 1].v; audio.thump(8); burst(debris, { x: t.x, y: t.y + 1, z: t.z, colors: [0xffd60a, 0xe9d8a6, 0x1c1c20], count: 14, speed: 6, up: 5, size: 0.3, u: rand }); }
+        else if (e.type === 'over') {
+          sumoMatchS.record(R);
+          endTimer = 0; sumoNext = 2.4;
+        }
+      }
+      const digit = R.countdownDigit();
+      if (R.phase === 'countdown' && digit > 0 && $('countdown').textContent !== String(digit)) showCountdown(String(digit));
+      if (goTimer > 0) { goTimer -= dt; if (goTimer <= 0) $('countdown').classList.remove('show'); }
+      if (sumoNext > 0) {
+        sumoNext -= dt;
+        if (sumoNext <= 0) {
+          if (sumoMatchS.done) {
+            audio.chime();
+            $('results').classList.toggle('lost', !sumoMatchS.won);
+            const bars = $('res-bars'); bars.innerHTML = '';
+            sumoMatchS.results.forEach((w) => { const b = document.createElement('i'); b.style.width = '30px'; b.style.background = w ? '#ffd60a' : '#555a66'; bars.appendChild(b); });
+            $('results').classList.add('show');
+          } else newSumoRound();
+        }
+      }
+      if (sumoRound) sumoHud();
     }
     if (paintMatch) {
       arenaPose(dt);
@@ -1427,6 +1541,8 @@ function start() {
     get renderer() { return renderer; }, get scene() { return scene; }, get sun() { return sun; },
     get howtoOpen() { return howtoOpen; },
     get match() { return match; },
+    get sumoRound() { return sumoRound; },
+    get sumoMatch() { return sumoMatchS; },
     get paintMap() { return paintMap; },
     get paintMatch() { return paintMatch; },
     get paintBuckets() { return paintBuckets; },

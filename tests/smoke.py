@@ -510,6 +510,28 @@ def main():
         page.click('#btn-results-exit', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'Paint the Town exits to the garage')
 
+        # ---------------- Sumo Plate: after Paint; rings, the pips HUD, a fall ends the round, five rounds to results
+        page.click('#trk-next', force=True)
+        check(page.evaluate("document.querySelector('#trk-name b').textContent") == 'Sumo Plate', 'Sumo Plate is in the stage picker')
+        page.click('#btn-race', force=True)
+        page.wait_for_function("window.__voxelRacers.sumoRound && window.__voxelRacers.sumoRound.phase === 'play'", timeout=300000)
+        check(page.evaluate('window.__voxelRacers.rivals.length') == 5, 'five rivals on the disc')
+        check(visible(page, '#sumo-hud') and visible(page, '#pips') and not visible(page, '#arena-hud'), 'sumo HUD shows pips and ring icon, no arena HUD')
+        page.evaluate('window.__voxelRacers.sumoRound.toDrop = 0.05')
+        page.wait_for_function('window.__voxelRacers.sumoRound.gone === 1', timeout=120000)
+        check(page.evaluate('window.__voxelRacers.sumoRound.radius()') < 30, 'a ring fell and the disc shrank')
+        for rnd in range(5):
+            page.wait_for_function("window.__voxelRacers.sumoRound && window.__voxelRacers.sumoRound.phase === 'play'", timeout=300000)
+            page.evaluate('(() => { const g = window.__voxelRacers; g.vehicle.x = 60; g.vehicle.z = 0; g.vehicle.y = 0.2; })()')
+            page.wait_for_function("window.__voxelRacers.sumoRound.phase === 'over' || window.__voxelRacers.sumoMatch.round > %d" % rnd, timeout=120000)
+            page.wait_for_function("window.__voxelRacers.sumoMatch.round > %d" % rnd, timeout=120000)
+            if rnd < 4:
+                page.wait_for_function("window.__voxelRacers.sumoRound.phase !== 'over'", timeout=120000)
+        page.wait_for_function("document.querySelector('#results').classList.contains('show')", timeout=120000)
+        check(page.evaluate("document.querySelectorAll('#res-bars i').length") == 5, 'five round pips on the results')
+        page.click('#btn-results-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'Sumo Plate exits to the garage')
+
         # ---------------- back to title
         page.click('#btn-back')
         check(page.evaluate('window.__voxelRacers.flow.state') == 'title', 'home icon returns to title')

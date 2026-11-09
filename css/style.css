@@ -579,3 +579,23 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #drive.paint #results.lost .trophy { display: none; }
 #drive.paint #results.lost .skull { display: block; }
 #drive.paint #results .row { display: none; }
+
+/* ---- Sumo Plate HUD: five round pips, the ring icon (flashes before a ring falls) and who is still on the disc */
+#sumo-hud { display: none; position: absolute; top: calc(var(--safe-t) + 10px); left: 50%; transform: translateX(-50%); align-items: center; gap: 12px; pointer-events: none; }
+#drive.sumo #sumo-hud { display: flex; }
+#drive.sumo #nitro { top: calc(var(--safe-t) + 62px); }
+#pips { display: flex; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(11, 16, 38, 0.5); border: 2px solid rgba(255, 255, 255, 0.4); }
+#pips i { display: block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.7); }
+#pips i.won { background: #ffd60a; border-color: #ffd60a; }
+#pips i.lost { background: #555a66; border-color: #555a66; }
+#pips i.now { border-color: #7dff9b; box-shadow: 0 0 6px #7dff9b; }
+#ring-ico { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 2; }
+#ring-ico.crack { stroke: #ff5a4a; animation: hpPulse 0.2s infinite alternate; }
+#alive { display: flex; gap: 5px; }
+#alive i { display: block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid #fff; }
+#alive i.out { opacity: 0.25; }
+#drive.sumo #results .row, #drive.sumo #results .race-row, #drive.sumo #results .arena-row { display: none; }
+#drive.sumo #res-bars { display: flex; flex-direction: row; gap: 6px; }
+#drive.sumo #res-bars i { height: 14px; border-radius: 7px; border: 2px solid rgba(255, 255, 255, 0.5); }
+#drive.sumo #results.lost .trophy { display: none; }
+#drive.sumo #results.lost .skull { display: block; }

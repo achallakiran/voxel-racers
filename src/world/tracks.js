@@ -754,6 +754,7 @@ export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTra
 // the labyrinth is a different kind of stage (no road centreline), so TRACKS stays the road stages; STAGES is what the menu lists
 export const MAZE_TRACK = makeMazeTrack(LABYRINTH_DEF);
 import { PAINT_STAGE } from './paint-stage.js';
-export const STAGES = [...TRACKS, MAZE_TRACK, PAINT_STAGE];
+import { SUMO_STAGE } from './sumo-stage.js';
+export const STAGES = [...TRACKS, MAZE_TRACK, PAINT_STAGE, SUMO_STAGE];
 export const getTrackById = (id) => STAGES.find((t) => t.id === id) || TRACKS[0];
 export const validTrack = (id) => STAGES.some((t) => t.id === id);

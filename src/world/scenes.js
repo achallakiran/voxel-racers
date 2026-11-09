@@ -635,6 +635,54 @@ function buildPaintArena(group, map) {
   return API;
 }
 
+
+// ------------------------------------------------------------------ Sumo Plate arena
+function buildSumoArena(group, S) {
+  const edges = S.ringEdges; const Y = S.plateY; const N = edges.length - 1;
+  const rings = [];
+  const m4 = new THREE.Matrix4(); const col = new THREE.Color();
+  for (let k = 0; k <= N; k++) {                 // k = 0 is the centre plate, k = 1..N the rings outwards
+    const r0 = k === 0 ? 0 : edges[k - 1]; const r1 = edges[k];
+    const cells = [];
+    const subs = Math.max(1, Math.round((r1 - r0) / 2.2));
+    for (let a = 0; a < subs; a++) {
+      const ra = r0 + (r1 - r0) * a / subs; const rb = r0 + (r1 - r0) * (a + 1) / subs; const rm = (ra + rb) / 2;
+      const n = Math.max(k === 0 && a === 0 ? 1 : 6, Math.round((2 * Math.PI * rm) / 2.3));
+      for (let i = 0; i < n; i++) {
+        const ang = (i + 0.5) / n * Math.PI * 2;
+        cells.push({ x: Math.cos(ang) * rm, z: Math.sin(ang) * rm, ry: -ang + Math.PI / 2, sx: (2 * Math.PI * rm / n) * 1.04, sz: (rb - ra) * 1.04, odd: (i + a) & 1 });
+      }
+    }
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: new THREE.Color('#ff3b1f'), emissiveIntensity: 0 });
+    const mesh = new THREE.InstancedMesh(UNIT, mat, cells.length);
+    const base = k === 0 ? '#e9d8a6' : ['#e07a5f', '#f2cc8f', '#81b29a', '#9a8c98'][(k - 1) % 4];
+    cells.forEach((c, i) => {
+      m4.compose(new THREE.Vector3(c.x, Y - 1.5, c.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, c.ry, 0)), new THREE.Vector3(c.sx, 3, c.sz));
+      mesh.setMatrixAt(i, m4); mesh.setColorAt(i, col.set(base).multiplyScalar(c.odd ? 1 : 0.88));
+    });
+    mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+    const g = new THREE.Group(); g.add(mesh); group.add(g);
+    rings.push({ g, mat, fall: 0, vy: 0, gone: false });
+  }
+  return {
+    group,
+    // state: the round. dt: seconds. Rings that have gone fall away; the one about to go flashes; the plate shrinks at the end.
+    update(round, dt, time) {
+      const crack = round.cracking();
+      for (let k = 1; k <= N; k++) {
+        const r = rings[k];
+        const gone = k > N - round.gone;
+        if (gone && !r.gone) { r.gone = true; r.vy = 0; }
+        if (r.gone && r.g.visible) { r.vy += 22 * dt; r.fall += r.vy * dt; r.g.position.y = -r.fall; r.g.rotation.x = Math.min(0.5, r.fall * 0.03); if (r.fall > 14) r.g.visible = false; }
+        r.mat.emissiveIntensity = (!r.gone && crack === k) ? 0.35 + 0.35 * Math.sin(time * 30) : 0;
+      }
+      const sc = round.gone >= N ? round.radius() / edges[0] : 1;
+      rings[0].g.scale.set(sc, 1, sc);
+    },
+    reset() { for (const r of rings) { r.gone = false; r.fall = 0; r.vy = 0; r.g.visible = true; r.g.position.y = 0; r.g.rotation.x = 0; r.g.scale.set(1, 1, 1); r.mat.emissiveIntensity = 0; } },
+  };
+}
+
 // ------------------------------------------------------------------ sandbox (drive mode)
 const TERRAIN_COLORS = { ramp: '#e2b04a', table: '#e2b04a', hill: '#9c7048', whoops: '#8a5530' };
 
@@ -1437,6 +1485,10 @@ export function createWorld(scene, lights) {
   paintGroup.visible = false;
   scene.add(paintGroup);
   let paintView = null;
+  const sumoGroup = new THREE.Group();
+  sumoGroup.visible = false;
+  scene.add(sumoGroup);
+  let sumoView = null;
   const propGroup = new THREE.Group();
   scene.add(propGroup);
   const propMeshes = buildPropMeshes(propGroup);
@@ -1496,6 +1548,7 @@ export function createWorld(scene, lights) {
     weatherWind = env.breeze || env.wind || null;
     sandbox.visible = d && course === 'arena';
     paintGroup.visible = d && course === 'paint';
+    sumoGroup.visible = d && course === 'sumo';
     for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
     groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
@@ -1543,7 +1596,7 @@ export function createWorld(scene, lights) {
     }
   }
   function setCourse(next, track) {
-    course = next === 'race' ? 'race' : (next === 'paint' ? 'paint' : 'arena');
+    course = next === 'race' ? 'race' : (next === 'paint' ? 'paint' : (next === 'sumo' ? 'sumo' : 'arena'));
     if (course === 'race' && track) {
       activeTrack = track;
       if (!trackGroups.has(track.id)) {
@@ -1561,6 +1614,11 @@ export function createWorld(scene, lights) {
     while (paintGroup.children.length) paintGroup.remove(paintGroup.children[0]);
     paintView = buildPaintArena(paintGroup, map);
     return paintView;
+  }
+  function setSumo(info) {
+    while (sumoGroup.children.length) sumoGroup.remove(sumoGroup.children[0]);
+    sumoView = buildSumoArena(sumoGroup, info);
+    return sumoView;
   }
   setMode('outdoor');
 
@@ -1595,6 +1653,8 @@ export function createWorld(scene, lights) {
     setMode,
     setCourse,
     setPaint,
+    setSumo,
+    get sumoView() { return sumoView; },
     get paintView() { return paintView; },
     setMazePreview,
     setMazePeek,
