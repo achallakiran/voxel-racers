@@ -2738,3 +2738,71 @@ test('15.2b: zoom gestures are cancelled', async () => {
   e = ev(); handlers.touchend.forEach((f) => f(e)); const e2 = ev(); handlers.touchend.forEach((f) => f(e2)); assert.ok(e2.prevented, 'the quick second tap is cancelled');
   e = ev({ ctrlKey: true }); handlers.wheel.forEach((f) => f(e)); assert.ok(e.prevented, 'ctrl+wheel zoom');
 });
+
+// ---- Phase 15.3: rival explorers (they find the way themselves) + HUD/how-to
+import { createExplorer, explorerInput, chooseSide } from '../src/ai/explorer.js';
+import { readFileSync } from 'node:fs';
+
+test('15.3: Tremaux explorer solves 40 generated mazes using only the local view, walking each passage at most twice', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const lines = generateMaze(seed, 10, 10, 0.15);
+    const M = createMaze(lines);
+    const ex = createExplorer({ seed, style: seed % 2 ? 'steady' : 'aggressive', compass: M.exit });
+    let cur = { ...M.start }; let from = null; let steps = 0;
+    while (!(cur.r === M.exit.r && cur.c === M.exit.c) && steps < 2 * M.edges + 5) {
+      const side = chooseSide(ex, cur.r, cur.c, M.sides(cur.r, cur.c).map((s) => s.k), from);
+      const d = { N: [-1, 0], E: [0, 1], S: [1, 0], W: [0, -1] }[side];
+      assert.ok(M.isOpen(cur.r, cur.c, { dr: d[0], dc: d[1] }), 'never tries a wall');
+      cur = { r: cur.r + d[0], c: cur.c + d[1] }; from = { N: 'S', S: 'N', E: 'W', W: 'E' }[side]; steps++;
+    }
+    assert.ok(cur.r === M.exit.r && cur.c === M.exit.c, `seed ${seed}: reached the exit in ${steps} steps (edges ${M.edges})`);
+  }
+});
+
+test('15.3: no cheating: the explorer never imports the route, distances or full map, and only asks about the cell it is in', async () => {
+  const src = readFileSync(new URL('../src/ai/explorer.js', import.meta.url), 'utf8');
+  for (const bad of ['createMaze', 'makeMazeTrack', '.dist', '.path', '.anchor', 'nearest', 'deadEnds', 'lines']) assert.ok(!src.includes(bad), `explorer does not touch ${bad}`);
+  const { tuningFor: tf, createVehicle: cv, stepVehicle: sv } = await import('../src/physics/arcade.js');
+  const T = MAZE_TRACK; const M = T.maze;
+  const tk = TRUCKS[0]; const f = getFeel(tk.id); const tune = tf(tk.stats, f.handling, f.sus);
+  const terr = T.freshTerrain(); const sp = T.gridPose(3); const v = cv(sp.x, sp.z, sp.heading, terr, tune.ride);
+  const ex = createExplorer({ seed: 5, compass: M.exit });
+  let queries = 0;
+  for (let i = 0; i < 60 * 40; i++) {
+    const inp = explorerInput(ex, v, tune, M.cellAt, M.cellCenter, (r, c) => { queries++; const here = M.cellAt(v.x, v.z); assert.deepEqual({ r, c }, here, 'asked about the truck\'s own cell only'); return M.sides(r, c).map((s) => s.k); }, 1 / 60, { phase: 'racing' });
+    sv(v, inp, terr, tune, 1 / 60);
+  }
+  assert.ok(queries > 3, 'it did decide things');
+  // before GO it just holds still
+  const hold = explorerInput(createExplorer({ seed: 1 }), v, tune, M.cellAt, M.cellCenter, () => [], 1 / 60, { phase: 'countdown' });
+  assert.equal(hold.hold, true);
+});
+
+test('15.3: every truck, steady and aggressive, finds the exit by itself and stays inside the maze', async () => {
+  const { tuningFor: tf, createVehicle: cv, stepVehicle: sv } = await import('../src/physics/arcade.js');
+  const T = MAZE_TRACK; const M = T.maze;
+  for (const [ti, tk] of TRUCKS.entries()) for (const style of ['steady', 'aggressive']) {
+    const f = getFeel(tk.id); const tune = tf(tk.stats, f.handling, f.sus);
+    const terr = T.freshTerrain(); const sp = T.gridPose(3); const v = cv(sp.x, sp.z, sp.heading, terr, tune.ride); v.nitro = 0.6;
+    const ex = createExplorer({ seed: 7 + ti, style, compass: M.exit });
+    let done = false;
+    for (let i = 0; i < 60 * 700 && !done; i++) {
+      sv(v, explorerInput(ex, v, tune, M.cellAt, M.cellCenter, (r, c) => M.sides(r, c).map((s) => s.k), 1 / 60, { phase: 'racing' }), terr, tune, 1 / 60);
+      assert.ok(Math.abs(v.x) < M.bounds.x && Math.abs(v.z) < M.bounds.z, 'inside');
+      if (T.nearest(v.x, v.z).s >= T.FINISH_S) done = true;
+    }
+    assert.ok(done, `${tk.id} (${style}) finds the exit`);
+  }
+});
+
+test('15.3: the how-to card is remembered, the HUD keeps the middle of the screen clear, and the overview camera is exact', () => {
+  assert.equal(DEFAULTS.seenMazeHowto, false);
+  const css = readFileSync(new URL('../css/style.css', import.meta.url), 'utf8');
+  assert.ok(/#drive\.maze #race-hud \{[^}]*transform: none/.test(css), 'maze timer sits at the corner, not centred');
+  assert.ok(/#drive\.maze #nitro \{[^}]*transform: none/.test(css), 'maze nitro bar sits at the corner');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  for (const id of ['howto', 'btn-howto', 'btn-howto-ok']) assert.ok(html.includes(`id="${id}"`), id);
+  // the how-to is icons only: no letters inside the card
+  const card = html.slice(html.indexOf('<div id="howto">'), html.indexOf('<div id="countdown">'));
+  assert.ok(!/>[A-Za-z]{2,}</.test(card.replace(/<svg[\s\S]*?<\/svg>/g, '')), 'no text in the how-to card');
+});

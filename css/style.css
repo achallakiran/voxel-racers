@@ -420,6 +420,14 @@ img { -webkit-user-drag: none; pointer-events: none; }
 /* labyrinth: a taller square minimap, no lap / place boxes, and the preview's skip icon with its countdown ring */
 #drive.maze #minimap { width: 118px; height: 118px; }
 #drive.maze #lapbox, #drive.maze #posbox, #drive.maze #btn-respawn { display: none; }
+/* labyrinth HUD: nothing across the middle of the screen. A compact clock sits beside the back icon with a slim nitro bar under it,
+   and both give way to the full map while the overview is open */
+#drive.maze #race-hud { top: calc(var(--safe-t) + 14px); left: calc(var(--safe-l) + 68px); transform: none; padding: 2px 12px; font-size: clamp(13px, 3.2vmin, 18px); background: rgba(11, 16, 38, 0.42); border-width: 1.5px; }
+#drive.maze #nitro { top: calc(var(--safe-t) + 54px); left: calc(var(--safe-l) + 68px); transform: none; padding: 3px 9px; gap: 6px; background: rgba(11, 16, 38, 0.42); border-width: 1.5px; }
+#drive.maze #nitro svg { width: 13px; height: 13px; }
+#drive.maze #nitro .bar { width: clamp(64px, 12vw, 96px); height: 7px; }
+#drive.maze #minimap { top: calc(var(--safe-t) + 84px); }
+#drive.maze.peek #nitro, #drive.maze.peek #minimap { opacity: 0; }
 #btn-skip, #btn-map { display: none; }
 /* labyrinth overview-map icon: top right under the camera icon, with a cooldown ring */
 #drive.maze:not(.preview) #btn-map { display: grid; position: absolute; top: calc(var(--safe-t) + 72px); right: calc(var(--safe-r, 0px) + 12px); width: 52px; height: 52px; place-items: center; }
@@ -435,6 +443,21 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #btn-skip svg.ring circle:first-child { stroke: rgba(255, 255, 255, 0.25); }
 #skip-ring { stroke: #ffd60a; stroke-dasharray: 66; stroke-dashoffset: 0; }
 #drive.preview #minimap { opacity: 0.35; }
+/* labyrinth how-to: four icon tiles in the same card style as the results (eye the map, drive, peek again, reach the flag) */
+#btn-howto { display: none; }
+#drive.preview #btn-howto { display: grid; position: absolute; left: 50%; margin-left: 52px; bottom: calc(var(--safe-b, 0px) + 28px); place-items: center; z-index: 20; }
+#btn-howto svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+#howto { display: none; position: absolute; inset: 0; place-items: center; background: rgba(5, 8, 24, 0.6); pointer-events: auto; z-index: 30; }
+#howto.show { display: grid; }
+#howto .card { display: grid; gap: 14px; justify-items: center; padding: 20px 22px; border-radius: 22px; background: rgba(11, 16, 38, 0.92); border: 3px solid #ffd60a; max-width: 94vw; }
+#howto .steps { display: flex; align-items: center; gap: 6px; }
+#howto .tile { width: clamp(52px, 15vmin, 84px); height: clamp(52px, 15vmin, 84px); border-radius: 16px; display: grid; place-items: center; border: 2.5px solid rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0.07); }
+#howto .tile svg { width: 58%; height: 58%; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#howto .eye svg { stroke: #4cc9f0; } #howto .drive svg { stroke: #7bed9f; } #howto .peek svg { stroke: #fff; } #howto .flag svg { stroke: #ffd60a; }
+#howto .peek { animation: howto-pulse 1.6s ease-in-out infinite; }
+#howto .next { width: 20px; height: 20px; fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+#howto .icon-btn svg { width: 28px; height: 28px; fill: none; stroke: #7bed9f; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+@keyframes howto-pulse { 50% { border-color: #4cc9f0; box-shadow: 0 0 12px rgba(76, 201, 240, 0.6); } }
 #countdown {
   position: absolute;
   inset: 0;

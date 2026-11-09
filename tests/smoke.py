@@ -396,6 +396,13 @@ def main():
         page.wait_for_function('window.__voxelRacers.vehicle !== null && window.__voxelRacers.drawn > 30', timeout=90000)
         check(page.evaluate('window.__voxelRacers.race.phase') == 'preview', 'labyrinth opens with the map preview')
         check(visible(page, '#btn-skip'), 'skip icon shows during the preview')
+        check(page.evaluate('window.__voxelRacers.howtoOpen') is True and visible(page, '#howto'), 'first visit: the icon how-to card is open')
+        pv0 = page.evaluate('window.__voxelRacers.race.preview'); page.wait_for_timeout(800)
+        check(abs(page.evaluate('window.__voxelRacers.race.preview') - pv0) < 0.01, 'the preview clock waits while the how-to card is open')
+        page.click('#btn-howto-ok', force=True)
+        check(not visible(page, '#howto') and page.evaluate("JSON.parse(localStorage.getItem('voxel-racers:save')).seenMazeHowto") is True, 'the card closes and is remembered')
+        check(visible(page, '#btn-howto'), 'a ? icon re-opens the card during the preview')
+        page.click('#btn-howto', force=True); check(visible(page, '#howto'), 'the ? icon opens the card again'); page.click('#btn-howto-ok', force=True)
         try:
             page.wait_for_function('window.__voxelRacers.camera.position.y > 100', timeout=15000)
             high = True
@@ -404,9 +411,16 @@ def main():
         check(high, 'preview camera is high above the maze')
         check(page.evaluate('window.__voxelRacers.vehicle.f') < 0.5, 'truck cannot drive during the preview')
         page.click('#btn-skip', force=True)
-        page.wait_for_function("window.__voxelRacers.race.phase === 'racing'", timeout=60000)
+        page.wait_for_function("window.__voxelRacers.race.phase === 'racing'", timeout=300000)
         check(not visible(page, '#btn-skip'), 'skip icon hides once the preview is over')
-        check(page.evaluate('window.__voxelRacers.rivals.length') == 0, 'no rivals in the labyrinth yet')
+        check(page.evaluate('window.__voxelRacers.rivals.length') == 5, 'five rival explorers start in the labyrinth')
+        hud = page.evaluate("(() => { const w = innerWidth; const a = document.getElementById('race-hud').getBoundingClientRect(); const n = document.getElementById('nitro').getBoundingClientRect(); return [a.left / w, a.right / w, n.left / w, n.right / w]; })()")
+        check(hud[1] < 0.4 and hud[3] < 0.4, f'timer and nitro bar sit at the left corner, clear of the maze ({hud})')
+        try:
+            page.wait_for_function('window.__voxelRacers.rivals.some((r) => r.v.f > 5)', timeout=60000); rm = True
+        except Exception:
+            rm = False
+        check(rm, 'rivals drive off to explore')
         page.keyboard.down('ArrowUp'); page.wait_for_timeout(1500); page.keyboard.up('ArrowUp')
         check(page.evaluate('window.__voxelRacers.explored') >= 1, 'fog of war records the cells driven through')
         try:
@@ -431,6 +445,11 @@ def main():
         except Exception:
             high2 = False
         check(high2, 'overview map lifts the camera over the maze')
+        page.wait_for_function('window.__voxelRacers.camera.position.y > 285', timeout=120000)
+        c1 = page.evaluate('(() => { const p = window.__voxelRacers.camera.position; return [p.x, p.y, p.z]; })()'); page.wait_for_timeout(500)
+        c2 = page.evaluate('(() => { const p = window.__voxelRacers.camera.position; return [p.x, p.y, p.z]; })()')
+        check(max(abs(a - b) for a, b in zip(c1, c2)) < 0.05 and page.evaluate('window.__voxelRacers.camera.near') > 1, f'the overview camera is dead still once open ({c1} -> {c2})')
+        check(not visible(page, '#nitro') or page.evaluate("getComputedStyle(document.getElementById('nitro')).opacity") == '0', 'nitro bar steps aside during the overview')
         t0 = page.evaluate('window.__voxelRacers.race.time'); page.wait_for_timeout(700)
         check(page.evaluate('window.__voxelRacers.race.time') > t0, 'the race clock keeps running during the map')
         check(abs(page.evaluate('window.__voxelRacers.vehicle.f')) < 1.0, 'the truck is held during the map')

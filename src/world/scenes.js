@@ -1034,38 +1034,82 @@ function buildMaze(group, T) {
   const M = T.maze;
   const hash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
   const leaf = (k) => new THREE.Color().setHSL(0.27 + (k - 0.5) * 0.05, 0.5, 0.25 + k * 0.1);
-  // a big meadow under and around the maze, so the overview has green all round instead of the sky showing past the ground
-  const meadow = new THREE.Mesh(UNIT, new THREE.MeshLambertMaterial({ color: 0x6fa850, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  // pixel-speckle textures (nearest filtering, so they read as voxels): the meadow and the gravel
+  const speckle = (base, spread, dots, seed, size = 64) => {
+    if (typeof document === 'undefined') return null;
+    const cv = document.createElement('canvas'); cv.width = cv.height = size; const cx = cv.getContext('2d');
+    cx.fillStyle = base; cx.fillRect(0, 0, size, size);
+    for (let i = 0; i < size * size * 0.55; i++) {
+      const k = hash(i + seed, seed * 3.1); const x = Math.floor(hash(i, seed) * size); const y = Math.floor(hash(seed, i * 1.7) * size);
+      const v = Math.round((k - 0.5) * 2 * spread);
+      const col = new THREE.Color(base); col.offsetHSL(0, 0, v / 255);
+      cx.fillStyle = `#${col.getHexString()}`; cx.fillRect(x, y, 2, 2);
+    }
+    for (const [colr, n] of dots) for (let i = 0; i < n; i++) { cx.fillStyle = colr; cx.fillRect(Math.floor(hash(i, seed + 9) * size), Math.floor(hash(seed + 5, i * 2.3) * size), 2, 2); }
+    const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestMipmapLinearFilter; tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  };
+  const meadowTex = speckle('#5f9a45', 26, [['#e8d34a', 5], ['#f4f4f4', 4]], 11);
+  if (meadowTex) meadowTex.repeat.set(70, 70);
+  const meadow = new THREE.Mesh(UNIT, new THREE.MeshLambertMaterial({ color: meadowTex ? 0xffffff : 0x6fa850, map: meadowTex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
   meadow.scale.set(1400, 0.1, 1400); meadow.position.set(0, -0.03, 0); meadow.receiveShadow = true; group.add(meadow);
-  const body = []; const caps = []; const blobs = [];
+  // ONE gravel slab under the whole maze (no tile seams to shimmer); the walls simply stand on it
+  const gravelTex = speckle('#bda56f', 20, [['#8c7a52', 40], ['#e3d3a4', 30]], 23);
+  const bx = M.bounds.x; const bz = M.bounds.z;
+  if (gravelTex) gravelTex.repeat.set(bx * 2 / 9, bz * 2 / 9);
+  const slab = new THREE.Mesh(UNIT, new THREE.MeshLambertMaterial({ color: gravelTex ? 0xffffff : 0xb8a572, map: gravelTex }));
+  slab.scale.set(bx * 2, 0.3, bz * 2); slab.position.set(0, 0.05, 0); slab.receiveShadow = true; group.add(slab);
+
+  // hedges built from leaf voxels: three layers of chunky cubes with their own colour, the top layer uneven, a few flowers on top.
+  const hv = []; const flowers = [];
+  const LAYER = WALL_H_VIEW / 3;
   for (const r of M.wallRuns()) {
     const w = r.x1 - r.x0; const d = r.z1 - r.z0; const cx = (r.x0 + r.x1) / 2; const cz = (r.z0 + r.z1) / 2;
-    const k = hash(cx, cz);
-    body.push({ x: cx, y: WALL_H_VIEW / 2, z: cz, sx: w, sy: WALL_H_VIEW, sz: d, color: leaf(k).multiplyScalar(0.8) });
-    caps.push({ x: cx, y: WALL_H_VIEW + 0.12, z: cz, sx: w - 0.2, sy: 0.3, sz: d - 0.2, color: leaf(0.9) });
-    const horiz = w >= d; const len = horiz ? w : d;
-    for (let u = 0.7; u < len - 0.4; u += 1.5) {
-      const kk = hash(cx + u, cz - u);
-      const h = 0.35 + kk * 0.55;
-      blobs.push({
-        x: horiz ? r.x0 + u : cx, z: horiz ? cz : r.z0 + u, y: WALL_H_VIEW + 0.2 + h / 2,
-        sx: horiz ? 1.3 : w - 0.1, sy: h, sz: horiz ? d - 0.1 : 1.3, color: leaf(0.45 + kk * 0.55),
-      });
+    const horiz = w >= d; const len = horiz ? w : d; const th = horiz ? d : w;
+    const n = Math.max(1, Math.round(len / 1.7)); const step = len / n;
+    for (let i = 0; i < n; i++) {
+      const u = -len / 2 + step * (i + 0.5);
+      const px = horiz ? cx + u : cx; const pz = horiz ? cz : cz + u;
+      for (let L = 0; L < 3; L++) {
+        const k = hash(px * 1.31 + L * 7.7, pz * 0.97 - L * 3.3);
+        const k2 = hash(pz + L, px - L * 5.1);
+        const top = L === 2;
+        const hgt = LAYER * (top ? 0.86 + k * 0.42 : 1.04);
+        const lift = top ? (k2 - 0.5) * 0.12 : 0;
+        const inset = top ? 0.05 + k2 * 0.25 : 0.04 + k * 0.1;       // the sides are scalloped, never one flat plane
+        const lit = [0.2, 0.26, 0.33][L] + k * 0.085;
+        const accent = k2 > 0.93;
+        hv.push({
+          x: px, z: pz, y: LAYER * L + hgt / 2 + lift,
+          sx: horiz ? step * 1.06 : th - inset, sy: hgt, sz: horiz ? th - inset : step * 1.06,
+          color: new THREE.Color().setHSL(accent ? 0.2 : 0.27 + (k2 - 0.5) * 0.04, accent ? 0.55 : 0.5, lit),
+        });
+        if (top && hash(px * 3.1, pz * 2.7) > 0.9) {
+          const kk = hash(px, pz * 5.3);
+          flowers.push({ x: px + (k2 - 0.5) * 0.6, z: pz + (k - 0.5) * 0.6, y: LAYER * 2 + hgt + lift + 0.12, sx: 0.34, sy: 0.3, sz: 0.34, color: kk < 0.34 ? '#ff7aa8' : kk < 0.67 ? '#fff6d6' : '#ffd23f' });
+        }
+      }
     }
   }
   const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-  instanced(group, body, mat, { cast: true });
-  instanced(group, caps, mat, { cast: false });
-  instanced(group, blobs, mat, { cast: false });        // the little bumps on top cast no shadow: it only made speckle
-  // gravel floor: every open tile (cells and the gaps between them)
-  const floor = [];
+  instanced(group, hv, mat, { cast: true });
+  instanced(group, flowers, mat, { cast: false });
+  // grass fringe along the foot of the hedges and a scatter of pebbles and tufts on the gravel, all tiny voxels
+  const tufts = [];
   for (let i = 0; i < M.H; i++) for (let j = 0; j < M.W; j++) {
     if (M.lines[i][j] === '#') continue;
     const [x0, x1] = M.xs[j]; const [z0, z1] = M.zs[i];
-    const k = hash(i, j);
-    floor.push({ x: (x0 + x1) / 2, y: 0.08, z: (z0 + z1) / 2, sx: x1 - x0, sy: 0.24, sz: z1 - z0, color: new THREE.Color(0.72, 0.64, 0.46).multiplyScalar(0.9 + k * 0.14) });
+    const n = (x1 - x0) * (z1 - z0) > 100 ? 7 : 1;
+    for (let q = 0; q < n; q++) {
+      const k = hash(i * 13.1 + q, j * 7.7 - q); const k2 = hash(j * 3.3 + q * 1.9, i * 5.1);
+      const px = x0 + 0.8 + k * (x1 - x0 - 1.6); const pz = z0 + 0.8 + k2 * (z1 - z0 - 1.6);
+      const grass = k2 > 0.55;
+      tufts.push({ x: px, z: pz, y: 0.2 + (grass ? 0.18 : 0.08), sx: grass ? 0.5 : 0.6 + k * 0.5, sy: grass ? 0.36 : 0.16, sz: grass ? 0.5 : 0.5 + k2 * 0.5, color: grass ? new THREE.Color().setHSL(0.27, 0.5, 0.3 + k * 0.1) : new THREE.Color().setHSL(0.11, 0.2, 0.45 + k * 0.2) });
+    }
   }
-  instanced(group, floor, mat, { receive: true });
+  instanced(group, tufts, mat, { cast: false });
+  const floor = tufts;
+  const body = hv; const blobs = flowers;
   // the exit: a low arch (no taller than the hedges, so it is found by driving, not by looking over the walls) and a chequered pad
   const e = T.exitPose;
   const g = new THREE.Group(); g.position.set(e.x, 0, e.z);

@@ -15,6 +15,7 @@ export const DEFAULTS = {
   particles: 'high',     // 'low' | 'medium' | 'high'
   controlSize: 1,
   leftHanded: false,
+  seenMazeHowto: false,  // the labyrinth's icon how-to card has been shown once
 };
 
 const KEY = 'voxel-racers:save';
