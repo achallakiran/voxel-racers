@@ -10,6 +10,8 @@ import {
 import { loopWorld } from '../physics/loop.js';
 import { buildColumns, hash2 } from './terrain-mesh.js';
 import { createHazardView } from './hazard-view.js';
+import { gripHands } from './grip-hands.js';
+import { GRIP_P, H as GRIP_H, SPAN as GRIP_SPAN } from './giants-grip.js';
 import { PLANET_U, MOON_SUN, MOON_EARTH } from './planet.js';
 import { skullCave } from './structures.js';
 import {
@@ -734,6 +736,28 @@ function buildDeck(group, T) {
   instanced(group, posts, mat, { cast: true });
   instanced(group, bars, mat, { cast: false });
   instanced(group, lamps, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: new THREE.Color('#ffd27a'), emissiveIntensity: 0.9 }), { cast: false });
+
+  // the two giant stone hands under the deck
+  const g = gripHands({ P: GRIP_P, H: GRIP_H, a0: GRIP_SPAN.a0, a1: GRIP_SPAN.a1 });
+  instanced(group, g.cubes.map((c) => ({ x: c.x, y: c.y, z: c.z, sx: c.s, sy: c.s, sz: c.s, color: new THREE.Color(c.color[0], c.color[1], c.color[2]) })), new THREE.MeshLambertMaterial({ color: 0xffffff }), { cast: true });
+
+  // gold pylons at both ends of the span with main cables swagged between them, and hangers down to the deck
+  const towers = []; const cab = []; const hang = [];
+  const tz = (side) => GRIP_P.z + side * (half + 1.2);
+  const hgt = 15;
+  for (const t of [GRIP_SPAN.a0 + 3, GRIP_SPAN.a1 - 3]) for (const side of [-1, 1]) {
+    towers.push({ x: GRIP_P.x + t, y: GRIP_H + hgt / 2 - 1, z: tz(side), sx: 1.4, sy: hgt, sz: 1.4, color: gold(0.5, 1.0) });
+    towers.push({ x: GRIP_P.x + t, y: GRIP_H + hgt - 0.6, z: tz(side), sx: 2.0, sy: 1.2, sz: 2.0, color: gold(0.9, 1.1) });
+  }
+  const tA = GRIP_SPAN.a0 + 3; const tB = GRIP_SPAN.a1 - 3;
+  const cableY = (t) => { const k = (t - tA) / (tB - tA); return GRIP_H + hgt - 0.6 - (hgt - 4) * 4 * k * (1 - k); };
+  for (const side of [-1, 1]) for (let t = tA; t < tB; t += 2) {
+    const y0 = cableY(t); const y1 = cableY(t + 2);
+    cab.push({ x: GRIP_P.x + t + 1, y: (y0 + y1) / 2, z: tz(side), sx: 2.2, sy: 0.35, sz: 0.35, rx: 0, color: gold(0.8, 1.0) });
+    if (Math.round(t) % 8 === 0) hang.push({ x: GRIP_P.x + t, y: (y0 + GRIP_H + 1.1) / 2, z: tz(side), sx: 0.16, sy: Math.max(0.1, y0 - GRIP_H - 1.1), sz: 0.16, color: gold(0.6, 0.9) });
+  }
+  const gm = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  instanced(group, towers, gm, { cast: true }); instanced(group, cab, gm, { cast: false }); instanced(group, hang, gm, { cast: false });
 }
 
 function buildTrack(group, T) {

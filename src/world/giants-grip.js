@@ -3,10 +3,10 @@
 // far ridge and the finish plaza. The deck has no shoulder and its rails have gaps: go over the side and you are put back
 // at the last checkpoint (see core/fall.js). The road never crosses over itself in plan (the engine is 2-D), so the bridge
 // leaves the hairpins sideways, away from every leg.
-const H = 64;                                    // deck / ridge height
+export const H = 64;                                    // deck / ridge height
 const R_HP = 27.5;                               // hairpin radius (leg spacing 55)
 const LEGS = { n: 6, x0: -330, dx: 55, zN: -80, zS: 80, run: 80 };
-const SPAN = { a0: 40, a1: 280, end: 345 };      // metres along the final straight: deck start, deck end, road end
+export const SPAN = { a0: 40, a1: 280, end: 345 };      // metres along the final straight: deck start, deck end, road end
 
 // ---- the path, as a dense polyline (3 m spacing), shared by the road and by the height / bridge maths
 function buildPath() {
@@ -37,7 +37,7 @@ function buildPath() {
 const { pts: PATH, P0: P } = buildPath();
 let PLEN = 0; const CUM = [0];
 for (let i = 1; i < PATH.length; i++) { PLEN += Math.hypot(PATH[i].x - PATH[i - 1].x, PATH[i].z - PATH[i - 1].z); CUM.push(PLEN); }
-const S_STRAIGHT = CUM[PATH.findIndex((q) => Math.abs(q.z - P.z) < 1e-6 && q.x >= P.x - 1e-6)] / PLEN;   // lap fraction where the final straight begins
+export const S_STRAIGHT = CUM[PATH.findIndex((q) => Math.abs(q.z - P.z) < 1e-6 && q.x >= P.x - 1e-6)] / PLEN;   // lap fraction where the final straight begins
 export const GRIP_P = P;
 export const GRIP_DIR = { x: 1, z: 0 };
 const alongOf = (x) => x - P.x;
@@ -69,7 +69,7 @@ export const GRIP_DEF = {
   ground: (x, z, n) => {
     if (n.s >= S_STRAIGHT - 0.01) {
       const t = alongOf(x); const ad = Math.abs(n.d);
-      if (t >= SPAN.a0 && t <= SPAN.a1) return Math.max(0.1, n.y - 8 - 3 * Math.max(0, ad - 7));   // the chasm: a sheer drop at the deck edge
+      if (t >= SPAN.a0 && t <= SPAN.a1) return Math.max(0.1, n.y - 10 - 14 * Math.max(0, ad - 7));   // the chasm: a sheer drop at the deck edge
       return Math.max(0.1, n.y - 1.6 * Math.max(0, ad - 11));
     }
     const up = x - n.px;                                         // + = towards the mountain
@@ -77,6 +77,11 @@ export const GRIP_DEF = {
   },
   paint(x, z, h, smp) {
     if (smp.onRoad) return null;
+    if (smp.s >= S_STRAIGHT - 0.01 && Math.abs(smp.d) > 7) {              // the chasm: pale rock walls dropping into the clouds
+      if (h < 14) { const k = Math.max(0, h) / 14; return [0.8 + 0.1 * k, 0.88 - 0.1 * k, 1.0 - 0.28 * k]; }
+      if (h > H - 4) return [0.38, 0.55, 0.32];
+      return Math.sin(h * 0.9 + x * 0.05) > 0.4 ? [0.6, 0.55, 0.48] : [0.5, 0.47, 0.43];
+    }
     if (h < 5) return [0.8, 0.88, 1.0];                                   // the cloud sea
     if (h < 11) { const k = (h - 5) / 6; return [0.8 - 0.35 * k, 0.88 - 0.22 * k, 1.0 - 0.6 * k]; }   // clouds thinning into green
     return Math.sin(x * 0.07 + z * 0.05) * Math.sin(z * 0.11 - x * 0.04) > 0.55 ? [0.5, 0.48, 0.44] : [0.36, 0.55, 0.34];   // green slopes with rock streaks

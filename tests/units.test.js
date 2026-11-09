@@ -2839,3 +2839,21 @@ test('16.1: fall rule: only beyond the deck edge and well below the road; respaw
   const r = createRace({ checkpoints: [0, 0.5], laps: 1 }); r.phase = 'racing'; r.time = 5; r.penalty(FALL_PENALTY);
   assert.equal(r.time, 5 + FALL_PENALTY);
 });
+
+// ---------- Phase 16.2: the giant stone hands
+import { gripHands, handBoxes, handCells, CELL } from '../src/world/grip-hands.js';
+import { SPAN as GSPAN, H as GH } from '../src/world/giants-grip.js';
+
+test('16.2: two hands, a voxel budget, palm wider than the deck and just under it, four fingers and a thumb', () => {
+  const T = getTrackById('grip');
+  const g = gripHands({ P: { x: 0, z: 0 }, H: GH, a0: GSPAN.a0, a1: GSPAN.a1 });
+  assert.equal(g.hands.length, 2);
+  assert.ok(g.cubes.length > 2000 && g.cubes.length < 60000, `budget ${g.cubes.length}`);
+  const palm = handBoxes()[0];
+  assert.ok(palm[3] - palm[2] > 3 * T.ROAD_HALF, 'palm at least three half-widths across');
+  assert.ok(g.top < GH && g.top > GH - 3, 'palm sits right under the deck');
+  assert.equal(handCells(1).filter((c) => c.u > 40 && c.w > -2 && Math.abs(c.v - -11.5 * 1.5) < 2).length > 0, true, 'a finger is under the palm top near the first finger line');
+  assert.ok(g.cubes.every((c) => c.y < GH + 0.5), 'nothing pokes up through the deck');
+  assert.ok(Math.max(...g.cubes.map((c) => c.x)) < GSPAN.a1 + 1 && Math.min(...g.cubes.map((c) => c.x)) > GSPAN.a0 - 100, 'hands stay near the span');
+  assert.ok(CELL > 1);
+});
