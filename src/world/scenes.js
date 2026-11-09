@@ -580,6 +580,61 @@ function buildGarage(group) {
 }
 
 
+
+// ------------------------------------------------------------------ Paint the Town arena
+function buildPaintArena(group, map) {
+  const tile = map.tile;
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const geo = UNIT;
+  const floor = new THREE.InstancedMesh(geo, mat, map.cells.length);
+  const m4 = new THREE.Matrix4(); const col = new THREE.Color();
+  map.cells.forEach((c, k) => { m4.compose(new THREE.Vector3(c.x, 0.1, c.z), new THREE.Quaternion(), new THREE.Vector3(tile * 0.95, 0.2, tile * 0.95)); floor.setMatrixAt(k, m4); floor.setColorAt(k, col.set('#40434c')); });
+  floor.receiveShadow = true; floor.frustumCulled = false;
+  group.add(floor);
+  // a round kerb of red and white blocks just outside the playable disc, and a dark skirt under everything
+  const kerb = [];
+  const R = map.radius + 1.3; const nK = Math.round((2 * Math.PI * R) / 2.2);
+  for (let i = 0; i < nK; i++) { const a = (i / nK) * Math.PI * 2; kerb.push({ x: Math.cos(a) * R, y: 0.7, z: Math.sin(a) * R, sx: 2.4, sy: 1.4, sz: 1.8, ry: -a + Math.PI / 2, color: i % 2 ? '#e63946' : '#f1f1f1' }); }
+  instanced(group, kerb, new THREE.MeshLambertMaterial(), { cast: true });
+  const skirt = new THREE.Mesh(new THREE.CylinderGeometry(map.radius + 2.6, map.radius + 2.6, 0.2, 48), new THREE.MeshLambertMaterial({ color: 0x23252b }));
+  skirt.position.y = -0.02; group.add(skirt);
+  // paint buckets (a spinning tin with a coloured lid): positions come from the rules
+  const buckets = new THREE.InstancedMesh(UNIT, mat, 9 * 2);
+  buckets.frustumCulled = false; buckets.castShadow = true;
+  group.add(buckets);
+  const API = {
+    group,
+    // restyle every tile: owners come from the map, colours from the player palette
+    sync(m, palette, full) {
+      const slots = full ? m.cells.map((_, k) => k) : Array.from(m.dirty);
+      for (const k of slots) {
+        const c = m.cells[k]; const o = m.owner[k];
+        const shade = ((c.i + c.j) & 1) ? 1 : 0.93;
+        if (o < 0) col.set('#40434c').multiplyScalar(shade); else col.set(palette[o]).multiplyScalar(shade);
+        floor.setColorAt(k, col);
+        const sealed = o >= 0 && m.sealUntil[k] > m.time;
+        m4.compose(new THREE.Vector3(c.x, sealed ? 0.17 : 0.1, c.z), new THREE.Quaternion(), new THREE.Vector3(tile * 0.95, sealed ? 0.34 : 0.2, tile * 0.95));
+        floor.setMatrixAt(k, m4);
+      }
+      if (slots.length) { floor.instanceColor.needsUpdate = true; floor.instanceMatrix.needsUpdate = true; }
+    },
+    // the buckets: [{x,z,back}] spin and bob; a taken one is hidden
+    buckets(list, time) {
+      let n = 0;
+      const q = new THREE.Quaternion(); const e = new THREE.Euler();
+      for (const b of list) {
+        if (b.back > 0) continue;
+        const y = 0.9 + Math.sin(time * 3 + b.x) * 0.15;
+        e.set(0, time * 2, 0); q.setFromEuler(e);
+        m4.compose(new THREE.Vector3(b.x, y, b.z), q, new THREE.Vector3(1.0, 1.0, 1.0)); buckets.setMatrixAt(n, m4); buckets.setColorAt(n, col.set('#cfd6e0')); n++;
+        m4.compose(new THREE.Vector3(b.x, y + 0.65, b.z), q, new THREE.Vector3(1.1, 0.3, 1.1)); buckets.setMatrixAt(n, m4); buckets.setColorAt(n, col.setHSL((time * 0.4 + b.x * 0.02) % 1, 0.9, 0.55)); n++;
+      }
+      buckets.count = n; buckets.instanceMatrix.needsUpdate = true; if (buckets.instanceColor) buckets.instanceColor.needsUpdate = true;
+    },
+  };
+  return API;
+}
+
 // ------------------------------------------------------------------ sandbox (drive mode)
 const TERRAIN_COLORS = { ramp: '#e2b04a', table: '#e2b04a', hill: '#9c7048', whoops: '#8a5530' };
 
@@ -1378,6 +1433,10 @@ export function createWorld(scene, lights) {
   sandbox.visible = false;
   scene.add(sandbox);
   const sbStats = buildSandbox(sandbox);
+  const paintGroup = new THREE.Group();
+  paintGroup.visible = false;
+  scene.add(paintGroup);
+  let paintView = null;
   const propGroup = new THREE.Group();
   scene.add(propGroup);
   const propMeshes = buildPropMeshes(propGroup);
@@ -1436,6 +1495,7 @@ export function createWorld(scene, lights) {
     snow.set(racing ? env.weather : null);
     weatherWind = env.breeze || env.wind || null;
     sandbox.visible = d && course === 'arena';
+    paintGroup.visible = d && course === 'paint';
     for (const [id, tg] of trackGroups) tg.group.visible = d && course === 'race' && activeTrack && activeTrack.id === id;
     groundMat.color.set(d ? (course === 'race' ? groundFor(activeTrack) : '#cfa57e') : '#ffd9b3');
     garage.visible = g;
@@ -1483,7 +1543,7 @@ export function createWorld(scene, lights) {
     }
   }
   function setCourse(next, track) {
-    course = next === 'race' ? 'race' : 'arena';
+    course = next === 'race' ? 'race' : (next === 'paint' ? 'paint' : 'arena');
     if (course === 'race' && track) {
       activeTrack = track;
       if (!trackGroups.has(track.id)) {
@@ -1495,6 +1555,12 @@ export function createWorld(scene, lights) {
       trackStats = trackGroups.get(track.id).stats;
     }
     if (mode === 'drive') setMode('drive');
+  }
+  // Paint the Town: (re)build the floor for this tile map
+  function setPaint(map) {
+    while (paintGroup.children.length) paintGroup.remove(paintGroup.children[0]);
+    paintView = buildPaintArena(paintGroup, map);
+    return paintView;
   }
   setMode('outdoor');
 
@@ -1528,6 +1594,8 @@ export function createWorld(scene, lights) {
   return {
     setMode,
     setCourse,
+    setPaint,
+    get paintView() { return paintView; },
     setMazePreview,
     setMazePeek,
     get sunDir() { return sunDirFlat; },

@@ -25,8 +25,10 @@ import { createDriver, driverInput, DIFFICULTIES } from './ai/driver.js';
 import { createIntro } from './ui/intro.js';
 import { createBrawler, brawlerInput } from './ai/brawler.js';
 import { ramDamage, applyDamage, blastTrucks } from './physics/damage.js';
-import { createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
+import { createPaintTerrain, createArenaTerrain, hitProp, detonate, removeProp, DEFS as PROP_DEFS } from './world/props.js';
 import { createMatch, formatClock, comboMultiplier } from './core/arena-match.js';
+import { createPaintMap, createPaintMatch, createBuckets, tickBuckets, paintTruck, spinOut, isSpinning, hasBucket, shares, ranking, leader, drainDirty, expireSeals, paintPalette, RAM_POWER } from './core/paint.js';
+import { createPainter, painterInput } from './ai/painter.js';
 import { DebrisPool, burst } from './fx/debris.js';
 import { DebrisRenderer } from './fx/debris-render.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
@@ -327,6 +329,7 @@ function start() {
   let match = null;
   let arenaFoes = 5;
   let arenaT = null;
+  let paintMap = null; let paintMatch = null; let paintBuckets = []; let paintPal = []; let paintSync = 0;
   let endTimer = 0;
   let rivals = [];
   const viewPos = new THREE.Vector3(); const viewLook = new THREE.Vector3();
@@ -389,18 +392,23 @@ function start() {
     Object.assign(susp, createSuspension());
     prevVy = 0; prevF = 0;
     const racing = driveMode === 'race';
+    const paint = driveMode === 'paint';
     courseTerrain = racing ? TR.freshTerrain() : ARENA_TERRAIN;
     world.hazards.set(racing ? courseTerrain.hazards : []);
     if (racing) { world.props.set(courseTerrain.props); world.pickups.set(courseTerrain.pickups || []); } else world.pickups.clear();
     clearRivals();
     debris.life.fill(0); debris.alive = 0;
-    match = null; endTimer = 0; truckMesh.visible = true; boomT = 0;
-    if (!racing) { arenaT = createArenaTerrain(); courseTerrain = arenaT; world.props.set(arenaT.props); }
-    const s = racing ? TR.gridPose(4) : SANDBOX.start;
+    match = null; paintMatch = null; endTimer = 0; truckMesh.visible = true; boomT = 0;
+    if (paint) { courseTerrain = createPaintTerrain(TR.radius); world.props.set([]); }
+    else if (!racing) { arenaT = createArenaTerrain(); courseTerrain = arenaT; world.props.set(arenaT.props); }
+    const s = racing ? TR.gridPose(4) : (paint ? { x: TR.radius * 0.68, z: 0, heading: -Math.PI / 2 } : SANDBOX.start);
     vehicle = createVehicle(s.x, s.z, s.heading, courseTerrain, tune.ride);
     if (racing) vehicle.nitro = RACE_START_NITRO;
-    if (racing) spawnRivals(); else { spawnBrawlers(); match = createMatch({ foes: rivals.length }); }
-    $('drive').classList.toggle('arena', !racing);
+    if (racing) spawnRivals();
+    else if (paint) startPaint();
+    else { spawnBrawlers(); match = createMatch({ foes: rivals.length }); }
+    $('drive').classList.toggle('arena', !racing && !paint);
+    $('drive').classList.toggle('paint', paint);
     playerAcc = racing ? wrapDelta(TR.START_S, TR.nearest(s.x, s.z).s) : 0;
     playerPrevS = racing ? TR.nearest(s.x, s.z).s : 0;
     stuckT = 0; place = rivals.length + 1;
@@ -440,7 +448,7 @@ function start() {
     vehicle = null;
     race = null;
     clearRivals();
-    match = null;
+    match = null; paintMatch = null; $('drive').classList.remove('paint');
     truckMesh.visible = true;
     boomT = 0; sun.intensity -= flashApplied; flashApplied = 0;
     world.props.clear();
@@ -464,7 +472,7 @@ function start() {
     world.setCourse(mode, TR);
     flow.send('drive');
   }
-  $('btn-race').addEventListener('click', () => startMode('race'));
+  $('btn-race').addEventListener('click', () => startMode(TR.isPaint ? 'paint' : 'race'));
   $('btn-arena').addEventListener('click', () => startMode('arena'));
   $('btn-retry').addEventListener('click', () => { audio.click(); enterDrive(); });
   $('btn-results-exit').addEventListener('click', () => { audio.click(); flow.send('back'); });
@@ -567,6 +575,30 @@ function start() {
     group.add(bg, fg);
     scene.add(group);
     return { group, fg };
+  }
+  // Paint the Town: fresh tile map, buckets, five painters in their own colours
+  function startPaint() {
+    paintMap = createPaintMap({ radius: TR.radius, players: 6 });
+    paintMatch = createPaintMatch();
+    paintBuckets = createBuckets(TR.radius);
+    paintPal = paintPalette(currentPaint(TRUCKS[truckIdx]).body, 5);
+    paintSync = 0;
+    const others = TRUCKS.filter((_, i) => i !== truckIdx);
+    for (let i = others.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [others[i], others[j]] = [others[j], others[i]]; }
+    rivals = others.slice(0, 5).map((t, i) => {
+      const f = getFeel(t.id); const rt = tuningFor(t.stats, f.handling, f.sus);
+      const ang = (i + 1) * (Math.PI * 2 / 6);
+      const x = Math.cos(ang) * TR.radius * 0.68; const z = Math.sin(ang) * TR.radius * 0.68;
+      const v = createVehicle(x, z, Math.atan2(-x, -z), courseTerrain, rt.ride);
+      v.nitro = 1;
+      const mesh = createTruckMesh(t, { body: paintPal[i + 1] });
+      mesh.rotation.order = 'YXZ';
+      scene.add(mesh);
+      return { truck: t, mesh, v, tune: rt, brain: createPainter({ style: i % 2 ? 'raider' : 'sweeper', phase: i }), color: paintPal[i + 1], acc: 0, prevS: 0 };
+    });
+    vehicle.nitro = 1;
+    const view = world.setPaint(paintMap);
+    view.sync(paintMap, paintPal, true);
   }
   function spawnBrawlers() {
     const others = TRUCKS.filter((_, i) => i !== truckIdx);
@@ -720,6 +752,38 @@ function start() {
       if (h.power > 6) { burst(debris, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 + 0.8, z: (a.z + b.z) / 2, colors: [0x9aa0aa, 0xffd60a, 0x1c1c20], count: 4, speed: 5, up: 4, size: 0.2, u: rand }); }
     }
   }
+  // Paint the Town, one physics step: painters drive, everyone paints, hard rams spin the victim out
+  function paintStep(dt) {
+    const m = paintMap;
+    const trucks = allTrucks();
+    const lead = leader(m);
+    rivals.forEach((r, i) => {
+      const input = painterInput(r.brain, m, i + 1, r.v, lead, paintMatch.phase, dt, isSpinning(m, i + 1));
+      stepVehicle(r.v, input, courseTerrain, r.tune, dt);
+    });
+    if (paintMatch.phase === 'play') trucks.forEach((v, i) => paintTruck(m, i, v, v.boostT > 0));
+    const pre = trucks.map((v) => ({ vx: v.vx, vz: v.vz }));
+    for (const h of resolveCollisions(trucks)) {
+      const a = trucks[h.a]; const b = trucks[h.b];
+      if (h.power < RAM_POWER) continue;
+      const dmg = ramDamage(a, b, h.power, { a: pre[h.a], b: pre[h.b] });
+      const victim = dmg.a >= dmg.b ? h.a : h.b;
+      if (!isSpinning(m, victim)) { spinOut(m, victim); const t = trucks[victim]; burst(debris, { x: t.x, y: t.y + 1, z: t.z, colors: [0xffd60a, 0xffffff, 0xffa000], count: 8, speed: 6, up: 5, size: 0.25, u: rand }); }
+      if (h.a === 0 || h.b === 0) { shake = Math.max(shake, Math.min(0.8, h.power / 14)); audio.thump(h.power * 0.9); }
+    }
+    for (const g of tickBuckets(paintBuckets, m, trucks, dt)) if (g.who === 0) { audio.chime(); shake = Math.max(shake, 0.2); }
+  }
+  function paintHud() {
+    const m = paintMap; const sh = shares(m);
+    const segs = $('terr').children;
+    let order = ranking(m);
+    for (let i = 0; i < 6; i++) { segs[i].style.flexGrow = String(Math.max(0.0001, sh[i])); segs[i].style.background = paintPal[i]; }
+    $('terr-free').style.flexGrow = String(Math.max(0.0001, 1 - sh.reduce((a, b) => a + b, 0)));
+    $('terr').dataset.rank = String(order.indexOf(0) + 1);
+    $('atimer-p').textContent = formatClock(paintMatch.timeLeft);
+    $('bucket-ico').classList.toggle('show', hasBucket(m, 0));
+    $('drive').classList.toggle('spun', isSpinning(m, 0));
+  }
   function arenaPose(dt) {
     rivals.forEach((r) => {
       const v = r.v; const m = r.mesh;
@@ -738,6 +802,7 @@ function start() {
         pool.spawn(makeParticle('flame', 'fire', tmp, { x: -Math.sin(v.heading), y: 0.1, z: -Math.cos(v.heading) }, 1, rand(), rand(), rand()));
       }
       // health bar floats above the truck and faces the camera
+      if (!r.bar) return;
       const frac = v.hp / v.maxHp;
       r.bar.group.position.set(v.x, v.y + 3.4, v.z);
       r.bar.group.quaternion.copy(camera.quaternion);
@@ -810,6 +875,13 @@ function start() {
         const a0 = 0.5 + k * 1.6; g.arc(cx, cy, r, a0, a0 + Math.PI * 2 - 0.9 - gap * 0.3); g.stroke();
       }
       g.fillStyle = '#4cc9f0'; g.beginPath(); g.arc(cx, cy, 3.6, 0, 7); g.fill();
+      return;
+    }
+    if (TR.isPaint) {                      // a round arena with paint splats
+      const cx = W / 2; const cy = H / 2;
+      g.fillStyle = '#40434c'; g.beginPath(); g.arc(cx, cy, 40, 0, 7); g.fill();
+      for (const [dx, dy, c] of [[-14, -8, '#4cc9f0'], [10, -14, '#ffd60a'], [14, 8, '#ff4d6d'], [-8, 12, '#80ed99'], [0, 0, '#c77dff']]) { g.fillStyle = c; g.beginPath(); g.arc(cx + dx, cy + dy, 11, 0, 7); g.fill(); }
+      g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy, 40, 0, 7); g.stroke();
       return;
     }
     const S = TR.SAMPLES;
@@ -972,6 +1044,11 @@ function start() {
       if (race.phase === 'countdown' || race.phase === 'preview' || race.mapT > 0) { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
       if (race.phase === 'finished') { input.gas = 0; input.boost = false; input.brake = 0; input.hold = true; }
     }
+    if (paintMatch) {
+      paintMatch.tick(dt, paintMap);
+      if (paintMatch.phase !== 'play') { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = true; }
+      else if (isSpinning(paintMap, 0)) { input.gas = 0; input.boost = false; input.brake = 0.3; input.steer = 1; }
+    }
     if (match) {
       match.tick(dt);
       if (match.phase !== 'fight' || vehicle.wrecked) { input.gas = 0; input.boost = false; input.brake = 0; input.steer = 0; input.hold = !vehicle.wrecked; }
@@ -1002,6 +1079,7 @@ function start() {
       }
       if (rivals.length && race) rivalStep(1 / 60);
       else if (match) arenaStep(1 / 60);
+      else if (paintMatch) paintStep(1 / 60);
     }
     const v = vehicle;
     const speedNorm = Math.min(1, Math.abs(v.f) / tune.maxSpeed);
@@ -1141,6 +1219,31 @@ function start() {
       const mult = comboMultiplier(match.chain);
       $('combo').textContent = `x${mult}`;
       $('combo').classList.toggle('show', mult > 1 && match.chain > 0);
+    }
+    if (paintMatch) {
+      arenaPose(dt);
+      expireSeals(paintMap);
+      world.paintView.sync(paintMap, paintPal); drainDirty(paintMap);
+      world.paintView.buckets(paintBuckets, clock);
+      for (const e of paintMatch.drainEvents()) {
+        if (e === 'go') { goTimer = 1.0; $('drive').classList.add('go'); showCountdown('GO'); audio.boost(); }
+        else if (e === 'won' || e === 'lost') endTimer = e === 'won' ? 1.2 : 1.6;
+      }
+      const digit = paintMatch.countdownDigit();
+      if (paintMatch.phase === 'countdown' && digit > 0 && $('countdown').textContent !== String(digit)) showCountdown(String(digit));
+      if (goTimer > 0) { goTimer -= dt; if (goTimer <= 0) $('countdown').classList.remove('show'); }
+      if (endTimer > 0) {
+        endTimer -= dt;
+        if (endTimer <= 0) {
+          audio.chime();
+          $('results').classList.toggle('lost', !paintMatch.won);
+          const sh = shares(paintMap); const order = ranking(paintMap);
+          const bars = $('res-bars'); bars.innerHTML = '';
+          for (const k of order) { const b = document.createElement('i'); b.style.width = `${Math.max(3, Math.round(sh[k] * 220))}px`; b.style.background = paintPal[k]; if (k === 0) b.className = 'me'; bars.appendChild(b); }
+          $('results').classList.add('show');
+        }
+      }
+      paintHud();
     }
     debris.update(dt, courseTerrain.heightAt);
     debrisR.update();
@@ -1324,6 +1427,9 @@ function start() {
     get renderer() { return renderer; }, get scene() { return scene; }, get sun() { return sun; },
     get howtoOpen() { return howtoOpen; },
     get match() { return match; },
+    get paintMap() { return paintMap; },
+    get paintMatch() { return paintMatch; },
+    get paintBuckets() { return paintBuckets; },
     get arenaTerrain() { return arenaT; },
     get arenaFoes() { return arenaFoes; },
     set arenaFoes(n) { arenaFoes = n; },

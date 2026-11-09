@@ -2857,3 +2857,100 @@ test('16.2: two hands, a voxel budget, palm wider than the deck and just under i
   assert.ok(Math.max(...g.cubes.map((c) => c.x)) < GSPAN.a1 + 1 && Math.min(...g.cubes.map((c) => c.x)) > GSPAN.a0 - 100, 'hands stay near the span');
   assert.ok(CELL > 1);
 });
+
+// ---------- Phase 17: Paint the Town
+import * as PT from '../src/core/paint.js';
+import { createPainter, painterInput } from '../src/ai/painter.js';
+import { createPaintTerrain } from '../src/world/props.js';
+import { PAINT_STAGE } from '../src/world/paint-stage.js';
+
+test('17: the stage is in the picker list and ids stay unique', () => {
+  assert.ok(STAGES.includes(PAINT_STAGE) && validTrack('paint'));
+  assert.equal(new Set(STAGES.map((t) => t.id)).size, STAGES.length);
+  assert.deepEqual(STAGES.filter((t) => t.isPaint).map((t) => t.id), ['paint'], 'only the paint stage is a paint arena (a road stage has a ground-colour paint() function)');
+});
+
+test('17.2: the tile map is round, claims and counts tiles, and only changed tiles are dirty', () => {
+  const m = PT.createPaintMap();
+  assert.ok(m.total > 900 && PT.slotAt(m, 0, 0) >= 0 && PT.slotAt(m, 45, 0) === -1);
+  const n = PT.stamp(m, 0, 0, 0, 2); assert.ok(n >= 4 && m.counts[0] === n);
+  assert.equal(PT.drainDirty(m).length, n); assert.equal(m.dirty.size, 0);
+  assert.equal(PT.stamp(m, 0, 0, 0, 2), 0, 'repainting your own tiles changes nothing');
+  m.time = 1; const k = PT.stamp(m, 0, 0, 1, 2); assert.equal(m.counts[0], 0); assert.equal(m.counts[1], k);
+  assert.ok(Math.abs(PT.shares(m).reduce((a, b) => a + b, 0) - k / m.total) < 1e-9);
+});
+
+test('17.3: nitro paint is sealed for 4 s: nobody can take it, then everyone can', () => {
+  const m = PT.createPaintMap();
+  assert.ok(PT.paintTruck(m, 0, { x: 0, z: 0, grounded: true }, true) > 0);
+  const mine = m.counts[0];
+  m.time = 3.5; PT.paintTruck(m, 1, { x: 0, z: 0, grounded: true }, true);
+  assert.equal(m.counts[0], mine, 'sealed tiles hold');
+  m.time = 4.5; PT.expireSeals(m); assert.ok(m.dirty.size > 0);
+  PT.paintTruck(m, 1, { x: 0, z: 0, grounded: true }, false); assert.ok(m.counts[0] < mine, 'after the seal runs out they can be repainted');
+});
+
+test('17.3: airborne trucks and spun-out trucks do not paint; a ram spins for 2 s', () => {
+  const m = PT.createPaintMap();
+  assert.equal(PT.paintTruck(m, 0, { x: 5, z: 5, grounded: false }, false), 0);
+  PT.spinOut(m, 0); assert.ok(PT.isSpinning(m, 0));
+  assert.equal(PT.paintTruck(m, 0, { x: 5, z: 5, grounded: true }, false), 0);
+  m.time = PT.SPIN_TIME + 0.1; assert.ok(!PT.isSpinning(m, 0));
+  assert.ok(PT.paintTruck(m, 0, { x: 5, z: 5, grounded: true }, false) > 0);
+});
+
+test('17.3: a bucket paints wide for 8 s, buckets respawn, and a pickup goes to the truck that touches it', () => {
+  const m = PT.createPaintMap();
+  const a = PT.paintTruck(m, 0, { x: -20, z: 0, grounded: true }, false);
+  PT.giveBucket(m, 1); assert.ok(PT.hasBucket(m, 1));
+  const b = PT.paintTruck(m, 1, { x: 20, z: 0, grounded: true }, false);
+  assert.ok(b > a * 2, `wide swath (${b} vs ${a})`);
+  m.time = PT.BUCKET_TIME + 0.5; assert.ok(!PT.hasBucket(m, 1));
+  const buckets = PT.createBuckets(38);
+  const t = [{ x: buckets[0].x, z: buckets[0].z, grounded: true }];
+  const m2 = PT.createPaintMap();
+  const got = PT.tickBuckets(buckets, m2, t, 0.016); assert.equal(got.length, 1); assert.ok(PT.hasBucket(m2, 0));
+  assert.equal(PT.tickBuckets(buckets, m2, t, 0.016).length, 0, 'the taken bucket is gone');
+  PT.tickBuckets(buckets, m2, [], PT.BUCKET_RESPAWN + 0.1);
+  assert.equal(PT.tickBuckets(buckets, m2, t, 0.016).length, 1, 'it is back after a while');
+});
+
+test('17.3: the round: 3-2-1, 90 s, the biggest share wins', () => {
+  const m = PT.createPaintMap(); const r = PT.createPaintMatch();
+  assert.equal(r.phase, 'countdown'); r.tick(10, m); assert.equal(r.phase, 'play');
+  PT.stamp(m, 0, 0, 0, 6);
+  r.tick(PT.ROUND_TIME + 1, m);
+  assert.equal(r.phase, 'over'); assert.ok(r.won);
+  const m2 = PT.createPaintMap(); const r2 = PT.createPaintMatch(); r2.tick(10, m2); PT.stamp(m2, 0, 0, 3, 6); r2.tick(100, m2); assert.ok(!r2.won);
+  assert.deepEqual(PT.ranking(m2)[0], 3);
+});
+
+test('17.2: rival colours are distinct from the player colour', () => {
+  const pal = PT.paintPalette('#4cc9f0');
+  assert.equal(pal.length, 6); assert.equal(new Set(pal).size, 6); assert.ok(!pal.slice(1).includes('#4cc9f0'));
+});
+
+test('17.4: painters (sweepers and raiders) cover most of the arena in a round and keep moving', () => {
+  const terr = createPaintTerrain(38); const m = PT.createPaintMap();
+  const rig = TRUCKS.slice(0, 6).map((tk, i) => {
+    const f = getFeel(tk.id); const tune = tuningFor(tk.stats, f.handling, f.sus);
+    const a = i * Math.PI / 3; const x = Math.cos(a) * 26; const z = Math.sin(a) * 26;
+    return { tune, v: createVehicle(x, z, Math.atan2(-x, -z), terr, tune.ride), p: createPainter({ style: i % 2 ? 'raider' : 'sweeper', phase: i }), still: 0 };
+  });
+  for (let t = 0; t < 90 * 60; t++) {
+    m.time += DT;
+    const lead = PT.leader(m);
+    rig.forEach((r, i) => {
+      const inp = painterInput(r.p, m, i, r.v, lead, 'play', DT, PT.isSpinning(m, i));
+      stepVehicle(r.v, inp, terr, r.tune, DT);
+      PT.paintTruck(m, i, r.v, r.v.boostT > 0);
+      if (Math.abs(r.v.f) < 1) r.still += DT;
+    });
+    if (t % 6 === 0) PT.expireSeals(m);
+  }
+  const cover = m.counts.reduce((a, b) => a + b, 0) / m.total;
+  assert.ok(cover > 0.55, `coverage ${(cover * 100).toFixed(0)}%`);
+  assert.ok(rig.every((r) => r.still < 20), `still ${rig.map((r) => r.still.toFixed(0))}`);
+  assert.ok(Array.from(m.counts).every((c) => c > 0.02 * m.total), `shares ${Array.from(m.counts)}`);
+  assert.ok(rig.every((r) => Math.hypot(r.v.x, r.v.z) <= 38), 'nobody leaves the arena');
+});

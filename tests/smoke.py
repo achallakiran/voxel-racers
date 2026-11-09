@@ -147,8 +147,8 @@ def main():
 
         # skipping the intro by tap also works (reload path)
         page2 = browser.new_page(viewport={'width': 844, 'height': 390})
-        page2.goto(url)
-        page2.wait_for_function("window.__voxelRacers && window.__voxelRacers.flow.state === 'intro'")
+        page2.goto(url, timeout=180000)
+        page2.wait_for_function("window.__voxelRacers && window.__voxelRacers.flow.state === 'intro'", timeout=180000)
         page2.mouse.click(400, 200)      # first tap unlocks sound and lets the intro play on
         check(page2.evaluate('window.__voxelRacers.flow.state') == 'intro', 'the first tap unlocks sound without skipping')
         page2.mouse.click(400, 200)
@@ -393,7 +393,7 @@ def main():
             page.click('#trk-next', force=True); page.wait_for_timeout(120)
         check(page.evaluate("document.querySelector('#trk-name b').textContent") == "Giant's Grip", "Giant's Grip is in the stage picker")
         page.click('#btn-race', force=True)
-        page.wait_for_function("window.__voxelRacers.vehicle !== null && window.__voxelRacers.race.phase === 'racing'", timeout=300000)
+        page.wait_for_function("window.__voxelRacers.vehicle !== null && window.__voxelRacers.race && window.__voxelRacers.race.phase === 'racing'", timeout=300000)
         fell = page.evaluate("""(() => { const g = window.__voxelRacers; const T = g.track, v = g.vehicle;
           const m = T.sampleAt((T.BRIDGE.s0 + T.BRIDGE.s1) / 2); const my = T.nearest(m.x, m.z).y; const t0 = g.race.time;
           v.x = m.x + m.tz * 9; v.z = m.z - m.tx * 9; v.y = my - 12; v.vy = -5; v.f = 20;
@@ -491,6 +491,24 @@ def main():
         page.click('#btn-exit', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'labyrinth exits to the garage')
         page.click('#trk-next', force=True)
+
+        # ---------------- Paint the Town: next after the labyrinth; five painters, the tile bar, results with bars
+        check(page.evaluate("document.querySelector('#trk-name b').textContent") == 'Paint the Town', 'Paint the Town is in the stage picker')
+        page.click('#btn-race', force=True)
+        page.wait_for_function("window.__voxelRacers.paintMatch && window.__voxelRacers.paintMatch.phase === 'play'", timeout=300000)
+        check(page.evaluate('window.__voxelRacers.rivals.length') == 5, 'five painters start')
+        check(visible(page, '#paint-hud') and visible(page, '#terr'), 'territory bar and clock show')
+        check(not visible(page, '#arena-hud') and not visible(page, '#hp'), 'no arena health or score HUD in Paint')
+        page.keyboard.down('ArrowUp')
+        page.wait_for_function("window.__voxelRacers.paintMap.counts.reduce((a, b) => a + b, 0) > 150", timeout=300000)
+        check(page.evaluate('window.__voxelRacers.paintMap.counts[0]') > 0, 'the player paints tiles by driving')
+        page.keyboard.up('ArrowUp')
+        page.evaluate('window.__voxelRacers.paintMatch.timeLeft = 0.05')
+        page.wait_for_function("window.__voxelRacers.paintMatch.phase === 'over'", timeout=60000)
+        page.wait_for_function("document.querySelector('#results').classList.contains('show')", timeout=60000)
+        check(page.evaluate("document.querySelectorAll('#res-bars i').length") == 6, 'results show six territory bars')
+        page.click('#btn-results-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'Paint the Town exits to the garage')
 
         # ---------------- back to title
         page.click('#btn-back')

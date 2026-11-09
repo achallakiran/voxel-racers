@@ -442,7 +442,7 @@ Decisions: hand bridge = hybrid "sea of clouds" stage with faithful hand models 
 - 16.3 Atmosphere: cloud sea below (drifting voxel cloud layers), golden-hour light, mist patches that thin visibility briefly, gardens, pagoda, cable-car line; menu glyph.
 - 16.4 Racing feel: rivals hold lanes on the span, gentler rubber band there, edge-lane nitro pads (risk/reward), wind sound. Smoke covers fall + respawn.
 
-### Phase 17 - Mode framework + Paint the Town
+### Phase 17 - Mode framework + Paint the Town (17.1-17.5 built together as the first playable: stage picker entry, tile map, rules, painters, icon HUD)
 - 17.1 Arena-mode shell (picker entry, match clock, results, rival spawn on a flat arena) shared by Paint, Sumo and Football.
 - 17.2 Paint model: tile ownership grid (pure, tested), one instanced floor, only changed tiles update. 17.3 Rules: airborne trucks do not paint, nitro = wide sealed swath (4 s), ram = 2 s spin-out without paint, buckets = wide swath 8 s, 90 s round, score = share of tiles.
 - 17.4 Rival AI: sweepers (clean passes) and raiders (chase the leader), using the public tile map only. 17.5 Icon HUD: segmented territory bar, tinted minimap, results bars.

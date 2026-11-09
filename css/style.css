@@ -559,3 +559,23 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #trk-thumb { width: clamp(96px, 22vmin, 132px); height: auto; border-radius: 12px; background: rgba(11, 16, 38, 0.55); border: 2px solid rgba(255, 255, 255, 0.45); }
 /* over the edge of a bridge: the clock flashes red for a moment (the three seconds that were added) */
 #drive.fell #timer { color: #ff5d5d; animation: blink 0.35s steps(2) 4; }
+
+/* ---- Paint the Town HUD: a segmented territory bar and the clock, icons only */
+#paint-hud { display: none; position: absolute; top: calc(var(--safe-t) + 10px); left: 50%; transform: translateX(-50%); align-items: center; gap: 12px; pointer-events: none; }
+#drive.paint #paint-hud { display: flex; }
+#drive.paint #nitro { top: calc(var(--safe-t) + 62px); }
+#terr { display: flex; width: clamp(150px, 34vmin, 260px); height: 16px; border-radius: 9px; overflow: hidden; background: rgba(0, 0, 0, 0.5); border: 2px solid rgba(255, 255, 255, 0.75); }
+#terr i { display: block; flex: 0 1 0; min-width: 0; transition: flex-grow 0.25s; }
+#terr u { display: block; flex: 1 1 0; min-width: 0; background: rgba(120, 124, 136, 0.55); transition: flex-grow 0.25s; }
+#atimer-p { font-family: var(--pixel); font-size: clamp(14px, 3.6vmin, 22px); color: #fff; padding: 2px 10px; border-radius: 999px; background: rgba(11, 16, 38, 0.5); border: 2px solid rgba(255, 255, 255, 0.4); font-variant-numeric: tabular-nums; }
+#bucket-ico { width: 26px; height: 26px; fill: rgba(255, 214, 10, 0.25); stroke: #ffd60a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transition: opacity 0.2s; }
+#bucket-ico.show { opacity: 1; animation: hpPulse 0.5s infinite alternate; }
+#drive.paint.spun #terr { border-color: #ff5a6a; }
+#res-bars { display: none; flex-direction: column; gap: 5px; align-items: flex-start; }
+#drive.paint #res-bars { display: flex; }
+#res-bars i { display: block; height: 14px; border-radius: 7px; border: 2px solid rgba(255, 255, 255, 0.5); }
+#res-bars i.me { border-color: #ffd60a; }
+#drive.paint #results .race-row, #drive.paint #results .arena-row { display: none; }
+#drive.paint #results.lost .trophy { display: none; }
+#drive.paint #results.lost .skull { display: block; }
+#drive.paint #results .row { display: none; }

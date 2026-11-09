@@ -103,3 +103,8 @@ export function detonate(terrain, origin) {
   }
   return { explosions, destroyed, score };
 }
+
+// Paint the Town: a flat round asphalt arena, nothing to hit but the wall
+export function createPaintTerrain(radius = 38) {
+  return { heightAt: () => 0, obstacles: [], props: [], radius, surfaceAt: () => 'asphalt', hazards: [] };
+}
