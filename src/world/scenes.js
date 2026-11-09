@@ -702,6 +702,40 @@ function meshFrom(data, material) {
   return m;
 }
 
+
+// Giant's Grip deck: gold slabs with ribs underneath, rails with gaps (T.railGap), lamp posts. Voxel-chunky, all instanced.
+function buildDeck(group, T) {
+  const B = T.BRIDGE; const half = T.ROAD_HALF; const step = 2;
+  const hash = (a, b) => { const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return v - Math.floor(v); };
+  const slabs = []; const ribs = []; const posts = []; const bars = []; const lamps = [];
+  const gold = (k, m = 1) => new THREE.Color().setHSL(0.12 + (k - 0.5) * 0.02, 0.78, (0.46 + k * 0.08) * m);
+  const s0 = B.s0; const s1 = B.s1;
+  const n = Math.round((s1 - s0) * T.LENGTH / step);
+  for (let i = 0; i <= n; i++) {
+    const s = s0 + (s1 - s0) * i / n; const p = T.sampleAt(s); const ry = Math.atan2(p.tx, p.tz);
+    const k = hash(i, 1);
+    slabs.push({ x: p.x, z: p.z, y: p.y - 0.36, sx: half * 2, sy: 0.7, sz: step * 1.06, ry, color: gold(k, 0.9 + (i % 2) * 0.06) });
+    if (i % 3 === 0) ribs.push({ x: p.x, z: p.z, y: p.y - 1.1, sx: half * 2 - 1.2, sy: 0.9, sz: 0.6, ry, color: gold(k, 0.62) });
+    for (const side of [-1, 1]) {
+      const off = side * (half - 0.35);
+      const x = p.x + p.tz * off; const z = p.z - p.tx * off;
+      if (T.railGap(s, side)) continue;                                      // a broken rail
+      bars.push({ x, z, y: p.y + 1.05, sx: 0.32, sy: 0.3, sz: step * 1.06, ry, color: gold(0.7, 1.15) });
+      if (i % 2 === 0) posts.push({ x, z, y: p.y + 0.55, sx: 0.4, sy: 1.1, sz: 0.4, ry, color: gold(0.4, 0.95) });
+    }
+    if (i % 12 === 0) for (const side of [-1, 1]) {
+      const off = side * (half - 0.35); const x = p.x + p.tz * off; const z = p.z - p.tx * off;
+      if (!T.railGap(s, side)) lamps.push({ x, z, y: p.y + 2.9, sx: 0.7, sy: 0.7, sz: 0.7, ry, color: new THREE.Color('#fff2b8') });
+    }
+  }
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  instanced(group, slabs, mat, { cast: true });
+  instanced(group, ribs, mat, { cast: true });
+  instanced(group, posts, mat, { cast: true });
+  instanced(group, bars, mat, { cast: false });
+  instanced(group, lamps, new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: new THREE.Color('#ffd27a'), emissiveIntensity: 0.9 }), { cast: false });
+}
+
 function buildTrack(group, T) {
   const trackColor = makeTrackColor(T);
   const S = T.SAMPLES;
@@ -711,13 +745,15 @@ function buildTrack(group, T) {
   // a stage that is a finite ring of ground in empty space (Saturn's rings): the ground exists only between two radii
   const disc = T.env && T.env.ringDisc;
   const inDisc = disc ? (x, z) => { const r = Math.hypot(x - disc.x, z - disc.z); return r >= disc.r0 && r <= disc.r1; } : () => true;
+  // a bridge: no ground columns under the deck (it is drawn on its own, with the drop beneath it)
+  const hollow = T.BRIDGE ? (x, z) => { const n = T.nearest(x, z); return T.onSpan(n.s) && Math.abs(n.d) <= T.ROAD_HALF + 1.0; } : () => false;
   const FN = (T.env && T.env.fine) || {};                        // a very long stage can ask for a tighter, coarser detail mesh
   const R = FN.R || 40;
   const fineCell = FN.cell || 1.25;
   const fx0 = Math.floor((minX - R) / fineCell) * fineCell; const fz0 = Math.floor((minZ - R) / fineCell) * fineCell;
   const fine = buildColumns({
     x0: fx0, z0: fz0, nx: Math.ceil((maxX + R - fx0) / fineCell), nz: Math.ceil((maxZ + R - fz0) / fineCell), cell: fineCell, quant: 0.25,
-    heightAt: T.heightAt, colorAt: trackColor, include: (x, z) => T.nearest(x, z).dist < R && inDisc(x, z), edge: disc ? inDisc : null, edgeDrop: 10,
+    heightAt: T.heightAt, colorAt: trackColor, include: (x, z) => T.nearest(x, z).dist < R && inDisc(x, z) && !hollow(x, z), edge: disc ? inDisc : null, edgeDrop: 10,
   });
   group.add(meshFrom(fine, mat));
   const far = 150;
@@ -732,6 +768,8 @@ function buildTrack(group, T) {
     sides: !!disc, edge: disc ? inDisc : null, edgeDrop: 10,
   });
   group.add(meshFrom(coarse, mat));
+
+  if (T.BRIDGE) buildDeck(group, T);
 
   // barriers
   const bar = T.env.hideBarriers ? [] : T.barrierLayout();   // a stage can keep the invisible wall but draw no fence (the ring road)

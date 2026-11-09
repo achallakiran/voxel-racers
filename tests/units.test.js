@@ -1262,8 +1262,8 @@ import { TRACKS, getTrackById, validTrack } from '../src/world/tracks.js';
 const apiFor = (T) => ({ nearest: T.nearest, sampleAt: T.sampleAt, length: T.LENGTH, roadHalf: T.ROAD_HALF, laneAt: T.laneAt, finishS: T.FINISH_S });
 
 test('tracks: roster of three, unique ids, lookup falls back to the first', () => {
-  assert.equal(TRACKS.length, 10);
-  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn', 'volcano', 'crater']);
+  assert.equal(TRACKS.length, 11);
+  assert.deepEqual(TRACKS.map((t) => t.id), ['greenridge', 'canyon', 'fortress', 'himalaya', 'skull', 'magma', 'moon', 'saturn', 'volcano', 'crater', 'grip']);
   assert.equal(getTrackById('canyon').name, 'Looper Canyon');
   assert.equal(getTrackById('nope').id, 'greenridge');
   assert.ok(validTrack('fortress') && !validTrack('x'));
@@ -2805,4 +2805,37 @@ test('15.3: the how-to card is remembered, the HUD keeps the middle of the scree
   // the how-to is icons only: no letters inside the card
   const card = html.slice(html.indexOf('<div id="howto">'), html.indexOf('<div id="countdown">'));
   assert.ok(!/>[A-Za-z]{2,}</.test(card.replace(/<svg[\s\S]*?<\/svg>/g, '')), 'no text in the how-to card');
+});
+
+
+// ---------- Phase 16.1: Giant's Grip (edge risk, gusts, fall rule)
+import { fellOff, lastCheckpointS, FALL_PENALTY } from '../src/core/fall.js';
+import { gustAt, GUST, GRIP_P } from '../src/world/giants-grip.js';
+
+test('16.1: grip stage is listed, open, and has a bridge span with rail gaps', () => {
+  const T = getTrackById('grip');
+  assert.equal(T.id, 'grip'); assert.ok(T.OPEN);
+  assert.ok(T.BRIDGE && T.BRIDGE.s1 > T.BRIDGE.s0 && T.BRIDGE.gaps.length === 5);
+  assert.ok(T.BRIDGE.s1 < T.FINISH_S);
+});
+
+test('16.1: gusts only blow across the deck, are bounded and alternate sides', () => {
+  assert.equal(gustAt(GRIP_P.x - 50, GRIP_P.z, 3), null);
+  assert.equal(gustAt(GRIP_P.x + 150, GRIP_P.z + 80, 3), null);
+  let max = 0; let pos = false; let neg = false;
+  for (let t = 0; t < 30; t += 0.25) { const g = gustAt(GRIP_P.x + 150, GRIP_P.z, t); max = Math.max(max, Math.abs(g.z)); if (g.z > 1) pos = true; if (g.z < -1) neg = true; }
+  assert.ok(max <= GUST.amp + 1e-9 && pos && neg);
+});
+
+test('16.1: fall rule: only beyond the deck edge and well below the road; respawn at the last checkpoint; penalty applies', () => {
+  const T = getTrackById('grip');
+  const mid = T.sampleAt((T.BRIDGE.s0 + T.BRIDGE.s1) / 2); const n = T.nearest(mid.x, mid.z);
+  assert.ok(!fellOff(T, { y: n.y - 10 }, { ...n, d: 0 }), 'on the deck');
+  assert.ok(!fellOff(T, { y: n.y }, { ...n, d: T.ROAD_HALF + 2 }), 'beside the deck but not low');
+  assert.ok(fellOff(T, { y: n.y - 10 }, { ...n, d: T.ROAD_HALF + 2 }));
+  assert.ok(!fellOff(getTrackById('canyon'), { y: -50 }, { d: 99, y: 0 }), 'other stages never');
+  assert.equal(lastCheckpointS({ checkpoints: [0, 0.3, 0.6], next: 2 }), 0.3);
+  assert.equal(lastCheckpointS({ checkpoints: [0, 0.3, 0.6], next: 0 }), 0.6);
+  const r = createRace({ checkpoints: [0, 0.5], laps: 1 }); r.phase = 'racing'; r.time = 5; r.penalty(FALL_PENALTY);
+  assert.equal(r.time, 5 + FALL_PENALTY);
 });

@@ -432,12 +432,12 @@ Queue after this: Dragon's Spine ridge sprint, Neon Night City, Sea Bridge, Skul
 - How-to: icon-only card (eye the map > drive > peek again > reach the flag), shown on the first visit and remembered; a ? icon re-opens it during the preview; the preview clock waits while it is open.
 - Tests: 15.3 unit tests (Tremaux solves 40 generated mazes within 2x edges moves; structural no-cheat; 9 trucks x 2 styles finish; HUD/how-to markup) and smoke (card, remembered, ? icon, rivals move, HUD at the corner, overview camera still).
 
-## Phase 16-19 plan (agreed direction; not started)
+## Phase 16-19 plan (agreed direction; 16.1 built)
 
 Decisions: hand bridge = hybrid "sea of clouds" stage with faithful hand models and a real edge risk; Paint mode: enemies repaint, nitro paint sealed 4 s, spin-out stops painting 2 s; Sumo with falls; arcade Football 3v3. Order: bridge first, then Paint, Sumo, Football. New modes appear in the same stage picker (like the labyrinth); icons only in play.
 
 ### Phase 16 - Giant's Grip (hand bridge), each sub-phase pushed
-- 16.1 Stage skeleton and edge risk: open sprint def (coast road > cliff hairpins > garden terraces > bridge > plaza), deck raised over a drop (same approach as Volcano / Crater), low rails with gaps, fall = respawn on the deck at the last checkpoint, nitro emptied, +3 s; crosswind gusts on the span (existing `terrain.wind`, pulsed). Tests: stage listed, generic road-track tests, fall-respawn rule, gust bounds, all 9 trucks finish with the route follower.
+- 16.1 (BUILT) Stage skeleton and edge risk: open sprint def (mountain hairpins climbing to a ridge > straight golden deck over the chasm > plaza; barrels/crates kept at the road edge because the climb slows trucks below smash speed), deck raised over a drop (same approach as Volcano / Crater), low rails with gaps, fall = respawn on the deck at the last checkpoint, nitro emptied, +3 s; crosswind gusts on the span (existing `terrain.wind`, pulsed). Tests: stage listed, generic road-track tests, fall-respawn rule, gust bounds, all 9 trucks finish with the route follower.
 - 16.2 The hands: procedural voxel hands (capsule fingers with joints, thumb, knuckle creases, wrist into the cliff), weathered stone colour noise and moss; gold ribbed deck, railings, lamps, cables and anchor towers. Faithful proportions: palms up, deck resting in the palms, fingers curled under. Tests: finger count, deck inside palm extents, voxel budget.
 - 16.3 Atmosphere: cloud sea below (drifting voxel cloud layers), golden-hour light, mist patches that thin visibility briefly, gardens, pagoda, cable-car line; menu glyph.
 - 16.4 Racing feel: rivals hold lanes on the span, gentler rubber band there, edge-lane nitro pads (risk/reward), wind sound. Smoke covers fall + respawn.

@@ -47,6 +47,7 @@ export function createRace({ laps = 3, checkpoints = [0, 0.25, 0.5, 0.75], start
     r.mapT = map.time; r.events.push('mapStart'); return true;
   };
   r.endMap = () => { if (r.mapT > 0) { r.mapT = 0; r.mapCool = map.cool; r.events.push('mapEnd'); } };
+  r.penalty = (sec) => { if (r.phase === 'racing') { r.time += sec; r.events.push('penalty'); } };   // time added for a fall
   r.skipPreview = () => { if (r.phase === 'preview') { r.preview = 0; r.phase = 'countdown'; r.events.push('previewEnd'); } };
 
   r.tick = (dt) => {

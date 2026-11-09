@@ -32,6 +32,7 @@ import { DebrisRenderer } from './fx/debris-render.js';
 import { steerCurve, createFlick, keyboardInput, gamepadInput, mergeInputs, isBoostKey } from './core/input.js';
 import { getFeel } from './vehicles/truck-feel.js';
 import { createSuspension, stepSuspension } from './vehicles/suspension.js';
+import { fellOff, lastCheckpointS, FALL_PENALTY } from './core/fall.js';
 import { createExplorer, explorerInput } from './ai/explorer.js';
 import { nextCamera, validCamera, cameraGoal, newCameraState, mazeCameraGoal, mazePreviewGoal } from './core/camera-modes.js';
 import { createTouchControls } from './ui/touch-controls.js';
@@ -444,7 +445,7 @@ function start() {
     boomT = 0; sun.intensity -= flashApplied; flashApplied = 0;
     world.props.clear();
     debris.life.fill(0); debris.alive = 0;
-    $('drive').classList.remove('race', 'go', 'arena', 'maze', 'preview', 'peek');
+    $('drive').classList.remove('race', 'go', 'arena', 'maze', 'preview', 'peek', 'fell'); fellT = 0;
     world.setMazePreview(false); peekOn = false; camera.far = 220; camera.near = 0.1; ovK = 0; howtoOpen = false; $('howto').classList.remove('show'); camera.updateProjectionMatrix();
     $('results').classList.remove('show');
     Object.assign(sun.shadow.camera, { left: -5, right: 5, top: 5, bottom: -5, far: 30 });
@@ -506,6 +507,10 @@ function start() {
         : driverInput(r.driver, r.v, r.tune, TRACK_API, { phase, difficulty: save.difficulty, props: courseTerrain.props, pickups: courseTerrain.pickups, playerAcc, myAcc: r.acc, gapAhead: (r.acc - playerAcc) * TR.LENGTH, playerLat: playerLat }, dt);
       handleEvents(stepVehicle(r.v, input, courseTerrain, r.tune, dt), r.v, false);
       r.pitT = inPit(r.v) ? (r.pitT || 0) + dt : 0;
+      if (fellOff(TR, r.v, TR.nearest(r.v.x, r.v.z))) {            // a rival over the edge loses the same: back on the deck, no nitro
+        const p = safePose(Math.max(0, TR.nearest(r.v.x, r.v.z).s - 0.05), 0);
+        const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, r.tune.ride); nv.nitro = 0; Object.assign(r.v, nv); r.pitT = 0;
+      }
       if (r.pitT > 1.2) {
         const p = safePose(TR.nearest(r.v.x, r.v.z).s, inLava(r.v) ? 22 : 10);
         const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, r.tune.ride);
@@ -774,6 +779,20 @@ function start() {
     Object.assign(susp, createSuspension());
     snapCamera();
     audio.click();
+  }
+  // over the edge of a bridge: back on the deck at the last checkpoint, nitro gone, three seconds on the clock
+  let fellT = 0;
+  function fallRespawn() {
+    if (!race || !vehicle || race.phase !== 'racing') return;
+    const p = safePose(lastCheckpointS(race), 0);
+    const nv = createVehicle(p.x, p.z, p.heading, courseTerrain, tune.ride);
+    nv.nitro = 0;
+    Object.assign(vehicle, nv);
+    stuckT = 0; pitT = 0;
+    Object.assign(susp, createSuspension());
+    race.penalty(FALL_PENALTY);
+    fellT = 1.4; $('drive').classList.add('fell');
+    snapCamera(); audio.thump(8);
   }
   $('btn-respawn').addEventListener('click', respawn);
 
@@ -1053,7 +1072,8 @@ function start() {
         const wedged = input.gas > 0.5 && v.grounded && !v.loop && Math.abs(v.f) < 1.0;
         stuckT = wedged ? stuckT + dt : Math.max(0, stuckT - dt * 2);
         pitT = inPit(v) ? pitT + dt : 0;
-        if (!v.loop && (pitT > 1.2 || stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2)) respawn();
+        if (!v.loop && fellOff(TR, v, n)) fallRespawn();
+        else if (!v.loop && (pitT > 1.2 || stuckT > 4 || v.y < TR.heightAt(v.x, v.z) - 6 || n.ad > TR.BARRIER + 2)) respawn();
       }
       for (const e of race.drainEvents()) {
         if (e === 'mapStart') { $('drive').classList.add('peek'); peekOn = true; peekSync = 0; world.setMazePeek(true, vehicle, trail); audio.click(); }
@@ -1073,6 +1093,7 @@ function start() {
       const digit = race.countdownDigit();
       if (race.phase === 'countdown' && digit > 0 && $('countdown').textContent !== String(digit)) showCountdown(String(digit));
       if (goTimer > 0) { goTimer -= dt; if (goTimer <= 0) { $('countdown').classList.remove('show'); } }
+      if (fellT > 0) { fellT -= dt; if (fellT <= 0) $('drive').classList.remove('fell'); }
       $('lap').textContent = `${Math.min(race.lap, race.laps)}/${race.laps}`;
       $('timer').textContent = formatTime(race.phase === 'finished' ? race.finishTime : race.time);
       const along = Math.sin(v.heading) * n.tx + Math.cos(v.heading) * n.tz;

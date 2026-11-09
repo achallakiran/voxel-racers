@@ -188,7 +188,8 @@ export function stepVehicle(v, input, terrain, tune, dt) {
   v.vx = f * sinH + l * cosH;
   v.vz = f * cosH - l * sinH;
   // wind pushes sideways (less when the tyres are gripping)
-  if (terrain.wind) { const wk = v.grounded ? 1 : 1.6; v.vx += terrain.wind.x * wk * dt; v.vz += terrain.wind.z * wk * dt; }
+  const wnd = terrain.windAt ? terrain.windAt(v.x, v.z, terrain.time || 0) : terrain.wind;   // a stage can gust in places and at moments
+  if (wnd) { const wk = v.grounded ? 1 : 1.6; v.vx += wnd.x * wk * dt; v.vz += wnd.z * wk * dt; }
   // timed hazards (avalanche, geysers ...): effects are exact functions of the stage clock
   if (terrain.hazards && terrain.hazards.length) hazardEffects(v, terrain, dt, events);
 

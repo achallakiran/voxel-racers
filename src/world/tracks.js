@@ -749,7 +749,8 @@ const CRATER_DEF = {
   },
 };
 
-export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF), makeTrack(VOLCANO_DEF), makeTrack(CRATER_DEF)];
+import { GRIP_DEF } from './giants-grip.js';
+export const TRACKS = [makeTrack(GREENRIDGE_DEF), makeTrack(CANYON_DEF), makeTrack(FORTRESS_DEF), makeTrack(HIMALAYA_DEF), makeTrack(SKULL_DEF), makeTrack(MAGMA_DEF), makeTrack(MOON_DEF), makeTrack(SATURN_DEF), makeTrack(VOLCANO_DEF), makeTrack(CRATER_DEF), makeTrack(GRIP_DEF)];
 // the labyrinth is a different kind of stage (no road centreline), so TRACKS stays the road stages; STAGES is what the menu lists
 export const MAZE_TRACK = makeMazeTrack(LABYRINTH_DEF);
 export const STAGES = [...TRACKS, MAZE_TRACK];

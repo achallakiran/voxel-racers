@@ -213,6 +213,11 @@ export function makeTrack(def) {
   ];
   const T = { LENGTH, sampleAt, feat, kicker, landing, lateral, JUMP, rng, straightNear, loops: LOOPS, ROAD_HALF };
 
+  // ---- a stage with a bridge (Giant's Grip): over the span the deck stands clear of the ground (a sharp edge, no shoulder), the
+  // side wall hugs the deck edge, and the rails have gaps you can fall through. def.bridge(T) -> { s0, s1, rail, gaps: [{ from, to, side }] }
+  const BR = def.bridge ? def.bridge(T) : null;
+  const onSpan = (s) => !!BR && s >= BR.s0 && s <= BR.s1;
+  const railGap = (s, d) => !!BR && BR.gaps.some((g) => s >= g.from && s <= g.to && (g.side === 0 || (g.side > 0) === (d > 0)));
   const FEATURES = def.features(T);
 
   function bumpHeight(f, x, z) { const d = Math.hypot(x - f.x, z - f.z); return d >= f.r ? 0 : f.h * 0.5 * (1 + Math.cos(Math.PI * d / f.r)); }
@@ -268,7 +273,8 @@ export function makeTrack(def) {
     const ad = Math.abs(n.d);
     const nat = natural(x, z);
     const blend = smooth((ad - ROAD_HALF) / 10);
-    const gb = def.ground ? smooth((ad - ROAD_HALF - 4) / 16) : blend;   // landform stages keep the road corridor and its walls level
+    const gb = onSpan(n.s) ? (ad > ROAD_HALF + 0.15 ? 1 : 0)                          // a bridge deck: the ground falls away right at its edge
+      : def.ground ? smooth((ad - ROAD_HALF - 4) / 16) : blend;   // landform stages keep the road corridor and its walls level
     const base = def.ground
       ? Math.max(0.1, n.y * (1 - gb) + (def.ground(x, z, n) + (nat - 2.6) * 0.12) * gb)   // a stage with its own landform (dome, craters, mountain)
       : Math.max(0.1, n.y + (nat - 2.6) * blend);
@@ -284,8 +290,9 @@ export function makeTrack(def) {
   // Barrier on both sides of the track. Returns a push-back (position + outward normal) or null.
   function constrain(x, z, radius = 1.3) {
     const n = nearest(x, z);
-    const limit = BARRIER - radius - 0.3;
+    const limit = (onSpan(n.s) ? BR.rail : BARRIER) - radius - 0.3;
     if (Math.abs(n.d) <= limit) return null;
+    if (railGap(n.s, n.d)) return null;                // a broken rail: nothing holds you in here
     const out = n.d >= 0 ? 1 : -1;
     const nx = n.tz * out;
     const nz = -n.tx * out;
@@ -497,6 +504,7 @@ export function makeTrack(def) {
     const m = Math.round(LENGTH / spacing);
     for (let i = 0; i < m; i++) {
       if (OPEN && i / m > SMAX) break;
+      if (onSpan(i / m)) continue;                       // the deck has its own rails
       const p = sampleAt(i / m);
       for (const side of [-1, 1]) {
         const x = p.x + p.tz * side * (BARRIER - 0.4);
@@ -519,7 +527,7 @@ export function makeTrack(def) {
   const ENV = { gravity: undefined, wind: null, weather: 'none', ...(def.env || {}) };
   const HAZARDS = [];
   if (def.hazards) def.hazards({ W: null, sampleAt, LENGTH, ROAD_HALF, add: (h) => HAZARDS.push({ y0: heightAt(h.x, h.z), ...h }) });
-  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true, gravity: ENV.gravity, wind: ENV.wind, slopeLanding: !!ENV.slopeLanding, hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
+  const terrain = { heightAt, surfaceAt, constrain, obstacles: [...OBSTACLES, ...WALLS, ...BLOCKS, ...PROPS], props: PROPS, pickups: PICKUPS, loops: LOOPS, radius: 1e9, noRegen: true, gravity: ENV.gravity, wind: ENV.wind, windAt: def.windAt || null, slopeLanding: !!ENV.slopeLanding, hazards: HAZARDS.map((h) => ({ ...h })), time: 0 };
   // a fresh playable copy for one race (smashed props come back next time)
   function freshTerrain() {
     const props = PROPS.map((p) => ({ ...p }));
@@ -529,7 +537,7 @@ export function makeTrack(def) {
   return {
     id: def.id, name: def.name, theme: def.theme, env: ENV, STRUCTURES: def.structures || [], shade: def.shade || null, paint: def.paint || null, ROAD_HALF, SHOULDER, BARRIER,
     LENGTH, DS, SAMPLES, SECTIONS, CHECKPOINTS, START_S, OPEN, FINISH_S, LINE_S, SMAX, FEATURES, OBSTACLES, WALLS, BLOCKS, PROPS, PICKUPS, ZONES, LOOPS, LANES,
-    nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear,
+    nearest, sampleAt, headingAt, sample, heightAt, surfaceAt, constrain, laneAt, straightNear, BRIDGE: BR, onSpan, railGap,
     sceneryLayout, barrierLayout, startPose, gridPose, terrain, freshTerrain, featureHeightAt: featureHeight,
     TRACK: { name: def.name, length: LENGTH, halfWidth: ROAD_HALF, barrier: BARRIER, samples: SAMPLES, checkpoints: CHECKPOINTS },
   };

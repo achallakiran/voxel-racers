@@ -386,6 +386,25 @@ def main():
         page.click('#btn-exit', force=True)
         check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', 'race exits to the garage')
 
+        # ---------------- Giant's Grip: in the picker; going over the deck edge puts you back at a checkpoint with a penalty
+        for _ in range(14):
+            if page.evaluate("document.querySelector('#trk-name b').textContent") == "Giant's Grip":
+                break
+            page.click('#trk-next', force=True); page.wait_for_timeout(120)
+        check(page.evaluate("document.querySelector('#trk-name b').textContent") == "Giant's Grip", "Giant's Grip is in the stage picker")
+        page.click('#btn-race', force=True)
+        page.wait_for_function("window.__voxelRacers.vehicle !== null && window.__voxelRacers.race.phase === 'racing'", timeout=300000)
+        fell = page.evaluate("""(() => { const g = window.__voxelRacers; const T = g.track, v = g.vehicle;
+          const m = T.sampleAt((T.BRIDGE.s0 + T.BRIDGE.s1) / 2); const my = T.nearest(m.x, m.z).y; const t0 = g.race.time;
+          v.x = m.x + m.tz * 9; v.z = m.z - m.tx * 9; v.y = my - 12; v.vy = -5; v.f = 20;
+          return t0; })()""")
+        page.wait_for_function("(() => { const g = window.__voxelRacers; const n = g.track.nearest(g.vehicle.x, g.vehicle.z); return g.vehicle.y - n.y > -3; })()", timeout=120000)
+        back = page.evaluate("(() => { const g = window.__voxelRacers; const n = g.track.nearest(g.vehicle.x, g.vehicle.z); return [Math.abs(n.d), g.vehicle.y - n.y, g.race.time]; })()")
+        check(back[0] < 8 and back[1] > -2, f'a fall respawns the truck on the road ({back})')
+        check(back[2] > fell + 2.5, 'a fall costs a time penalty')
+        page.click('#btn-exit', force=True)
+        check(page.evaluate('window.__voxelRacers.flow.state') == 'garage', "Giant's Grip exits to the garage")
+
         # ---------------- labyrinth stage: preview, skip, fog-of-war, no rivals yet
         for _ in range(14):
             if page.evaluate("document.querySelector('#trk-name b').textContent") == 'Hedge Labyrinth':

@@ -557,3 +557,5 @@ img { -webkit-user-drag: none; pointer-events: none; }
 #trackpick .icon-btn.small { width: 40px; height: 40px; }
 #trackpick .icon-btn svg { fill: none; stroke: var(--ink); stroke-width: 2.6; }
 #trk-thumb { width: clamp(96px, 22vmin, 132px); height: auto; border-radius: 12px; background: rgba(11, 16, 38, 0.55); border: 2px solid rgba(255, 255, 255, 0.45); }
+/* over the edge of a bridge: the clock flashes red for a moment (the three seconds that were added) */
+#drive.fell #timer { color: #ff5d5d; animation: blink 0.35s steps(2) 4; }
